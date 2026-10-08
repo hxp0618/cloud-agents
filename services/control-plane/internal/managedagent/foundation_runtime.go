@@ -469,6 +469,22 @@ func (session *foundationRuntimeSession) Receive() (runtimeprotocol.Message, err
 	return runtimeprotocol.Message{}, io.EOF
 }
 
+func (session *foundationRuntimeSession) checkHealth(ctx context.Context) error {
+	if session == nil || ctx == nil || session.client == nil || session.sessionID == "" {
+		return ErrRuntimeEnvironmentUnavailable
+	}
+	select {
+	case <-session.done:
+		return ErrRuntimeEnvironmentUnavailable
+	default:
+	}
+	observation, err := session.client.GetPTY(ctx, session.pty, session.sessionID)
+	if err != nil || !observation.Running {
+		return ErrRuntimeEnvironmentUnavailable
+	}
+	return nil
+}
+
 func (session *foundationRuntimeSession) CloseRequest() error { return session.CloseResponse() }
 
 func (session *foundationRuntimeSession) CloseResponse() error {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const PLATFORM_RELEASE_TARGETS = ["linux-amd64", "linux-arm64"] as const;
@@ -26,6 +26,27 @@ export const PLATFORM_RELEASE_GO_COMMANDS = [
 ] as const;
 
 export const PLATFORM_RELEASE_RUNTIME = "cloud-agent-runtime-standalone.mjs";
+export const CLOUD_AGENT_RUNTIME_NOTICES_FILENAME = "cloud-agent-runtime-notices.md";
+export const CLOUD_AGENT_RUNTIME_NOTICES_SOURCE_PATH =
+  "packages/cloud-agent-runtime/THIRD_PARTY_NOTICES.md";
+
+export function buildRuntimeNotice(root: string): {
+  readonly artifact: PlatformReleaseArtifact;
+  readonly bytes: Buffer;
+} {
+  const bytes = readFileSync(resolve(root, CLOUD_AGENT_RUNTIME_NOTICES_SOURCE_PATH));
+  if (bytes.length === 0) throw new Error("Runtime third-party notice is empty.");
+  return {
+    artifact: platformReleaseArtifact(
+      "cloud-agent-runtime-notices",
+      "portable",
+      CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+      bytes,
+    ),
+    bytes,
+  };
+}
+
 export const PLATFORM_RELEASE_CONTRACTS = "cloud-agents-contract-bundle.tar";
 export const PLATFORM_RELEASE_GO_SDK = "cloud-agents-go-sdk.tar";
 export const PLATFORM_RELEASE_TYPESCRIPT_SDK = "cloud-agents-typescript-sdk.tgz";
@@ -202,7 +223,10 @@ export function expectedArtifactIdentities(): ReadonlyArray<{
       target,
     })),
     { name: "cloud-agents-landlock-notices", target: "portable" },
+    { name: "cloud-agents-worker-oci-install-manifest", target: "portable" },
+    { name: "cloud-agents-worker-oci-notices", target: "portable" },
     { name: "cloud-agent-runtime", target: "portable" },
+    { name: "cloud-agent-runtime-notices", target: "portable" },
     { name: "cloud-agents-migrations", target: "portable" },
     { name: "cloud-agents-deployment", target: "portable" },
     { name: "cloud-agents-contracts", target: "portable" },
@@ -239,7 +263,10 @@ export function platformReleaseArtifactFilename(
   if (target === "portable") {
     const portable = new Map([
       ["cloud-agents-landlock-notices", "cloud-agents-landlock-notices.txt"],
+      ["cloud-agents-worker-oci-install-manifest", "cloud-agents-worker-oci-install-manifest.json"],
+      ["cloud-agents-worker-oci-notices", "cloud-agents-worker-oci-notices.md"],
       ["cloud-agent-runtime", PLATFORM_RELEASE_RUNTIME],
+      ["cloud-agent-runtime-notices", CLOUD_AGENT_RUNTIME_NOTICES_FILENAME],
       ["cloud-agents-migrations", `cloud-agents-migrations-${migrationHead}.tar`],
       ["cloud-agents-deployment", `cloud-agents-deployment-${migrationHead}.tar`],
       ["cloud-agents-contracts", PLATFORM_RELEASE_CONTRACTS],

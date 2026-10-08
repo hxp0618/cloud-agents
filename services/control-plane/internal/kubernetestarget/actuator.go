@@ -164,8 +164,14 @@ func (directory *CredentialDirectory) deployWorker(ctx context.Context, endpoint
 		cleanupOnFailure()
 		return DeployResult{}, err
 	}
-	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
+	trustDomain, err := spiffeTrustDomain(config.WorkerSPIFFEID)
+	if err != nil {
+		cleanupOnFailure()
+		return DeployResult{}, ErrDeploymentConfigInvalid
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: trustDomain}
 	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
+	defer supervisor.CloseIdleConnections()
 	if err != nil || waitForWorker(ctx, supervisor) != nil {
 		cleanupOnFailure()
 		return DeployResult{}, ErrWorkerUnavailable
@@ -596,9 +602,12 @@ func kubernetesJSON(ctx context.Context, client *http.Client, method, target, co
 	return response.StatusCode, nil
 }
 
-func spiffeTrustDomain(identity string) string {
-	parsed, _ := url.Parse(identity)
-	return parsed.Host
+func spiffeTrustDomain(identity string) (string, error) {
+	parsed, err := url.Parse(identity)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Host, nil
 }
 
 func waitForWorker(ctx context.Context, supervisor *workerclient.Supervisor) error {

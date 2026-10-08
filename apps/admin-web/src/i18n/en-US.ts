@@ -1053,7 +1053,25 @@ export const enUS = {
   "error.sandboxGrantPageToken": "Control Plane repeated an access grant page token.",
   "error.agentSessionPageToken": "Control Plane repeated a Managed Agent session page token.",
   "error.agentExecutionPageToken": "Control Plane repeated a Managed Agent execution page token.",
-  "error.agentEventCursor": "Managed Agent recovery audit exceeded the bounded cursor window.",
+  "error.agentEventCursor":
+    "Control Plane returned a missing, stalled or repeated Managed Agent event cursor.",
+  "agentEvents.session": "Audit Session",
+  "agentEvents.load": "Load events",
+  "agentEvents.loadMore": "Load more events",
+  "agentEvents.loading": "Loading event page…",
+  "agentEvents.notLoaded":
+    "Event history has not been loaded. Select a Session to read its audit stream.",
+  "agentEvents.more": "Current page {page} · at most 64 events · more history is available.",
+  "agentEvents.complete":
+    "Current page {page} · at most 64 events · reached the end of this Session's stream.",
+  "agentRuntime.windowDescription":
+    "Bindings below cover the current Session window and the selected Session's current Execution window.",
+  "agentRuntime.sessionWindow": "Session in current window",
+  "agentRuntime.nextSessionWindow": "Next Session window",
+  "agentRuntime.nextExecutionWindow": "Next Execution window",
+  "page.loading": "Loading current page…",
+  "page.resourceFailed":
+    "{resource} could not be loaded. Previous data, if available, is retained.",
   "phase.available": "Available",
   "phase.unknown": "Unknown",
   "phase.stopped": "Stopped",

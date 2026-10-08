@@ -245,3 +245,12 @@ func TestCredentialDirectoryReadsKubernetesDeploymentDescriptor(t *testing.T) {
 		t.Fatal("invalid Kubernetes DNS subdomain accepted")
 	}
 }
+
+func TestSpiffeTrustDomainRejectsMalformedIdentity(t *testing.T) {
+	if _, err := spiffeTrustDomain("spiffe://cloud-agents.test/%zz"); err == nil {
+		t.Fatal("malformed SPIFFE identity accepted")
+	}
+	if trustDomain, err := spiffeTrustDomain("spiffe://cloud-agents.test/workers/kubernetes-alpha"); err != nil || trustDomain != "cloud-agents.test" {
+		t.Fatalf("trust domain=%q error=%v", trustDomain, err)
+	}
+}

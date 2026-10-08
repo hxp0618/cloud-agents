@@ -15,18 +15,3 @@ export const CLOUD_AGENT_ENVIRONMENT = Object.freeze({
 
 export type CloudAgentEnvironmentName =
   (typeof CLOUD_AGENT_ENVIRONMENT)[keyof typeof CLOUD_AGENT_ENVIRONMENT];
-
-export function readCloudAgentEnvironment(
-  environment: Readonly<Record<string, string | undefined>>,
-  name: CloudAgentEnvironmentName,
-): string | undefined {
-  return environment[name];
-}
-
-export function writeCloudAgentEnvironment(
-  environment: Record<string, string | undefined>,
-  name: CloudAgentEnvironmentName,
-  value: string,
-): void {
-  environment[name] = value;
-}

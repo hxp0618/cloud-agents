@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   ManagedCapabilityCallResultUnknownError,
   ManagedCapabilityUnavailableError,
@@ -12,6 +11,24 @@ import {
   type RuntimeCapabilityBinding,
   type RuntimeCapabilityManifest,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
+
+export type PiToolDefinition = Readonly<{
+  name: string;
+  label: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  executionMode: "sequential";
+  execute(
+    toolCallId: string,
+    params: unknown,
+    signal: AbortSignal | undefined,
+    onUpdate?: unknown,
+    context?: unknown,
+  ): Promise<{
+    readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;
+    readonly details: Record<string, unknown>;
+  }>;
+}>;
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const MAX_MCP_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -26,7 +43,7 @@ export type ManagedPiMcpToolMetadata = Readonly<{
 }>;
 
 export type ManagedPiMcpTools = Readonly<{
-  tools: ReadonlyArray<ToolDefinition>;
+  tools: ReadonlyArray<PiToolDefinition>;
   metadataByToolName: ReadonlyMap<string, ManagedPiMcpToolMetadata>;
   unknownToolCallIds: ReadonlySet<string>;
   resultUnknown: Promise<ManagedCapabilityCallResultUnknownError>;
@@ -174,7 +191,7 @@ export async function createManagedPiMcpTools(
 
   const configuration = managedMcpConfiguration(manifest, environment);
   const lifetime = new AbortController();
-  const tools: ToolDefinition[] = [];
+  const tools: PiToolDefinition[] = [];
   const metadata = new Map<string, ManagedPiMcpToolMetadata>();
   const unknownToolCallIds = new Set<string>();
   let reportResultUnknown!: (error: ManagedCapabilityCallResultUnknownError) => void;
@@ -191,11 +208,11 @@ export async function createManagedPiMcpTools(
       for (const discovered of await client.listTools()) {
         const name = managedToolName(binding, discovered.name);
         if (metadata.has(name)) throw unavailable("Pi managed MCP tool names collide.");
-        const tool: ToolDefinition = {
+        const tool: PiToolDefinition = {
           name,
           label: `Managed MCP: ${discovered.name}`,
           description: discovered.description || "Host-managed MCP tool.",
-          parameters: discovered.inputSchema as ToolDefinition["parameters"],
+          parameters: discovered.inputSchema,
           executionMode: "sequential",
           async execute(toolCallId, params, signal) {
             try {

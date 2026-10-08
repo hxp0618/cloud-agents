@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   AdminAuditEvent,
   MaintenanceOperation,
@@ -7,11 +7,12 @@ import type {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import {
   adminFailure,
+  adminMutationKey,
   listAdminRemoteWorkerEnrollmentAuditEvents,
   listAdminRemoteWorkerEnrollments,
   listAdminRemoteWorkerOperations,
-  newIdempotencyKey,
   newRequestId,
+  pendingIdempotencyKey,
   remoteWorkerFoundationSupport,
   replaceRemoteWorkerEnrollment,
   targetIdentifierPattern,
@@ -105,6 +106,7 @@ export function RemoteWorkerEnrollmentPanel({
     workerName: "",
     ttlSeconds: "900",
   });
+  const pendingKeysRef = useRef(new Map<string, string>());
   const selected = enrollments.find(({ metadata }) => metadata.uid === selectedId);
   const foundationSupport = selected?.spec.node
     ? remoteWorkerFoundationSupport(selected.spec.node)
@@ -170,13 +172,18 @@ export function RemoteWorkerEnrollmentPanel({
     return () => controller.abort();
   }, [client, connection.tenantId, connection.projectId]);
 
-  async function run(operation: (signal: AbortSignal) => Promise<void>, success: MessageKey) {
+  async function run(
+    operation: (signal: AbortSignal) => Promise<void>,
+    success: MessageKey,
+    operationKey?: string,
+  ) {
     if (busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       await operation(AbortSignal.timeout(30_000));
+      if (operationKey !== undefined) pendingKeysRef.current.delete(operationKey);
       setNotice(success);
     } catch (cause) {
       setError(adminFailure(cause));
@@ -188,19 +195,24 @@ export function RemoteWorkerEnrollmentPanel({
   function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = { ...form, ttlSeconds: Number(form.ttlSeconds) };
-    void run(async (signal) => {
-      const result = await client.createAdminRemoteWorkerEnrollment(
-        connection.tenantId,
-        connection.projectId,
-        newRequestId(),
-        newIdempotencyKey(),
-        body,
-        signal,
-      );
-      setCreating(false);
-      setForm({ enrollmentId: "", workerId: "", workerName: "", ttlSeconds: "900" });
-      await load(signal, result.value.metadata.uid);
-    }, "remoteWorkerEnrollment.notice.created");
+    const key = adminMutationKey("remote-worker-enrollment-create", body);
+    void run(
+      async (signal) => {
+        const result = await client.createAdminRemoteWorkerEnrollment(
+          connection.tenantId,
+          connection.projectId,
+          newRequestId(),
+          pendingIdempotencyKey(pendingKeysRef.current, key),
+          body,
+          signal,
+        );
+        setCreating(false);
+        setForm({ enrollmentId: "", workerId: "", workerName: "", ttlSeconds: "900" });
+        await load(signal, result.value.metadata.uid);
+      },
+      "remoteWorkerEnrollment.notice.created",
+      key,
+    );
   }
 
   function select(enrollmentId: string) {
@@ -230,26 +242,32 @@ export function RemoteWorkerEnrollmentPanel({
     if (schedulingPreview === null || schedulingConfirmation !== schedulingPreview.metadata.uid)
       return;
     const preview = schedulingPreview;
-    void run(async (signal) => {
-      await client.transitionAdminRemoteWorkerScheduling(
-        connection.tenantId,
-        connection.projectId,
-        preview.metadata.uid,
-        newRequestId(),
-        newIdempotencyKey(),
-        {
-          expectedGeneration: preview.spec.expectedGeneration,
-          expectedResourceVersion: preview.spec.expectedResourceVersion,
-          confirmedEnrollmentId: preview.metadata.uid,
-          desiredState: preview.spec.desiredState,
-          impactDigest: preview.spec.impactDigest,
-        },
-        signal,
-      );
-      setSchedulingPreview(null);
-      setSchedulingConfirmation("");
-      await load(signal, preview.metadata.uid);
-    }, "remoteWorkerEnrollment.notice.schedulingQueued");
+    const body = {
+      expectedGeneration: preview.spec.expectedGeneration,
+      expectedResourceVersion: preview.spec.expectedResourceVersion,
+      confirmedEnrollmentId: preview.metadata.uid,
+      desiredState: preview.spec.desiredState,
+      impactDigest: preview.spec.impactDigest,
+    };
+    const key = adminMutationKey(`remote-worker-scheduling:${preview.metadata.uid}`, body);
+    void run(
+      async (signal) => {
+        await client.transitionAdminRemoteWorkerScheduling(
+          connection.tenantId,
+          connection.projectId,
+          preview.metadata.uid,
+          newRequestId(),
+          pendingIdempotencyKey(pendingKeysRef.current, key),
+          body,
+          signal,
+        );
+        setSchedulingPreview(null);
+        setSchedulingConfirmation("");
+        await load(signal, preview.metadata.uid);
+      },
+      "remoteWorkerEnrollment.notice.schedulingQueued",
+      key,
+    );
   }
 
   function revoke() {
@@ -257,6 +275,14 @@ export function RemoteWorkerEnrollmentPanel({
     const enrollment = selected;
     const certificate =
       enrollment.spec.state === "enrolled" && enrollment.spec.certificateState === "active";
+    const body = {
+      expectedResourceVersion: enrollment.metadata.resourceVersion,
+      confirmedEnrollmentId: enrollment.metadata.uid,
+    };
+    const key = adminMutationKey(
+      `remote-worker-enrollment-revoke:${enrollment.metadata.uid}`,
+      body,
+    );
     void run(
       async (signal) => {
         const result = await client.revokeAdminRemoteWorkerEnrollment(
@@ -264,11 +290,8 @@ export function RemoteWorkerEnrollmentPanel({
           connection.projectId,
           enrollment.metadata.uid,
           newRequestId(),
-          newIdempotencyKey(),
-          {
-            expectedResourceVersion: enrollment.metadata.resourceVersion,
-            confirmedEnrollmentId: enrollment.metadata.uid,
-          },
+          pendingIdempotencyKey(pendingKeysRef.current, key),
+          body,
           signal,
         );
         setConfirmation("");
@@ -277,6 +300,7 @@ export function RemoteWorkerEnrollmentPanel({
       certificate
         ? "remoteWorkerEnrollment.notice.certificateRevoked"
         : "remoteWorkerEnrollment.notice.revoked",
+      key,
     );
   }
 

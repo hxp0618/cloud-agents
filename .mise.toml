@@ -8,3 +8,4 @@ uv = "0.12.5"
 
 [env]
 NODE_ENV = "development"
+GOTOOLCHAIN = "local"

@@ -1,0 +1,739 @@
+diff --git a/components/execd/pkg/runtime/pty_session.go b/components/execd/pkg/runtime/pty_session.go
+index 17e71fba..edd4bd40 100644
+--- a/components/execd/pkg/runtime/pty_session.go
++++ b/components/execd/pkg/runtime/pty_session.go
+@@ -35,6 +35,8 @@ import (
+ 	"github.com/alibaba/opensandbox/execd/pkg/util/pathutil"
+ )
+ 
++var ptyOutputDrainTimeout = 10 * time.Second
++
+ // PTYSession is the public interface for an interactive PTY/pipe session.
+ // The concrete implementation (*ptySession) is unexported; callers outside
+ // this package must use this interface.
+@@ -47,6 +49,7 @@ type PTYSession interface {
+ 	IsRunning() bool
+ 	IsPTY() bool
+ 	ExitCode() int
++	OutputComplete() bool
+ 	Done() <-chan struct{}
+ 	StartPTY() error
+ 	StartPipe() error
+@@ -81,9 +84,10 @@ type ptySession struct {
+ 	closing bool
+ 
+ 	// Process tracking (guarded by mu)
+-	pid          int           // PID of the running bash process (0 = not running)
+-	lastExitCode int           // exit code; -1 until process exits
+-	doneCh       chan struct{} // closed when process exits (non-nil after Start*)
++	pid            int           // PID of the running bash process (0 = not running)
++	lastExitCode   int           // exit code; -1 until process exits
++	outputComplete bool          // false when bounded drain timed out
++	doneCh         chan struct{} // closed when process exits (non-nil after Start*)
+ 
+ 	// Stdin (PTY master in PTY mode; write end of os.Pipe in pipe mode)
+ 	stdin io.WriteCloser
+@@ -112,6 +116,13 @@ type ptySession struct {
+ 	outMu   sync.Mutex
+ 	stdoutW *io.PipeWriter // current per-connection sink; nil when no client attached
+ 	stderrW *io.PipeWriter // nil in PTY mode
++	// outputClosed is guarded by outMu. Once set, terminal reconnects receive
++	// replay only and their newly-created live sinks are closed immediately.
++	outputClosed bool
++
++	// Process completion waits for every output broadcaster so Done cannot
++	// overtake bytes still buffered in the child stdout/stderr/PTY stream.
++	outputBroadcastWg sync.WaitGroup
+ }
+ 
+ func newPTYSession(id, cwd, command string) *ptySession {
+@@ -194,6 +205,22 @@ func (s *ptySession) IsRunning() bool {
+ 	return s.pid != 0
+ }
+ 
++func (s *ptySession) status() (running bool, exitCode *int) {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	if s.pid != 0 {
++		return true, nil
++	}
++	if s.doneCh == nil {
++		return false, nil
++	}
++	if !s.outputComplete {
++		return false, nil
++	}
++	code := s.lastExitCode
++	return false, &code
++}
++
+ // IsPTY returns true when the session was started in PTY mode.
+ func (s *ptySession) IsPTY() bool {
+ 	return s.isPTY
+@@ -206,6 +233,12 @@ func (s *ptySession) ExitCode() int {
+ 	return s.lastExitCode
+ }
+ 
++func (s *ptySession) OutputComplete() bool {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	return s.outputComplete
++}
++
+ // Done returns a channel that is closed when the bash process exits.
+ // Returns nil if the process has not been started yet.
+ func (s *ptySession) Done() <-chan struct{} {
+@@ -255,7 +288,11 @@ func (s *ptySession) StartPTY() error {
+ 	s.doneCh = make(chan struct{})
+ 	s.stdin = ptmx // write to the PTY master to feed stdin
+ 
+-	safego.Go(func() { s.broadcastPTY() })
++	s.outputBroadcastWg.Add(1)
++	safego.Go(func() {
++		defer s.outputBroadcastWg.Done()
++		s.broadcastPTY()
++	})
+ 	safego.Go(func() { s.waitAndExit(cmd, ptmx) })
+ 
+ 	return nil
+@@ -327,8 +364,15 @@ func (s *ptySession) StartPipe() error {
+ 	s.doneCh = make(chan struct{})
+ 	s.stdin = stdinW
+ 
+-	safego.Go(func() { s.broadcastPipe(stdoutR, true) })
+-	safego.Go(func() { s.broadcastPipe(stderrR, false) })
++	s.outputBroadcastWg.Add(2)
++	safego.Go(func() {
++		defer s.outputBroadcastWg.Done()
++		s.broadcastPipe(stdoutR, true)
++	})
++	safego.Go(func() {
++		defer s.outputBroadcastWg.Done()
++		s.broadcastPipe(stderrR, false)
++	})
+ 	safego.Go(func() { s.waitAndExitPipe(cmd, stdinW, stdoutR, stderrR) })
+ 
+ 	return nil
+@@ -392,8 +436,13 @@ func (s *ptySession) writeAndFanout(chunk []byte, isStdout bool) {
+ // waitAndExit waits for the PTY-mode process and updates session state on exit.
+ func (s *ptySession) waitAndExit(cmd *exec.Cmd, ptmx *os.File) {
+ 	_ = cmd.Wait()
++	// The session's root process is terminal; terminate any descendants that
++	// remain in its dedicated process group before draining inherited output.
++	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
++	outputComplete := s.waitForOutputBroadcast(cmd.Process.Pid, func() { _ = ptmx.Close() })
++	s.closeOutputSinks()
+ 
+-	// Close the PTY master to unblock the broadcast goroutine.
++	// The broadcast goroutine has drained the PTY and observed EOF/EIO.
+ 	_ = ptmx.Close()
+ 
+ 	s.mu.Lock()
+@@ -402,6 +451,7 @@ func (s *ptySession) waitAndExit(cmd *exec.Cmd, ptmx *os.File) {
+ 		exitCode = cmd.ProcessState.ExitCode()
+ 	}
+ 	s.lastExitCode = exitCode
++	s.outputComplete = outputComplete
+ 	s.pid = 0
+ 	doneCh := s.doneCh
+ 	s.mu.Unlock()
+@@ -412,9 +462,17 @@ func (s *ptySession) waitAndExit(cmd *exec.Cmd, ptmx *os.File) {
+ // waitAndExitPipe waits for the pipe-mode process and updates session state on exit.
+ func (s *ptySession) waitAndExitPipe(cmd *exec.Cmd, stdinW, stdoutR, stderrR *os.File) {
+ 	_ = cmd.Wait()
++	// The session's root process is terminal; terminate any descendants that
++	// remain in its dedicated process group before draining inherited output.
++	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+ 
+ 	// Close stdin write-end so the child (if still running) sees EOF.
+ 	_ = stdinW.Close()
++	outputComplete := s.waitForOutputBroadcast(cmd.Process.Pid, func() {
++		_ = stdoutR.Close()
++		_ = stderrR.Close()
++	})
++	s.closeOutputSinks()
+ 
+ 	s.mu.Lock()
+ 	exitCode := 0
+@@ -422,6 +480,7 @@ func (s *ptySession) waitAndExitPipe(cmd *exec.Cmd, stdinW, stdoutR, stderrR *os
+ 		exitCode = cmd.ProcessState.ExitCode()
+ 	}
+ 	s.lastExitCode = exitCode
++	s.outputComplete = outputComplete
+ 	s.pid = 0
+ 	doneCh := s.doneCh
+ 	s.mu.Unlock()
+@@ -429,6 +488,43 @@ func (s *ptySession) waitAndExitPipe(cmd *exec.Cmd, stdinW, stdoutR, stderrR *os
+ 	close(doneCh)
+ }
+ 
++func (s *ptySession) waitForOutputBroadcast(processGroupID int, closeSource func()) bool {
++	drained := make(chan struct{})
++	safego.Go(func() {
++		s.outputBroadcastWg.Wait()
++		close(drained)
++	})
++	select {
++	case <-drained:
++		return true
++	case <-time.After(ptyOutputDrainTimeout):
++		// The command can exit while a descendant in the same group keeps an
++		// inherited output FD open. Kill that group before publishing terminal
++		// state so bounded cleanup cannot leak the descendant.
++		_ = syscall.Kill(-processGroupID, syscall.SIGKILL)
++		s.closeOutputSinks()
++		closeSource()
++		<-drained
++		return false
++	}
++}
++
++func (s *ptySession) closeOutputSinks() {
++	s.outMu.Lock()
++	s.outputClosed = true
++	stdoutW := s.stdoutW
++	stderrW := s.stderrW
++	s.stdoutW = nil
++	s.stderrW = nil
++	s.outMu.Unlock()
++	if stdoutW != nil {
++		_ = stdoutW.Close()
++	}
++	if stderrW != nil {
++		_ = stderrW.Close()
++	}
++}
++
+ // WriteStdin writes p to bash stdin (PTY master or pipe write-end).
+ func (s *ptySession) WriteStdin(p []byte) (int, error) {
+ 	s.mu.Lock()
+@@ -455,13 +551,21 @@ func (s *ptySession) AttachOutput() (io.Reader, io.Reader, func()) {
+ 	stdoutR, stdoutW := io.Pipe()
+ 
+ 	s.outMu.Lock()
+-	s.stdoutW = stdoutW
++	closed := s.outputClosed
++	if !closed {
++		s.stdoutW = stdoutW
++	}
+ 	s.outMu.Unlock()
++	if closed {
++		_ = stdoutW.Close()
++	}
+ 
+ 	if s.isPTY {
+ 		detach := func() {
+ 			s.outMu.Lock()
+-			s.stdoutW = nil
++			if s.stdoutW == stdoutW {
++				s.stdoutW = nil
++			}
+ 			s.outMu.Unlock()
+ 			_ = stdoutW.Close()
+ 		}
+@@ -472,13 +576,24 @@ func (s *ptySession) AttachOutput() (io.Reader, io.Reader, func()) {
+ 	stderrR, stderrW := io.Pipe()
+ 
+ 	s.outMu.Lock()
+-	s.stderrW = stderrW
++	if !s.outputClosed {
++		s.stderrW = stderrW
++	} else {
++		closed = true
++	}
+ 	s.outMu.Unlock()
++	if closed {
++		_ = stderrW.Close()
++	}
+ 
+ 	detach := func() {
+ 		s.outMu.Lock()
+-		s.stdoutW = nil
+-		s.stderrW = nil
++		if s.stdoutW == stdoutW {
++			s.stdoutW = nil
++		}
++		if s.stderrW == stderrW {
++			s.stderrW = nil
++		}
+ 		s.outMu.Unlock()
+ 		_ = stdoutW.Close()
+ 		_ = stderrW.Close()
+@@ -506,16 +621,27 @@ func (s *ptySession) AttachOutputWithSnapshot(since int64) (io.Reader, io.Reader
+ 
+ 	s.outMu.Lock()
+ 	snapshotBytes, snapshotOffset := s.replay.ReadFrom(since) // acquires replay.mu inside
+-	s.stdoutW = stdoutW
+-	if stderrW != nil {
+-		s.stderrW = stderrW
++	closed := s.outputClosed
++	if !closed {
++		s.stdoutW = stdoutW
++		if stderrW != nil {
++			s.stderrW = stderrW
++		}
+ 	}
+ 	s.outMu.Unlock()
++	if closed {
++		_ = stdoutW.Close()
++		if stderrW != nil {
++			_ = stderrW.Close()
++		}
++	}
+ 
+ 	detach := func() {
+ 		s.outMu.Lock()
+-		s.stdoutW = nil
+-		if stderrW != nil {
++		if s.stdoutW == stdoutW {
++			s.stdoutW = nil
++		}
++		if stderrW != nil && s.stderrW == stderrW {
+ 			s.stderrW = nil
+ 		}
+ 		s.outMu.Unlock()
+@@ -669,10 +795,11 @@ func (c *Controller) DeletePTYSession(id string) error {
+ }
+ 
+ // GetPTYSessionStatus returns status information for a PTY session.
+-func (c *Controller) GetPTYSessionStatus(id string) (running bool, outputOffset int64, err error) {
++func (c *Controller) GetPTYSessionStatus(id string) (running bool, outputOffset int64, exitCode *int, err error) {
+ 	s := c.getPTYSession(id)
+ 	if s == nil {
+-		return false, 0, ErrContextNotFound
++		return false, 0, nil, ErrContextNotFound
+ 	}
+-	return s.IsRunning(), s.replay.Total(), nil
++	running, exitCode = s.status()
++	return running, s.replay.Total(), exitCode, nil
+ }
+diff --git a/components/execd/pkg/runtime/pty_session_test.go b/components/execd/pkg/runtime/pty_session_test.go
+index 656d9c3b..2f2140f7 100644
+--- a/components/execd/pkg/runtime/pty_session_test.go
++++ b/components/execd/pkg/runtime/pty_session_test.go
+@@ -19,9 +19,15 @@ package runtime
+ 
+ import (
+ 	"bufio"
++	"bytes"
++	"crypto/sha256"
++	"fmt"
+ 	"io"
++	"os"
+ 	"os/exec"
++	"strconv"
+ 	"strings"
++	"syscall"
+ 	"testing"
+ 	"time"
+ 
+@@ -31,6 +37,115 @@ import (
+ 	"github.com/alibaba/opensandbox/internal/safego"
+ )
+ 
++func TestPTYSession_TerminalDoneFollowsReplayDrain(t *testing.T) {
++	if _, err := exec.LookPath("bash"); err != nil {
++		t.Skip("bash not found")
++	}
++
++	const outputSize = 512 << 10
++	tail := []byte("terminal_tail_marker")
++	expected := append(make([]byte, outputSize), tail...)
++	expectedHash := sha256.Sum256(expected)
++	for _, mode := range []string{"pipe", "pty"} {
++		t.Run(mode, func(t *testing.T) {
++			s := newPTYSession(uuidString(), "", "dd if=/dev/zero bs=4096 count=128 2>/dev/null; printf terminal_tail_marker; exit 7")
++			if mode == "pipe" {
++				require.NoError(t, s.StartPipe())
++			} else {
++				require.NoError(t, s.StartPTY())
++			}
++			t.Cleanup(func() { s.close() })
++
++			select {
++			case <-s.Done():
++			case <-time.After(10 * time.Second):
++				t.Fatal("timed out waiting for terminal session")
++			}
++
++			actual, offset := s.replay.ReadFrom(0)
++			actualHash := sha256.Sum256(actual)
++			require.Equal(t, int64(0), offset)
++			require.Equal(t, len(expected), len(actual), "Done must follow complete replay drain")
++			require.True(t, bytes.Equal(expectedHash[:], actualHash[:]), "terminal replay bytes must be exact")
++			require.Equal(t, 7, s.ExitCode())
++			require.True(t, s.OutputComplete())
++		})
++	}
++}
++
++func TestPTYSession_TerminalAttachHasClosedLiveSinks(t *testing.T) {
++	s := newPTYSession(uuidString(), "", "printf terminal; exit 7")
++	require.NoError(t, s.StartPipe())
++	t.Cleanup(func() { s.close() })
++	select {
++	case <-s.Done():
++	case <-time.After(10 * time.Second):
++		t.Fatal("timed out waiting for terminal session")
++	}
++
++	stdoutR, stderrR, detach, replay, _ := s.AttachOutputWithSnapshot(0)
++	defer detach()
++	require.Equal(t, "terminal", string(replay))
++	stdout, err := io.ReadAll(stdoutR)
++	require.NoError(t, err)
++	require.Empty(t, stdout)
++	stderr, err := io.ReadAll(stderrR)
++	require.NoError(t, err)
++	require.Empty(t, stderr)
++}
++
++func TestPTYSession_TerminalCleanupKillsDescendants(t *testing.T) {
++	for _, mode := range []string{"pipe", "pty"} {
++		t.Run(mode, func(t *testing.T) {
++			pidFile := t.TempDir() + "/child.pid"
++			command := fmt.Sprintf("(trap '' HUP; sleep 300) & echo $! > %q; exit 7", pidFile)
++			s := newPTYSession(uuidString(), "", command)
++			if mode == "pipe" {
++				require.NoError(t, s.StartPipe())
++			} else {
++				require.NoError(t, s.StartPTY())
++			}
++			t.Cleanup(func() { s.close() })
++			select {
++			case <-s.Done():
++			case <-time.After(time.Second):
++				t.Fatal("output drain timeout did not bound inherited output lifetime")
++			}
++			require.Equal(t, 7, s.ExitCode())
++			running, exitCode := s.status()
++			require.False(t, running)
++			if s.OutputComplete() {
++				require.NotNil(t, exitCode)
++				require.Equal(t, 7, *exitCode)
++			} else {
++				require.Nil(t, exitCode, "incomplete output must not expose an authoritative exit")
++			}
++
++			rawPID, err := os.ReadFile(pidFile)
++			require.NoError(t, err)
++			childPID, err := strconv.Atoi(strings.TrimSpace(string(rawPID)))
++			require.NoError(t, err)
++			require.Eventually(t, func() bool {
++				return syscall.Kill(childPID, 0) == syscall.ESRCH
++			}, time.Second, 10*time.Millisecond, "descendant process %d survived terminal cleanup", childPID)
++		})
++	}
++}
++
++func TestPTYSession_OutputDrainTimeoutReportsIncomplete(t *testing.T) {
++	previous := ptyOutputDrainTimeout
++	ptyOutputDrainTimeout = 20 * time.Millisecond
++	t.Cleanup(func() { ptyOutputDrainTimeout = previous })
++
++	s := newPTYSession(uuidString(), "", "")
++	s.outputBroadcastWg.Add(1)
++	safego.Go(func() {
++		time.Sleep(40 * time.Millisecond)
++		s.outputBroadcastWg.Done()
++	})
++	require.False(t, s.waitForOutputBroadcast(1<<30, func() {}))
++}
++
+ // replayContains polls the replay buffer until it contains substr or timeout expires.
+ func replayContains(t *testing.T, s *ptySession, substr string, timeout time.Duration) bool {
+ 	t.Helper()
+@@ -342,10 +457,11 @@ func TestPTYSession_ControllerCRUD(t *testing.T) {
+ 	require.NotNil(t, got)
+ 	require.Equal(t, id, got.(*ptySession).id)
+ 
+-	running, offset, err := c.GetPTYSessionStatus(id)
++	running, offset, exitCode, err := c.GetPTYSessionStatus(id)
+ 	require.NoError(t, err)
+ 	require.False(t, running)
+ 	require.Equal(t, int64(0), offset)
++	require.Nil(t, exitCode)
+ 
+ 	require.NoError(t, c.DeletePTYSession(id))
+ 	require.Nil(t, c.GetPTYSession(id))
+diff --git a/components/execd/pkg/runtime/pty_session_windows.go b/components/execd/pkg/runtime/pty_session_windows.go
+index 9202d9fa..724a1f70 100644
+--- a/components/execd/pkg/runtime/pty_session_windows.go
++++ b/components/execd/pkg/runtime/pty_session_windows.go
+@@ -39,6 +39,7 @@ type PTYSession interface {
+ 	IsRunning() bool
+ 	IsPTY() bool
+ 	ExitCode() int
++	OutputComplete() bool
+ 	Done() <-chan struct{}
+ 	StartPTY() error
+ 	StartPipe() error
+@@ -69,8 +70,8 @@ func (c *Controller) DeletePTYSession(id string) error { //nolint:revive
+ }
+ 
+ // GetPTYSessionStatus is not supported on Windows.
+-func (c *Controller) GetPTYSessionStatus(id string) (bool, int64, error) { //nolint:revive
+-	return false, 0, errPTYSessionNotSupported
++func (c *Controller) GetPTYSessionStatus(id string) (bool, int64, *int, error) { //nolint:revive
++	return false, 0, nil, errPTYSessionNotSupported
+ }
+ 
+ // Method stubs so the controller layer can call them without build-tag guards.
+@@ -83,6 +84,7 @@ func (s *ptySession) ClearEvictHandler(_ uint64)                   {}
+ func (s *ptySession) IsRunning() bool                              { return false }
+ func (s *ptySession) IsPTY() bool                                  { return false }
+ func (s *ptySession) ExitCode() int                                { return -1 }
++func (s *ptySession) OutputComplete() bool                         { return false }
+ func (s *ptySession) Done() <-chan struct{}                        { return nil }
+ func (s *ptySession) ReplayBuffer() *replayBuffer                  { return nil }
+ func (s *ptySession) StartPTY() error                              { return errPTYSessionNotSupported }
+diff --git a/components/execd/pkg/web/controller/codeinterpreting.go b/components/execd/pkg/web/controller/codeinterpreting.go
+index b700b119..1377dfc6 100644
+--- a/components/execd/pkg/web/controller/codeinterpreting.go
++++ b/components/execd/pkg/web/controller/codeinterpreting.go
+@@ -61,7 +61,7 @@ type codeExecutionRunner interface {
+ 	CreatePTYSession(id, cwd, command string) (runtime.PTYSession, error)
+ 	GetPTYSession(id string) runtime.PTYSession
+ 	DeletePTYSession(id string) error
+-	GetPTYSessionStatus(id string) (bool, int64, error)
++	GetPTYSessionStatus(id string) (bool, int64, *int, error)
+ }
+ 
+ func NewCodeInterpretingController(ctx *gin.Context) *CodeInterpretingController {
+diff --git a/components/execd/pkg/web/controller/codeinterpreting_test.go b/components/execd/pkg/web/controller/codeinterpreting_test.go
+index 7f67edc5..1900ad7d 100644
+--- a/components/execd/pkg/web/controller/codeinterpreting_test.go
++++ b/components/execd/pkg/web/controller/codeinterpreting_test.go
+@@ -93,9 +93,11 @@ func (f *fakeCodeRunner) Interrupt(_ string) error {
+ func (f *fakeCodeRunner) CreatePTYSession(_ string, _ string, _ string) (runtime.PTYSession, error) {
+ 	return nil, nil
+ }
+-func (f *fakeCodeRunner) GetPTYSession(_ string) runtime.PTYSession         { return nil }
+-func (f *fakeCodeRunner) DeletePTYSession(_ string) error                   { return nil }
+-func (f *fakeCodeRunner) GetPTYSessionStatus(_ string) (bool, int64, error) { return false, 0, nil }
++func (f *fakeCodeRunner) GetPTYSession(_ string) runtime.PTYSession { return nil }
++func (f *fakeCodeRunner) DeletePTYSession(_ string) error           { return nil }
++func (f *fakeCodeRunner) GetPTYSessionStatus(_ string) (bool, int64, *int, error) {
++	return false, 0, nil, nil
++}
+ 
+ func TestBuildExecuteCodeRequestDefaultsToCommand(t *testing.T) {
+ 	ctrl := &CodeInterpretingController{}
+diff --git a/components/execd/pkg/web/controller/pty_controller.go b/components/execd/pkg/web/controller/pty_controller.go
+index 375845c5..bbf9c174 100644
+--- a/components/execd/pkg/web/controller/pty_controller.go
++++ b/components/execd/pkg/web/controller/pty_controller.go
+@@ -91,7 +91,7 @@ func (c *PTYController) GetPTYSessionStatus() {
+ 		return
+ 	}
+ 
+-	running, offset, err := codeRunner.GetPTYSessionStatus(id)
++	running, offset, exitCode, err := codeRunner.GetPTYSessionStatus(id)
+ 	if err != nil {
+ 		if errors.Is(err, runtime.ErrContextNotFound) {
+ 			c.RespondError(
+@@ -113,6 +113,7 @@ func (c *PTYController) GetPTYSessionStatus() {
+ 		SessionID:    id,
+ 		Running:      running,
+ 		OutputOffset: offset,
++		ExitCode:     exitCode,
+ 	})
+ }
+ 
+diff --git a/components/execd/pkg/web/controller/pty_ws.go b/components/execd/pkg/web/controller/pty_ws.go
+index da20f29c..3a360ad4 100644
+--- a/components/execd/pkg/web/controller/pty_ws.go
++++ b/components/execd/pkg/web/controller/pty_ws.go
+@@ -131,8 +131,9 @@ func PTYSessionWebSocket(ctx *gin.Context) {
+ 	pipeMode := ctx.Query("pty") == "0"
+ 	since := queryInt64(ctx.Query("since"), 0)
+ 
+-	// 4. Start bash if not already running.
+-	if !session.IsRunning() {
++	// 4. Start bash only once. A terminal session stays terminal so reconnects
++	// replay its output and observe the same exit frame.
++	if !session.IsRunning() && session.Done() == nil {
+ 		var startErr error
+ 		if pipeMode {
+ 			startErr = session.StartPipe()
+@@ -284,7 +285,7 @@ func PTYSessionWebSocket(ctx *gin.Context) {
+ 
+ 	// 10d. Exit watcher: waits for the process to exit, then sends exit frame
+ 	// and closes the WS connection immediately (unblocks ReadJSON in the read loop).
+-	safego.Go(func() { ptyExitWatcher(session, writeJSON, closeConn, cancelCh, cancelOnce) })
++	safego.Go(func() { ptyExitWatcher(session, &pumpWg, writeJSON, closeConn, cancelCh, cancelOnce) })
+ 
+ 	// 11. Client read loop.
+ 	ptyClientReadLoop(conn, session, id, writeJSON, cancelCh, cancelOnce)
+@@ -344,7 +345,7 @@ func ptyStreamPump(r io.Reader, typeByte byte, name, id string, conn *websocket.
+ 
+ // ptyExitWatcher waits for the session process to exit, then sends an exit frame
+ // and closes the WS connection.
+-func ptyExitWatcher(session runtime.PTYSession, writeJSON func(any) error, closeConn func(int, string), cancelCh <-chan struct{}, cancelOnce func()) {
++func ptyExitWatcher(session runtime.PTYSession, pumpWg *sync.WaitGroup, writeJSON func(any) error, closeConn func(int, string), cancelCh <-chan struct{}, cancelOnce func()) {
+ 	doneCh := session.Done()
+ 	if doneCh == nil {
+ 		return
+@@ -354,6 +355,17 @@ func ptyExitWatcher(session runtime.PTYSession, writeJSON func(any) error, close
+ 	case <-cancelCh:
+ 		return
+ 	}
++	pumpWg.Wait()
++	if !session.OutputComplete() {
++		_ = writeJSON(model.ServerFrame{
++			Type:  "error",
++			Code:  model.WSErrCodeRuntimeError,
++			Error: "terminal output drain timed out",
++		})
++		closeConn(websocket.CloseInternalServerErr, "terminal output incomplete")
++		cancelOnce()
++		return
++	}
+ 	exitCode := session.ExitCode()
+ 	_ = writeJSON(model.ServerFrame{
+ 		Type:     "exit",
+diff --git a/components/execd/pkg/web/controller/pty_ws_test.go b/components/execd/pkg/web/controller/pty_ws_test.go
+index bcb74780..2210c04e 100644
+--- a/components/execd/pkg/web/controller/pty_ws_test.go
++++ b/components/execd/pkg/web/controller/pty_ws_test.go
+@@ -18,6 +18,8 @@
+ package controller
+ 
+ import (
++	"bytes"
++	"crypto/sha256"
+ 	"encoding/binary"
+ 	"encoding/json"
+ 	"errors"
+@@ -104,8 +106,12 @@ func wsDialExpectHTTP(t *testing.T, baseURL, path, query string) int {
+ 
+ // ptyCreateSession calls POST /pty and returns the session_id.
+ func ptyCreateSession(t *testing.T, srv *httptest.Server) string {
++	return ptyCreateSessionWithBody(t, srv, `{}`)
++}
++
++func ptyCreateSessionWithBody(t *testing.T, srv *httptest.Server, body string) string {
+ 	t.Helper()
+-	resp, err := http.Post(srv.URL+"/pty", "application/json", strings.NewReader(`{}`))
++	resp, err := http.Post(srv.URL+"/pty", "application/json", strings.NewReader(body))
+ 	require.NoError(t, err)
+ 	defer resp.Body.Close()
+ 	require.Equal(t, http.StatusCreated, resp.StatusCode)
+@@ -280,6 +286,107 @@ func TestPTYWS_ExitFrame(t *testing.T) {
+ 	require.Equal(t, 0, *f.ExitCode)
+ }
+ 
++func TestPTYWS_TerminalReconnectReplaysExactExitWithoutRestart(t *testing.T) {
++	if _, err := exec.LookPath("bash"); err != nil {
++		t.Skip("bash not found")
++	}
++	for _, code := range []int{0, 7} {
++		t.Run(fmt.Sprintf("exit_%d", code), func(t *testing.T) {
++			srv := newPTYTestServer(t)
++			defer srv.Close()
++			marker := fmt.Sprintf("terminal_once_%d", code)
++			body := fmt.Sprintf(`{"command":"printf %s; exit %d"}`, marker, code)
++			id := ptyCreateSessionWithBody(t, srv, body)
++			conn1 := wsDialPTY(t, srv.URL, "/pty/"+id+"/ws", "pty=0")
++			ptyWaitFrame(t, conn1, "connected", 10*time.Second)
++			ptyOutputContains(t, conn1, marker, 8*time.Second)
++			exit1 := ptyWaitFrame(t, conn1, "exit", 10*time.Second)
++			require.NotNil(t, exit1.ExitCode)
++			require.Equal(t, code, *exit1.ExitCode)
++			require.NoError(t, conn1.Close())
++
++			resp, err := http.Get(srv.URL + "/pty/" + id)
++			require.NoError(t, err)
++			defer resp.Body.Close()
++			var status map[string]any
++			require.NoError(t, json.NewDecoder(resp.Body).Decode(&status))
++			require.Equal(t, false, status["running"])
++			require.Equal(t, float64(code), status["exit_code"])
++
++			conn2 := wsDialPTY(t, srv.URL, "/pty/"+id+"/ws", "pty=0&since=0&takeover=1")
++			replay, err := ptyReadFrame(conn2, 10*time.Second)
++			require.NoError(t, err)
++			require.Equal(t, "replay", replay.Type)
++			require.Contains(t, replay.Data, marker)
++			connected, err := ptyReadFrame(conn2, 10*time.Second)
++			require.NoError(t, err)
++			require.Equal(t, "connected", connected.Type)
++			exit2, err := ptyReadFrame(conn2, 10*time.Second)
++			require.NoError(t, err)
++			require.Equal(t, "exit", exit2.Type)
++			require.NotNil(t, exit2.ExitCode)
++			require.Equal(t, code, *exit2.ExitCode)
++		})
++	}
++}
++
++func TestPTYWS_TerminalReconnectReplaysCompleteTail(t *testing.T) {
++	if _, err := exec.LookPath("bash"); err != nil {
++		t.Skip("bash not found")
++	}
++
++	const outputSize = 512 << 10
++	tail := []byte("terminal_tail_marker")
++	expected := append(make([]byte, outputSize), tail...)
++	expectedHash := sha256.Sum256(expected)
++	body, err := json.Marshal(map[string]string{
++		"command": "dd if=/dev/zero bs=4096 count=128 2>/dev/null; printf terminal_tail_marker; exit 7",
++	})
++	require.NoError(t, err)
++	for _, mode := range []string{"pipe", "pty"} {
++		t.Run(mode, func(t *testing.T) {
++			srv := newPTYTestServer(t)
++			defer srv.Close()
++			id := ptyCreateSessionWithBody(t, srv, string(body))
++			query := ""
++			if mode == "pipe" {
++				query = "pty=0"
++			}
++
++			conn1 := wsDialPTY(t, srv.URL, "/pty/"+id+"/ws", query)
++			ptyWaitFrame(t, conn1, "connected", 10*time.Second)
++			require.NoError(t, conn1.Close())
++
++			require.Eventually(t, func() bool {
++				resp, getErr := http.Get(srv.URL + "/pty/" + id)
++				if getErr != nil {
++					return false
++				}
++				defer resp.Body.Close()
++				var status map[string]any
++				return json.NewDecoder(resp.Body).Decode(&status) == nil && status["exit_code"] == float64(7)
++			}, 10*time.Second, 10*time.Millisecond)
++
++			reconnectQuery := "since=0&takeover=1"
++			if mode == "pipe" {
++				reconnectQuery += "&pty=0"
++			}
++			conn2 := wsDialPTY(t, srv.URL, "/pty/"+id+"/ws", reconnectQuery)
++			replay, err := ptyReadFrame(conn2, 10*time.Second)
++			require.NoError(t, err)
++			require.Equal(t, "replay", replay.Type)
++			actual := []byte(replay.Data)
++			actualHash := sha256.Sum256(actual)
++			require.Equal(t, len(expected), len(actual))
++			require.True(t, bytes.Equal(expectedHash[:], actualHash[:]), "terminal replay bytes must be exact")
++			require.Equal(t, "connected", ptyWaitFrame(t, conn2, "connected", 10*time.Second).Type)
++			exit := ptyWaitFrame(t, conn2, "exit", 10*time.Second)
++			require.NotNil(t, exit.ExitCode)
++			require.Equal(t, 7, *exit.ExitCode)
++		})
++	}
++}
++
+ func TestPTYWS_ReplayOnReconnect(t *testing.T) {
+ 	if _, err := exec.LookPath("bash"); err != nil {
+ 		t.Skip("bash not found")
+diff --git a/components/execd/pkg/web/model/pty.go b/components/execd/pkg/web/model/pty.go
+index e6d5ca0b..2661dd28 100644
+--- a/components/execd/pkg/web/model/pty.go
++++ b/components/execd/pkg/web/model/pty.go
+@@ -30,4 +30,5 @@ type PTYSessionStatusResponse struct {
+ 	SessionID    string `json:"session_id"`
+ 	Running      bool   `json:"running"`
+ 	OutputOffset int64  `json:"output_offset"`
++	ExitCode     *int   `json:"exit_code,omitempty"`
+ }

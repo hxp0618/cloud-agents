@@ -40,7 +40,7 @@ R1, R2 and R3 remain immutable historical files. The fixed candidate below recei
 - Independent review commit/tree：`3f2f9f077c8122b767a2f2947013eab1f42fedc7` /
   `8abfdb950fcf3072e0291fdc1bcca50de940de52`
 - Independent review record / SHA-256：
-  [`CAG-G-BASELINE-P0-20260823-R4-independent-review.md`](CAG-G-BASELINE-P0-20260823-R4-independent-review.md) /
+  `CAG-G-BASELINE-P0-20260823-R4-independent-review.md` (历史私有归档) /
   `44db2df153bbfcc5fa0bd4c928bbdf9b207c60c4458ec61b2e2557c7d97d4c94`
 - Inventory prerequisite record / decision SHA-256：
   - `CAG-G-INVENTORY-P0-20260810-R3`

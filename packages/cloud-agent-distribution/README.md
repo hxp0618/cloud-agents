@@ -29,7 +29,7 @@ Release validation is tarball-first:
 node scripts/cloud-agent-release-smoke.ts --output-dir /new/candidate/directory
 ```
 
-The check builds and packs all seven public packages, rejects local dependency
+The check builds and packs all nine public packages, rejects local dependency
 protocols and unpublished workspace dependencies, installs the tarballs into a fresh
 Node 24 project, exercises ESM, CommonJS, schemas, and the real bin, and then
 verifies that every tarball SHA-256 is unchanged. `--allow-dirty` exists only

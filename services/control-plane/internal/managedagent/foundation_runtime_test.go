@@ -31,10 +31,52 @@ func TestFoundationRuntimeUsesGorillaWebSocketFrameTypes(t *testing.T) {
 	}
 }
 
+func TestFoundationRuntimeSessionHealthRejectsClosedPTYStream(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+	session := &foundationRuntimeSession{done: done}
+	if err := session.checkHealth(context.Background()); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("closed Foundation Runtime health = %v", err)
+	}
+}
+
+func TestFoundationRuntimeSessionHealthRejectsStoppedPTY(t *testing.T) {
+	id := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace", Sandbox: "sandbox", Operation: "operation", Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+	running := true
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/v1/sandboxes/runtime-1" {
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "runtime-1", "metadata": id.Labels(), "status": map[string]string{"state": "Running"}})
+			return
+		}
+		if request.URL.Path == "/v1/sandboxes/runtime-1/endpoints/44772" {
+			_ = json.NewEncoder(writer).Encode(map[string]string{"endpoint": server.URL + "/v1/sandboxes/runtime-1/proxy/44772"})
+			return
+		}
+		if request.URL.Path == "/v1/sandboxes/runtime-1/proxy/44772/pty/pty-1" {
+			_ = json.NewEncoder(writer).Encode(map[string]any{"session_id": "pty-1", "running": running, "output_offset": 0})
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer server.Close()
+	client, err := opensandbox.New(server.URL, "test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &foundationRuntimeSession{client: client, pty: opensandbox.PTYInput{Identity: id, RuntimeID: "runtime-1"}, sessionID: "pty-1", done: make(chan struct{})}
+	if err := session.checkHealth(context.Background()); err != nil {
+		t.Fatalf("running Foundation PTY health = %v", err)
+	}
+	running = false
+	if err := session.checkHealth(context.Background()); !errors.Is(err, ErrRuntimeEnvironmentUnavailable) {
+		t.Fatalf("stopped Foundation PTY health = %v", err)
+	}
+}
+
 type foundationRemoteRuntimeStoreFake struct {
-	command string
-	inputs  [][]byte
-	closed  bool
+	inputs [][]byte
+	closed bool
 }
 
 func (store *foundationRemoteRuntimeStoreFake) OpenFoundationRemoteRuntime(_ context.Context, _ VerifiedPrincipalSource, _ RuntimeSessionSnapshot, _ string) (FoundationRemoteRuntimeHandle, error) {
@@ -160,7 +202,8 @@ func TestFoundationRuntimeInjectsOnlyDigestPinnedCapabilityManifest(t *testing.T
 
 func TestCloseFoundationRuntimeConnectionUsesNormalClose(t *testing.T) {
 	closeCode := make(chan int, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
 		if err != nil {
 			return

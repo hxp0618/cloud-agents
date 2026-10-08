@@ -485,7 +485,9 @@ class ClaudeAgentSdkRuntime {
         PostToolUseFailure: [{ hooks: [this.createPostToolUseFailureHook(state)] }],
       },
       ...(this.options.interactive ? { canUseTool: this.createCanUseTool(state) } : {}),
-      env: this.queryEnvironment(),
+      // Disable deferred ToolSearch through a fixed runtime setting. The CLI's
+      // bare mode also skips Provider hooks, so it cannot be used for managed runs.
+      env: { ...this.queryEnvironment(), ENABLE_TOOL_SEARCH: "false" },
     };
   }
 

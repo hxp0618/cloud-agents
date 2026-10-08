@@ -278,7 +278,7 @@ export function runnerLedgerConsumerRegistryInputs(_root: string): string[] {
     "docs/plan/p1/runner-ledger-consumer-entry-blocker-20260821.md",
     "scripts/generate-platform-runner-ledger-consumer-registry.ts",
     "scripts/lib/platform-json-semantics.ts",
-    "scripts/lib/platform-runner-ledger-consumer-registry.test.ts",
+    "test/scripts/platform-runner-ledger-consumer-registry.test.ts",
     "scripts/lib/platform-runner-ledger-consumer-registry.ts",
     "scripts/lib/platform-runner-ledger-preflight-registry.ts",
   ].toSorted();

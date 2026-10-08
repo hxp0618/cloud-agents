@@ -41,6 +41,7 @@ import {
   type SavedAdminConnection,
 } from "../admin";
 import { newRequestId } from "../admin";
+import type { Page } from "../navigation";
 
 export type AdminWorkspaceData = Readonly<{
   targets: Readonly<{ targets: readonly DeploymentTarget[]; selectedTargetId: string }>;
@@ -62,6 +63,66 @@ export type AdminWorkspaceData = Readonly<{
   quotaAudit: readonly AdminAuditEvent[];
   maintenanceOperations: readonly MaintenanceOperation[];
 }>;
+
+export type AdminPageData = Readonly<{
+  data: Partial<AdminWorkspaceData>;
+  errors: Partial<Record<keyof AdminWorkspaceData, unknown>>;
+}>;
+
+export type AdminPollPlan = Readonly<{
+  targets: boolean;
+  leases: boolean;
+  workers: boolean;
+  sandboxes: boolean;
+  workspaceSnapshots: boolean;
+}>;
+
+export async function loadAdminPollData(
+  client: AdminClient,
+  connection: SavedAdminConnection,
+  selectedTargetId: string,
+  selectedLeaseId: string,
+  plan: AdminPollPlan,
+  signal: AbortSignal,
+): Promise<AdminPageData> {
+  const args = [client, connection.tenantId, connection.projectId, signal] as const;
+  const loaders = {
+    targets: () => loadTargetAuthority(client, connection, selectedTargetId, signal),
+    leases: () => loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+    workers: () => listAdminWorkers(...args),
+    sandboxes: () => listAdminSandboxes(...args),
+    workspaceSnapshots: () => listAdminWorkspaceSnapshots(...args),
+  };
+  const resources = (Object.keys(plan) as (keyof AdminPollPlan)[]).filter(
+    (resource) => plan[resource],
+  );
+  const results = await Promise.allSettled(resources.map((resource) => loaders[resource]()));
+  const data: Partial<AdminWorkspaceData> = {};
+  const errors: Partial<Record<keyof AdminWorkspaceData, unknown>> = {};
+  results.forEach((result, index) => {
+    const resource = resources[index]!;
+    if (result.status === "fulfilled") Object.assign(data, { [resource]: result.value });
+    else errors[resource] = result.reason;
+  });
+  return { data, errors };
+}
+
+const pageResources = {
+  overview: ["targets", "leases", "workers", "maintenanceOperations"],
+  targets: ["targets"],
+  remoteWorkers: [],
+  sandboxes: ["sandboxes", "runtimeProfiles"],
+  leases: ["leases", "targets", "releases"],
+  workers: ["targets", "leases", "workers"],
+  releases: ["releases"],
+  runtimeProfiles: ["runtimeProfiles", "targets", "networkPolicies"],
+  profiles: ["profiles", "releases", "storagePolicies", "networkPolicies"],
+  storage: ["storagePolicies", "profiles", "workspaceSnapshots", "sandboxes", "runtimeProfiles"],
+  network: ["networkPolicies", "profiles", "runtimeProfiles"],
+  capabilities: ["mcpServers", "skillBundles"],
+  quotas: ["quota", "quotaAudit"],
+  maintenance: ["maintenanceOperations"],
+} as const satisfies Record<Page, readonly (keyof AdminWorkspaceData)[]>;
 
 export async function loadTargetAuthority(
   client: AdminClient,
@@ -171,60 +232,34 @@ export async function loadAdminWorkspaceData(
   selectedLeaseId: string,
   selectedProfileVersionId: string,
   signal: AbortSignal,
-): Promise<AdminWorkspaceData> {
-  const [
-    targets,
-    leases,
-    workers,
-    releases,
-    profiles,
-    runtimeProfiles,
-    sandboxes,
-    workspaceSnapshots,
-    storagePolicies,
-    networkPolicies,
-    mcpServers,
-    skillBundles,
-    quota,
-    quotaAudit,
-    maintenanceOperations,
-  ] = await Promise.all([
-    loadTargetAuthority(client, connection, selectedTargetId, signal),
-    loadLeaseAuthority(client, connection, selectedLeaseId, signal),
-    listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
-    listAdminReleases(client, connection.tenantId, connection.projectId, signal),
-    loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
-    listAdminRuntimeProfiles(client, connection.tenantId, connection.projectId, signal),
-    listAdminSandboxes(client, connection.tenantId, connection.projectId, signal),
-    listAdminWorkspaceSnapshots(client, connection.tenantId, connection.projectId, signal),
-    listAdminStoragePolicies(client, connection.tenantId, connection.projectId, signal),
-    listAdminNetworkPolicies(client, connection.tenantId, connection.projectId, signal),
-    listAdminMcpServers(client, connection.tenantId, connection.projectId, signal),
-    listAdminSkillBundles(client, connection.tenantId, connection.projectId, signal),
-    loadAdminProjectLeaseQuota(client, connection.tenantId, connection.projectId, signal),
-    listAdminProjectLeaseQuotaAuditEvents(
-      client,
-      connection.tenantId,
-      connection.projectId,
-      signal,
-    ),
-    listAdminMaintenanceOperations(client, connection.tenantId, connection.projectId, signal),
-  ]);
-  return Object.freeze({
-    targets,
-    leases,
-    workers,
-    releases,
-    profiles,
-    runtimeProfiles,
-    sandboxes,
-    workspaceSnapshots,
-    storagePolicies,
-    networkPolicies,
-    mcpServers,
-    skillBundles,
-    quota,
-    quotaAudit,
-    maintenanceOperations,
+  page: Page,
+): Promise<AdminPageData> {
+  const args = [client, connection.tenantId, connection.projectId, signal] as const;
+  const loaders = {
+    targets: () => loadTargetAuthority(client, connection, selectedTargetId, signal),
+    leases: () => loadLeaseAuthority(client, connection, selectedLeaseId, signal),
+    workers: () => listAdminWorkers(...args),
+    releases: () => listAdminReleases(...args),
+    profiles: () => loadProfileAuthority(client, connection, selectedProfileVersionId, signal),
+    runtimeProfiles: () => listAdminRuntimeProfiles(...args),
+    sandboxes: () => listAdminSandboxes(...args),
+    workspaceSnapshots: () => listAdminWorkspaceSnapshots(...args),
+    storagePolicies: () => listAdminStoragePolicies(...args),
+    networkPolicies: () => listAdminNetworkPolicies(...args),
+    mcpServers: () => listAdminMcpServers(...args),
+    skillBundles: () => listAdminSkillBundles(...args),
+    quota: () => loadAdminProjectLeaseQuota(...args),
+    quotaAudit: () => listAdminProjectLeaseQuotaAuditEvents(...args),
+    maintenanceOperations: () => listAdminMaintenanceOperations(...args),
+  };
+  const resources = pageResources[page];
+  const results = await Promise.allSettled(resources.map((resource) => loaders[resource]()));
+  const data = {};
+  const errors: Partial<Record<keyof AdminWorkspaceData, unknown>> = {};
+  results.forEach((result, index) => {
+    const resource = resources[index]!;
+    if (result.status === "fulfilled") Object.assign(data, { [resource]: result.value });
+    else errors[resource] = result.reason;
   });
+  return { data, errors };
 }

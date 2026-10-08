@@ -23,7 +23,7 @@ Go 官方 vulnerability record 把 [`GO-2026-5970`](https://pkg.go.dev/vuln/GO-2
 结果为 tag 比修复 commit ahead 1、behind 0。候选闭包上的 `govulncheck v1.6.0` module scan 与 symbol scan
 都返回 0，OSV 对六个 production module 和两个 graph-only upgrade 的 exact-version 查询均为空。
 
-因此，**这个 exact pin 足以解除 [pgx v5.10.0 review](./pgx-v5.10.0.md) 中唯一的 dependency
+因此，**这个 exact pin 足以解除 `pgx-v5.10.0.md` (历史私有归档) 中唯一的 dependency
 vulnerability blocker，并使该 pgx 选择在本记录的边界内可接受。** 但原 pgx 文档与项目状态不得因本记录自动
 改写：只有实施者把审查后的版本与 checksum 落入 `services/control-plane/go.mod`、相邻 `go.sum`、dependency
 lock、SBOM/license inventory/notice，并在真实 Control Plane source 上重放检查后，才能把 pgx review 从
@@ -319,7 +319,7 @@ GOBIN="$review_bin" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
   [`x/mod@v0.37.0`](https://sum.golang.org/lookup/golang.org/x/mod@v0.37.0)、
   [`x/tools@v0.47.0`](https://sum.golang.org/lookup/golang.org/x/tools@v0.47.0)
 - Vulnerability authority：[`GO-2026-5970`](https://vuln.go.dev/ID/GO-2026-5970.json)
-- Repository decision chain：[pgx review](./pgx-v5.10.0.md)、本记录；实施后的长期 authority 是
+- Repository decision chain：`pgx-v5.10.0.md` (历史私有归档)、本记录；实施后的长期 authority 是
   `services/control-plane/go.mod`、相邻 `go.sum`、generation/dependency lock、SBOM、license inventory 与
   `THIRD_PARTY_NOTICES`
 

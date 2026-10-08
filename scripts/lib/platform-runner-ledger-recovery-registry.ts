@@ -410,7 +410,7 @@ export const RUNNER_LEDGER_RECOVERY_GENERATOR_SOURCES = [
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/platform-runner-ledger-consumer-registry.ts",
   "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
-  "scripts/lib/platform-runner-ledger-recovery-registry.test.ts",
+  "test/scripts/platform-runner-ledger-recovery-registry.test.ts",
   "scripts/lib/platform-runner-ledger-recovery-registry.ts",
 ] as const;
 

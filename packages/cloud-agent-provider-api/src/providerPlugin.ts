@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
 import type {
@@ -191,18 +192,24 @@ export function createProviderPlugin(options: ProviderPluginOptions): CloudAgent
           if (closePromise) return closePromise;
           closed = true;
           closePromise = (async () => {
+            let stopFailure: Error | undefined;
             try {
               if (lastCommand) {
+                const identity = randomUUID();
                 const stopCommand: CloudAgentCommandEnvelope = {
                   ...lastCommand,
-                  requestId: `${lastCommand.requestId}:close`,
-                  commandId: `${lastCommand.commandId}:close`,
+                  requestId: `provider-close-${identity}`,
+                  commandId: `provider-close-${identity}`,
                   commandType: "StopSession",
                   occurredAt: new Date().toISOString(),
                   payload: {},
                 };
                 suppressedCommandIds.add(stopCommand.commandId);
-                await handle(stopCommand).catch(() => undefined);
+                try {
+                  stopFailure = stopSessionFailure(terminalMessage(await handle(stopCommand)));
+                } catch (cause) {
+                  stopFailure = new Error("Cloud Agent Provider StopSession failed.", { cause });
+                }
               }
               artifactAbort.abort(new Error("Cloud Agent Provider session is closing."));
               const timeoutMs = options.closeTaskTimeoutMs ?? DEFAULT_CLOSE_TASK_TIMEOUT_MS;
@@ -221,6 +228,7 @@ export function createProviderPlugin(options: ProviderPluginOptions): CloudAgent
                   },
                 );
               }
+              if (stopFailure) throw stopFailure;
             } finally {
               artifactAbort.abort(new Error("Cloud Agent Provider session is closed."));
               events.close();
@@ -564,12 +572,23 @@ function interruptCommand(
   ) {
     return undefined;
   }
+  const identity = randomUUID();
   return {
     ...command,
-    requestId: `${command.requestId}:abort`,
-    commandId: `${command.commandId}:abort`,
+    requestId: `provider-abort-${identity}`,
+    commandId: `provider-abort-${identity}`,
     commandType: "InterruptTurn",
     occurredAt: new Date().toISOString(),
     payload: { targetCommandId: command.commandId },
   };
+}
+
+function stopSessionFailure(terminal: CloudAgentMessageEnvelope): Error | undefined {
+  if (terminal.messageType === "Error") {
+    return new Error(`Cloud Agent Provider StopSession failed with ${terminal.error.code}.`);
+  }
+  const outcome = (terminal.payload as Readonly<Record<string, unknown>>).outcome;
+  if (outcome === "quiesced" || outcome === "forced") return undefined;
+  const detail = outcome === "timed-out" ? "timed out" : String(outcome ?? "failed");
+  return new Error(`Cloud Agent Provider StopSession ${detail}.`);
 }

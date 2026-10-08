@@ -2,12 +2,13 @@
   "name": "@cloud-agents/admin-web",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run test"
   },
   "dependencies": {
     "@cloud-agents/cloud-agent-platform-sdk": "workspace:*",

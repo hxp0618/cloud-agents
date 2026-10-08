@@ -52,13 +52,6 @@ import {
   buildAjvOfficialSuiteAudit,
 } from "./platform-ajv-official-suite";
 import {
-  assertContractClosureProfileRegistryCurrent,
-  buildContractClosureProfileRegistry,
-  contractClosureProfileInputs,
-  CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
-  CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH,
-} from "./platform-contract-closure-profile";
-import {
   assertCompatibilityRecoveryRegistryCurrent,
   assertCompatibilityRecoveryRegistryV2Current,
   buildCompatibilityRecoveryRegistry,
@@ -180,11 +173,11 @@ const CONTRACT_STANDARDS_FIXED_INPUTS = [
   "tools/contract-standards/pyproject.toml",
   "tools/contract-standards/uv.lock",
   "tools/contract-standards/check_contract_standards.py",
-  "tools/contract-standards/test_contract_standards.py",
+  "test/scripts/test_contract_standards.py",
   "scripts/check-platform-contract-standards.ts",
-  "scripts/check-platform-contract-standards.test.ts",
+  "test/scripts/check-platform-contract-standards.test.ts",
   "scripts/lib/platform-contract-standards-profile.ts",
-  "scripts/lib/platform-contract-standards-profile.test.ts",
+  "test/scripts/platform-contract-standards-profile.test.ts",
 ] as const;
 
 export type SuccessorLockFileRecord = Readonly<{
@@ -277,7 +270,7 @@ const IDENTITY_GO_ENVELOPE_INPUTS = [
   "sdk/go/go.sum",
   "sdk/go/doc.go",
   "sdk/go/THIRD_PARTY_NOTICES.md",
-  "sdk/go/gen/common/v1alpha1/identity_generated_test.go",
+  "sdk/go/test/common/identity_test.go",
 ] as const;
 const IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS = [
   "package.json",
@@ -286,28 +279,28 @@ const IDENTITY_TYPESCRIPT_ENVELOPE_INPUTS = [
   "sdk/typescript/tsconfig.json",
   "sdk/typescript/LICENSE",
   "sdk/typescript/README.md",
-  "sdk/typescript/src/identity.test.ts",
+  "sdk/typescript/test/identity.test.ts",
 ] as const;
 const PROTO_GO_ENVELOPE_INPUTS = [
   "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
   "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
-  "scripts/test-platform-sdk-consumers.ts",
+  "test/scripts/test-platform-sdk-consumers.ts",
   "sdk/go/go.mod",
   "sdk/go/go.sum",
   "sdk/go/THIRD_PARTY_NOTICES.md",
-  "sdk/go/proto_conformance_test.go",
+  "sdk/go/test/proto_test.go",
 ] as const;
 const PROTO_TYPESCRIPT_ENVELOPE_INPUTS = [
   "docs/plan/p1/dependency-reviews/proto-sdk-toolchain-20260821.md",
   "docs/plan/p1/sdk-proto-consumer-closure-20260821.md",
   "package.json",
   "bun.lock",
-  "scripts/test-platform-sdk-consumers.ts",
+  "test/scripts/test-platform-sdk-consumers.ts",
   "sdk/typescript/package.json",
   "sdk/typescript/tsconfig.json",
   "sdk/typescript/THIRD_PARTY_NOTICES.md",
   "sdk/typescript/README.md",
-  "sdk/typescript/src/proto.test.ts",
+  "sdk/typescript/test/proto.test.ts",
 ] as const;
 const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "docs/plan/adr/0009-p1-migration-bundle-runner.md",
@@ -318,15 +311,15 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json",
   "scripts/check-platform-migration-bundle.ts",
   "scripts/generate-platform-migration-bundle.ts",
-  "scripts/lib/platform-migration-bundle.test.ts",
+  "test/scripts/platform-migration-bundle.test.ts",
   "scripts/lib/platform-migration-bundle.ts",
-  "scripts/lib/platform-migration-evidence.test.ts",
+  "test/scripts/platform-migration-evidence.test.ts",
   "scripts/lib/platform-migration-evidence.ts",
-  "scripts/lib/platform-migration-json.test.ts",
+  "test/scripts/platform-migration-json.test.ts",
   "scripts/lib/platform-migration-json.ts",
-  "scripts/lib/platform-migration-projection.test.ts",
+  "test/scripts/platform-migration-projection.test.ts",
   "scripts/lib/platform-migration-projection.ts",
-  "scripts/lib/platform-migration-sql.test.ts",
+  "test/scripts/platform-migration-sql.test.ts",
   "scripts/lib/platform-migration-sql.ts",
   "scripts/lib/platform-migration-ustar.ts",
   "services/control-plane/migrations/000001_expand_migration_kernel.sql",
@@ -346,11 +339,11 @@ const PLATFORM_MIGRATION_FIXED_INPUTS = [
   "services/control-plane/migrations/bootstrap/roles.sql",
   "services/control-plane/migrations/manifest.json",
   "services/control-plane/migrations/schema-bundle.json",
-  "services/control-plane/scripts/test-durable-coordination-kernel-postgres-matrix.sh",
-  "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
-  "services/control-plane/scripts/test-compatibility-recovery-kernel-postgres-matrix.sh",
-  "services/control-plane/scripts/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
-  "services/control-plane/scripts/test-compatibility-recovery-service-postgres-matrix.sh",
+  "services/control-plane/test/test-durable-coordination-kernel-postgres-matrix.sh",
+  "services/control-plane/test/test-durable-coordination-service-postgres-matrix.sh",
+  "services/control-plane/test/test-compatibility-recovery-kernel-postgres-matrix.sh",
+  "services/control-plane/test/test-compatibility-recovery-preflight-retirement-postgres-matrix.sh",
+  "services/control-plane/test/test-compatibility-recovery-service-postgres-matrix.sh",
 ] as const;
 const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
   "services/control-plane/migrations/archive",
@@ -360,7 +353,7 @@ const PLATFORM_MIGRATION_INPUT_DIRECTORIES = [
 const NORMALIZED_MANIFEST_ALGORITHM = "sorted-path-nul-sha256-nul-git-mode-v1";
 const DURABLE_COORDINATION_GENERATOR_SOURCES = [
   "scripts/generate-platform-durable-coordination-registry.ts",
-  "scripts/lib/platform-durable-coordination-registry.test.ts",
+  "test/scripts/platform-durable-coordination-registry.test.ts",
   "scripts/lib/platform-durable-coordination-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
@@ -377,7 +370,7 @@ const COMPATIBILITY_RECOVERY_GENERATOR_SOURCES = [
   "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json",
   "contracts/platform/v1alpha1/schemas/compatibility-recovery-registry-v1.schema.json",
   "scripts/generate-platform-compatibility-recovery-registry.ts",
-  "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+  "test/scripts/platform-compatibility-recovery-registry.test.ts",
   "scripts/lib/platform-compatibility-recovery-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
@@ -390,7 +383,7 @@ const COMPATIBILITY_RECOVERY_V2_GENERATOR_SOURCES = [
   "services/control-plane/migrations/catalog/schema-000010.json",
   "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql",
   "scripts/generate-platform-compatibility-recovery-registry.ts",
-  "scripts/lib/platform-compatibility-recovery-registry.test.ts",
+  "test/scripts/platform-compatibility-recovery-registry.test.ts",
   "scripts/lib/platform-compatibility-recovery-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
@@ -408,7 +401,7 @@ const RUNNER_LEDGER_PREFLIGHT_GENERATOR_SOURCES = [
   "contracts/platform/v1alpha1/schemas/runner-ledger-preflight-registry-source-v1.schema.json",
   "contracts/platform/v1alpha1/schemas/runner-ledger-preflight-registry-v1.schema.json",
   "scripts/generate-platform-runner-ledger-preflight-registry.ts",
-  "scripts/lib/platform-runner-ledger-preflight-registry.test.ts",
+  "test/scripts/platform-runner-ledger-preflight-registry.test.ts",
   "scripts/lib/platform-runner-ledger-preflight-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
@@ -427,7 +420,7 @@ const RUNNER_LEDGER_CONSUMER_GENERATOR_SOURCES = [
   "contracts/platform/v1alpha1/schemas/runner-ledger-consumer-registry-v1.schema.json",
   RUNNER_LEDGER_PREFLIGHT_OUTPUT_PATH,
   "scripts/generate-platform-runner-ledger-consumer-registry.ts",
-  "scripts/lib/platform-runner-ledger-consumer-registry.test.ts",
+  "test/scripts/platform-runner-ledger-consumer-registry.test.ts",
   "scripts/lib/platform-runner-ledger-consumer-registry.ts",
   "scripts/lib/platform-runner-ledger-preflight-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
@@ -450,7 +443,7 @@ const RUNNER_LEDGER_ENTRY_ADMISSION_GENERATOR_SOURCES = [
   "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/platform-runner-ledger-consumer-registry.ts",
-  "scripts/lib/platform-runner-ledger-entry-admission-registry.test.ts",
+  "test/scripts/platform-runner-ledger-entry-admission-registry.test.ts",
   "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
 ] as const;
 const RUNNER_LEDGER_ENTRY_ADMISSION_GO_GENERATOR_SOURCES = [
@@ -474,7 +467,7 @@ const RUNNER_LEDGER_ENTRY_WRITER_REGISTRY_GENERATOR_SOURCES = [
   "scripts/generate-platform-runner-ledger-entry-writer-registries.ts",
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
-  "scripts/lib/platform-runner-ledger-entry-writer-registry.test.ts",
+  "test/scripts/platform-runner-ledger-entry-writer-registry.test.ts",
   "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
 ] as const;
 const RUNNER_LEDGER_ENTRY_WRITER_GO_GENERATOR_SOURCES = [
@@ -493,7 +486,7 @@ const RUNNER_LEDGER_RECOVERY_GO_OUTPUT_PATH =
   "services/control-plane/internal/migration/runner_ledger_recovery_profile_generated.go";
 const IDENTITY_VERIFIER_REGISTRY_GENERATOR_SOURCES = [
   "scripts/generate-platform-identity-verifier-registry.ts",
-  "scripts/lib/platform-identity-verifier-registry.test.ts",
+  "test/scripts/platform-identity-verifier-registry.test.ts",
   "scripts/lib/platform-identity-verifier-registry.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
@@ -501,21 +494,6 @@ const IDENTITY_VERIFIER_GO_GENERATOR_SOURCES = [
   "scripts/generate-platform-identity-verifier-go.ts",
   "scripts/lib/platform-identity-verifier-go.ts",
   "scripts/lib/platform-identity-verifier-registry.ts",
-  "scripts/lib/platform-json-semantics.ts",
-] as const;
-const CONTRACT_CLOSURE_PROFILE_GENERATOR_SOURCES = [
-  "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v1.json",
-  "contracts/platform/v1alpha1/fixtures/golden/contract-closure-profile-source-v2.json",
-  "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v1.schema.json",
-  "contracts/platform/v1alpha1/schemas/contract-closure-profile-v1.schema.json",
-  "contracts/platform/v1alpha1/schemas/contract-closure-profile-source-v2.schema.json",
-  "contracts/platform/v1alpha1/schemas/contract-closure-profile-v2.schema.json",
-  "docs/plan/adr/0026-p1-json-schema-official-suite-evidence-closure.md",
-  "docs/plan/p1/g-contract-r5-formal-closure-profile-implementation-20260824.md",
-  "docs/plan/p1/g-contract-r5-b2-official-suite-evidence-closure-20260824.md",
-  "scripts/generate-platform-contract-closure-profile.ts",
-  "scripts/lib/platform-contract-closure-profile.test.ts",
-  "scripts/lib/platform-contract-closure-profile.ts",
   "scripts/lib/platform-json-semantics.ts",
 ] as const;
 export const IDENTITY_VERIFIER_RUNTIME_SOURCES = [
@@ -543,15 +521,15 @@ export const IDENTITY_VERIFIER_RUNTIME_SOURCES = [
   "services/control-plane/internal/store/postgres/rbac.go",
   "services/control-plane/internal/store/postgres/rbac_integration_test.go",
   "services/control-plane/internal/store/postgres/rbac_mutation.go",
-  "services/control-plane/internal/store/postgres/rbac_mutation_integration_test.go",
+  "services/control-plane/test/postgres_rbac_mutation_integration_test.go",
   "services/control-plane/internal/store/postgres/rbac_mutation_test.go",
   "services/control-plane/internal/store/postgres/rbac_test.go",
   "services/control-plane/internal/store/postgres/tenant_transaction.go",
   "services/control-plane/internal/store/postgres/tenant_transaction_integration_test.go",
   "services/control-plane/internal/store/postgres/tenant_transaction_test.go",
-  "services/control-plane/internal/store/postgres/verified_operation_structure_test.go",
-  "services/control-plane/scripts/test-durable-coordination-service-postgres-matrix.sh",
-  "services/control-plane/scripts/test-membership-rbac-postgres-matrix.sh",
+  "services/control-plane/test/postgres_verified_operation_structure_test.go",
+  "services/control-plane/test/test-durable-coordination-service-postgres-matrix.sh",
+  "services/control-plane/test/test-membership-rbac-postgres-matrix.sh",
 ] as const;
 
 const IN_REPO_TOOLS = [
@@ -562,7 +540,9 @@ const IN_REPO_TOOLS = [
     sources: [
       "scripts/check-platform-contracts.ts",
       "scripts/lib/platform-contracts.ts",
-      "scripts/lib/platform-contract-closure-profile.ts",
+      "scripts/lib/platform-contract-closure-profile-v3.ts",
+      "scripts/lib/platform-contract-closure-profile-successor.ts",
+      "scripts/lib/platform-successor-predecessor.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -581,7 +561,7 @@ const IN_REPO_TOOLS = [
       "scripts/check-platform-go-modules.ts",
       "scripts/go/importcheck/main.go",
       "scripts/lib/platform-go-modules.ts",
-      "services/control-plane/internal/modpolicy/policy_test.go",
+      "services/control-plane/test/modpolicy_policy_test.go",
     ],
   },
   {
@@ -590,10 +570,12 @@ const IN_REPO_TOOLS = [
     entrypoint: "scripts/generate-platform-contract-lock.ts",
     sources: [
       "scripts/generate-platform-contract-lock.ts",
-      "scripts/lib/platform-contract-lock.test.ts",
+      "test/scripts/platform-contract-lock.test.ts",
       "scripts/lib/platform-contract-lock.ts",
       "scripts/lib/platform-contracts.ts",
-      "scripts/lib/platform-contract-closure-profile.ts",
+      "scripts/lib/platform-contract-closure-profile-v3.ts",
+      "scripts/lib/platform-contract-closure-profile-successor.ts",
+      "scripts/lib/platform-successor-predecessor.ts",
       "scripts/lib/platform-compatibility-recovery-registry.ts",
       "scripts/lib/platform-durable-coordination-registry.ts",
       "scripts/lib/platform-runner-ledger-preflight-registry.ts",
@@ -608,12 +590,6 @@ const IN_REPO_TOOLS = [
       "scripts/lib/platform-go-modules.ts",
       "scripts/lib/platform-json-semantics.ts",
     ],
-  },
-  {
-    id: "platform-contract-closure-profile-generator",
-    kind: "in-repo-typescript-deterministic-versioned-contract-closure-profile",
-    entrypoint: "scripts/generate-platform-contract-closure-profile.ts",
-    sources: CONTRACT_CLOSURE_PROFILE_GENERATOR_SOURCES,
   },
   {
     id: "platform-durable-coordination-registry-generator",
@@ -755,7 +731,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   assertRunnerLedgerRecoveryRegistriesCurrent(root);
   assertIdentityVerifierRegistryCurrent(root);
   assertAjvOfficialSuiteAuditCurrent(root);
-  assertContractClosureProfileRegistryCurrent(root);
   assertIdentityVerifierGoCurrent(root);
   assertIdentitySDKCurrent(root);
   assertPlatformJSONSDKCurrent(root);
@@ -773,7 +748,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
   const runnerLedgerRecoveryInputs = runnerLedgerRecoveryRegistryInputs(root);
   const identityVerifierInputs = identityVerifierRegistryInputs(root);
   const ajvOfficialSuiteInputs = ajvOfficialSuiteAuditInputs(root);
-  const contractClosureInputs = contractClosureProfileInputs(root);
   const identityVerifierGoInputs = [
     ...identityVerifierInputs,
     IDENTITY_VERIFIER_OUTPUT_PATH,
@@ -906,20 +880,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
     readonly status: string;
     readonly conformanceClaim: boolean;
     readonly summary: Readonly<Record<string, number>>;
-  };
-  const contractClosureRegistry = buildContractClosureProfileRegistry(root) as unknown as {
-    readonly registryDigest: string;
-    readonly missing: ReadonlyArray<string>;
-    readonly predecessor: Readonly<Record<string, string>>;
-    readonly officialSuiteEvidence: {
-      readonly independentOracle: Readonly<Record<string, number | string>>;
-      readonly productionAjvAudit: Readonly<Record<string, number | string | boolean>>;
-      readonly currentContractParity: Readonly<Record<string, number | string | boolean>>;
-    };
-    readonly profile: {
-      readonly profileDigest: string;
-      readonly spec: { readonly profileId: string; readonly status: string };
-    };
   };
   const identityVerifierProfile = identityVerifierRegistry.profile as {
     readonly profileId: string;
@@ -1137,49 +1097,6 @@ export function buildPlatformContractLock(root: string): Record<string, unknown>
           ...ajvOfficialSuiteAudit.summary,
           closureCriterion: "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
           auditAloneConformanceEvidence: false,
-          gateStatus: "ALL_GATES_OPEN",
-        },
-      },
-      {
-        id: "contract-closure-profile-generation",
-        inputManifestAlgorithm: NORMALIZED_MANIFEST_ALGORITHM,
-        inputManifestSha256: normalizedSourceManifestDigest(root, contractClosureInputs),
-        inputs: contractClosureInputs,
-        outputStatus: "GENERATED_CONTRACT_CLOSURE_PROFILE",
-        notGateClosure: true,
-        generatedOutputs: [
-          {
-            path: CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH,
-            sha256: fileSha256(root, CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH),
-            sizeBytes: readFileSync(resolve(root, CONTRACT_CLOSURE_PROFILE_V1_OUTPUT_PATH))
-              .byteLength,
-          },
-          {
-            path: CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH,
-            sha256: fileSha256(root, CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH),
-            sizeBytes: readFileSync(resolve(root, CONTRACT_CLOSURE_PROFILE_OUTPUT_PATH)).byteLength,
-          },
-        ],
-        outputSummary: {
-          registryDigest: contractClosureRegistry.registryDigest,
-          profileId: contractClosureRegistry.profile.spec.profileId,
-          profileDigest: contractClosureRegistry.profile.profileDigest,
-          status: contractClosureRegistry.profile.spec.status,
-          missing: contractClosureRegistry.missing,
-          manualMissingRemoval: "FORBIDDEN",
-          predecessor: contractClosureRegistry.predecessor,
-          independentOracle: contractClosureRegistry.officialSuiteEvidence.independentOracle,
-          productionAjvAudit: contractClosureRegistry.officialSuiteEvidence.productionAjvAudit,
-          currentContractParity:
-            contractClosureRegistry.officialSuiteEvidence.currentContractParity,
-          contractManifestSha256: summary.contractManifestSha256,
-          officialSuiteCriterion: "SATISFIED_CANDIDATE_BY_COMPOSITE_EVIDENCE",
-          ajvGenericConformanceClaim: false,
-          runtimeTrustAndHttp: "NOT_IMPLEMENTED",
-          supplyScanner: "NOT_IMPLEMENTED",
-          productionDatabaseWrites: "NOT_AUTHORIZED",
-          deployment: "NOT_AUTHORIZED",
-          publication: "NOT_AUTHORIZED",
           gateStatus: "ALL_GATES_OPEN",
         },
       },
@@ -2143,7 +2060,7 @@ export function assertPlatformContractLockCurrent(root: string): void {
   const actual = readFileSync(resolve(root, "contracts/generation.lock.json"), "utf8");
   if (actual !== expected) {
     throw new Error(
-      "contracts/generation.lock.json is stale; run bun scripts/generate-platform-contract-lock.ts --write.",
+      "contracts/generation.lock.json is a frozen predecessor and is stale; do not run --write. Use the versioned successor generator only in its authorized slice.",
     );
   }
 }

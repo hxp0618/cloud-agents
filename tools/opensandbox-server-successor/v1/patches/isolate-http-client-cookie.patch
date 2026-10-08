@@ -1,0 +1,30 @@
+diff --git a/server/opensandbox_server/api/proxy.py b/server/opensandbox_server/api/proxy.py
+index caf1212..ed6e901 100644
+--- a/server/opensandbox_server/api/proxy.py
++++ b/server/opensandbox_server/api/proxy.py
+@@ -145,6 +145,17 @@ def _filter_proxy_headers(
+     return forwarded
+ 
+ 
++def _bind_endpoint_cookie_authority(
++    request: httpx.Request, headers: Mapping[str, str]
++) -> None:
++    """Discard process-scoped cookie-jar state while preserving endpoint authority."""
++    cookie = httpx.Headers(headers).get("cookie")
++    if cookie is None:
++        request.headers.pop("cookie", None)
++        return
++    request.headers["cookie"] = cookie
++
++
+ def _set_forwarded_headers(
+     headers: dict[str, str], request: Request | WebSocket
+ ) -> None:
+@@ -292,6 +303,7 @@ async def _proxy_http_request(
+             headers=headers,
+             content=request.stream() if stream_body else None,
+         )
++        _bind_endpoint_cookie_authority(req, headers)
+ 
+         resp = await client.send(req, stream=True)
+ 

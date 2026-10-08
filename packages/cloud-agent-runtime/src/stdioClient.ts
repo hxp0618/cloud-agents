@@ -15,11 +15,7 @@ import {
   type CloudAgentCommandEnvelope,
   type CloudAgentMessageEnvelope,
 } from "@cloud-agents/cloud-agent-protocol";
-import {
-  CLOUD_AGENT_ENVIRONMENT,
-  readCloudAgentEnvironment,
-  writeCloudAgentEnvironment,
-} from "@cloud-agents/cloud-agent-provider-api";
+import { CLOUD_AGENT_ENVIRONMENT } from "@cloud-agents/cloud-agent-provider-api";
 
 const CLOUD_AGENT_MAX_IN_FLIGHT_COMMANDS = 128;
 const CLOUD_AGENT_CREDENTIAL_CHILD_FD = 3;
@@ -118,9 +114,13 @@ export function createCloudAgentStdioClient(
     consumePromise = consumePromise.then(() => {
       if (stdoutBuffer.length > 0) {
         failProtocol("Cloud Agent Runtime closed stdout with an incomplete NDJSON frame.");
+        return;
       }
+      failProtocol("Cloud Agent Runtime closed stdout before the process exited.");
     });
   });
+  process.stdin.on("error", (cause) => failProtocol("Failed to write Cloud Agent command.", cause));
+  process.stdout.on("error", (cause) => failProtocol("Cloud Agent Runtime stdout failed.", cause));
   process.once("error", (cause) => {
     closed = true;
     rejectAll(errorWithCause("Cloud Agent Runtime failed to start.", cause));
@@ -265,10 +265,23 @@ export function createCloudAgentStdioClient(
 
     try {
       if (!process.stdin.write(frame)) {
-        await Promise.race([
-          new Promise<void>((resolve) => process.stdin.once("drain", resolve)),
-          terminal.then(() => undefined),
-        ]);
+        let onDrain = () => {};
+        try {
+          await Promise.race([
+            new Promise<void>((resolve) => {
+              onDrain = resolve;
+              process.stdin.once("drain", resolve);
+            }),
+            // Abort rejects terminal while the tombstone stays pending; that is
+            // not a write failure.
+            terminal.then(
+              () => undefined,
+              () => undefined,
+            ),
+          ]);
+        } finally {
+          process.stdin.off("drain", onDrain);
+        }
       }
     } catch (cause) {
       const current = pending.get(command.commandId);
@@ -349,10 +362,7 @@ function environmentForChild(
     if (value === undefined) delete environment[name];
     else environment[name] = value;
   }
-  const configuredFd = readCloudAgentEnvironment(
-    overrides ?? {},
-    CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
-  );
+  const configuredFd = overrides?.[CLOUD_AGENT_ENVIRONMENT.providerCredentialFd];
   if (credentialFd !== undefined) {
     if (configuredFd !== undefined && configuredFd !== String(CLOUD_AGENT_CREDENTIAL_CHILD_FD)) {
       throw new Error(
@@ -361,10 +371,8 @@ function environmentForChild(
     }
     // Node maps the caller-owned descriptor into the fourth stdio slot, so
     // the child must always read fd 3 rather than the caller's descriptor id.
-    writeCloudAgentEnvironment(
-      environment,
-      CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
-      String(CLOUD_AGENT_CREDENTIAL_CHILD_FD),
+    environment[CLOUD_AGENT_ENVIRONMENT.providerCredentialFd] = String(
+      CLOUD_AGENT_CREDENTIAL_CHILD_FD,
     );
   }
   return environment;

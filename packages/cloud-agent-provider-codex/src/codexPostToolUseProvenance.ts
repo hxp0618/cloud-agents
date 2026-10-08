@@ -1,10 +1,7 @@
 import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
-import {
-  CLOUD_AGENT_ENVIRONMENT,
-  readCloudAgentEnvironment,
-} from "@cloud-agents/cloud-agent-provider-api";
+import { CLOUD_AGENT_ENVIRONMENT } from "@cloud-agents/cloud-agent-provider-api";
 import { SENSITIVE_ACTION_POLICY_RULES, classifySensitiveAction } from "./sensitiveActionPolicy";
 import {
   CLOUD_AGENT_PROVIDER_PROVENANCE_IDENTITY,
@@ -119,12 +116,7 @@ export async function runCodexNoToolAwarePolicyHook(
     readonly environment?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<void> {
-  if (
-    readCloudAgentEnvironment(
-      input.environment ?? process.env,
-      CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation,
-    ) === "1"
-  ) {
+  if ((input.environment ?? process.env)[CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation] === "1") {
     (input.output ?? process.stdout).write(
       `${JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "GenerateText does not permit Provider tools." } })}\n`,
     );

@@ -21,14 +21,19 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Validate release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [[ ! $GITHUB_REF_NAME =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "release tag must be v<semver> without build metadata" >&2
             exit 1
           fi
-          git fetch --no-tags origin main
+          auth_header=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 --wrap=0)
+          git -c "http.extraheader=AUTHORIZATION: basic $auth_header" fetch --no-tags origin main
+          unset auth_header
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "release tag commit must belong to main" >&2
             exit 1
@@ -41,28 +46,27 @@ jobs:
         with:
           cache: true
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify public evidence mirror
+        run: bun run public:evidence:check
       - run: bun run fmt:check
       - run: bun run lint
-      - run: bash -n scripts/cloud-agents-dev.sh scripts/test-cloud-agents-dev.sh scripts/test-cloud-agents-helm.sh scripts/test-platform-compose.sh scripts/test-platform-oci-images.sh
-      - run: sh scripts/test-cloud-agents-helm.sh
-      - run: bash scripts/test-cloud-agents-dev.sh
+      - run: bash -n scripts/cloud-agents-dev.sh test/e2e/test-cloud-agents-dev.sh test/scripts/test-cloud-agents-helm.sh test/e2e/test-platform-compose.sh test/e2e/test-platform-oci-images.sh
+      - run: sh test/scripts/test-cloud-agents-helm.sh
+      - run: bash test/e2e/test-cloud-agents-dev.sh
       - run: bun run platform:go:check
       - run: bun run platform:contracts:check
       - run: bun run platform:migrations:check
-      - run: sh scripts/test-platform-go-products.sh
+      - run: sh test/scripts/test-platform-go-products.sh
       - run: bun run platform:sdk:consumers
       - run: bun run typecheck
-      - run: bun run --filter '@cloud-agents/*' test
-      - run: bunx vitest run scripts
       - run: bun run build
+      - run: bunx --no-install @e2e-dev/web install chromium --with-deps
+      - run: bun run test:e2e
+      - run: bun run --filter '@cloud-agents/*' test
+      - run: bunx vitest run test/scripts
       - run: bun run secret:scan
-      - name: Build release assets
-        run: |
-          set -euo pipefail
-          platform_directory=$RUNNER_TEMP/cloud-agents-platform
-          bun run platform:release -- --version "$CLOUD_AGENTS_RELEASE_VERSION" --output-dir "$platform_directory"
-          (cd "$platform_directory" && sha256sum -c checksums.sha256)
-          echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
+        env:
+          CLOUD_AGENT_SECRET_SCAN_BASE: ${{ github.event.before || '' }}
       - name: Build Runtime package assets
         run: |
           set -euo pipefail
@@ -70,10 +74,19 @@ jobs:
           export CLOUD_AGENT_RELEASE_PROVENANCE_BUILDER="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
           node scripts/cloud-agent-release-smoke.ts --output-dir "$runtime_directory"
           (cd "$runtime_directory" && sha256sum -c checksums.sha256)
-          cmp "$runtime_directory/cloud-agent-runtime-standalone.mjs" "$CLOUD_AGENTS_PLATFORM_DIRECTORY/cloud-agent-runtime-standalone.mjs"
           echo "CLOUD_AGENTS_RUNTIME_DIRECTORY=$runtime_directory" >>"$GITHUB_ENV"
-      - run: sh scripts/test-platform-oci-images.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
-      - run: sh scripts/test-platform-compose.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
+      - name: Build release assets from Runtime candidate
+        run: |
+          set -euo pipefail
+          runtime_directory=$CLOUD_AGENTS_RUNTIME_DIRECTORY
+          platform_directory=$RUNNER_TEMP/cloud-agents-platform
+          bun run platform:release -- --version "$CLOUD_AGENTS_RELEASE_VERSION" --runtime-candidate-dir "$runtime_directory" --output-dir "$platform_directory"
+          (cd "$platform_directory" && sha256sum -c checksums.sha256)
+          cmp "$runtime_directory/cloud-agent-runtime-standalone.mjs" "$platform_directory/cloud-agent-runtime-standalone.mjs"
+          cmp "$runtime_directory/cloud-agent-runtime-notices.md" "$platform_directory/cloud-agent-runtime-notices.md"
+          echo "CLOUD_AGENTS_PLATFORM_DIRECTORY=$platform_directory" >>"$GITHUB_ENV"
+      - run: sh test/e2e/test-platform-oci-images.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
+      - run: sh test/e2e/test-platform-compose.sh "$CLOUD_AGENTS_PLATFORM_DIRECTORY"
       - name: Publish OCI images
         env:
           GHCR_TOKEN: ${{ github.token }}

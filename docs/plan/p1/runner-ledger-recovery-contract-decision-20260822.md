@@ -11,7 +11,7 @@
 The owner explicitly approved the [ADR-0023](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)
 **Decision**, **Closed pair mapping**, and **Ordered slices A-G** on 2026-08-22. This record resolves the decision
 blocker identified by the independently approved
-[P1 aggregate Gate gap audit](p1-aggregate-gate-gap-audit-independent-review-20260822.md). It does not treat the
+`p1-aggregate-gate-gap-audit-independent-review-20260822.md` (历史私有归档). It does not treat the
 earlier contract-only audit review as implementation evidence.
 
 ## Approved order

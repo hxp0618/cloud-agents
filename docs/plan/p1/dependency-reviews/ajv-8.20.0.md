@@ -33,9 +33,9 @@ Durable evidence locators：
 
 - [`bun.lock`](../../../../bun.lock) 与 [`contracts/generation.lock.json`](../../../../contracts/generation.lock.json)
   固定 direct edge、完整 SRI 与 dependency-lock digest；
-- [P0 runtime supply-chain evidence](../../p0/provenance/runtime-supply-chain-audit.json)、
-  [license inventory](../../p0/provenance/license-inventory.json) 与
-  [THIRD_PARTY_NOTICES](../../p0/provenance/THIRD_PARTY_NOTICES.md) 保存生产 closure、license decision 与 notice；
+- `docs/plan/p0/provenance/runtime-supply-chain-audit.json` (历史私有归档)、
+  `docs/plan/p0/provenance/license-inventory.json` (历史私有归档) 与
+  `docs/plan/p0/provenance/THIRD_PARTY_NOTICES.md` (历史私有归档) 保存生产 closure、license decision 与 notice；
 - 上述 package-specific SRI/tarball/license/OSV/npm-audit digest 是独立 reviewer 在权限为 `0700` 的临时目录
   生成的补充证据；raw response 在 review 后删除，不能单独作为长期 authority。长期重放必须以仓内 lock、P0
   evidence 与下列命令重新生成新 snapshot，不能仅信任裸 digest。

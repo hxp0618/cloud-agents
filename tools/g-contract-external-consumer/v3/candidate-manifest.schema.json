@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/candidate-manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "source", "candidateRoot", "manifestAlgorithm", "candidateFileCount", "candidateEntryCount", "records"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-candidate-manifest/v1" },
+    "source": { "const": "frozen-external-candidate-tree" },
+    "candidateRoot": { "type": "string", "pattern": "^/", "minLength": 2 },
+    "manifestAlgorithm": { "const": "utf8-bytewise-sorted-path-kind-mode-size-sha256-nul-v1" },
+    "candidateFileCount": { "type": "integer", "minimum": 1 },
+    "candidateEntryCount": { "type": "integer", "minimum": 1 },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "mode", "sizeBytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "const": "file" },
+        "mode": { "enum": ["100644", "100755"] },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

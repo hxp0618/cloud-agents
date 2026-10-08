@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 )
 
 type durableRuntimeExecutionStoreFake struct {
+	principalMu        sync.Mutex
 	calls              []string
 	principals         []*authn.VerifiedPrincipal
 	turn               *TurnSnapshot
@@ -37,8 +39,32 @@ type durableRuntimeExecutionStoreFake struct {
 	capabilityError    error
 	checkpointError    error
 	completeError      error
+	settlementStarted  chan string
+	settlementRelease  <-chan struct{}
+	renewed            chan struct{}
+	renewStarted       chan context.Context
+	renewBlock         <-chan struct{}
+	renewError         error
 	capabilityEvents   []CapabilityEventInput
 	cancel             context.CancelFunc
+	blockedCall        string
+	blockedCallStarted chan string
+	blockedCallDone    chan error
+}
+
+func (fake *durableRuntimeExecutionStoreFake) block(ctx context.Context, call string) error {
+	if fake.blockedCall != call {
+		return nil
+	}
+	if fake.blockedCallStarted != nil {
+		fake.blockedCallStarted <- call
+	}
+	<-ctx.Done()
+	err := ctx.Err()
+	if fake.blockedCallDone != nil {
+		fake.blockedCallDone <- err
+	}
+	return err
 }
 
 func (fake *durableRuntimeExecutionStoreFake) GetManagedAgentSessionForExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ string, _ string) (RuntimeSessionSnapshot, error) {
@@ -130,9 +156,28 @@ func (fake *durableRuntimeExecutionStoreFake) ClaimManagedAgentExecution(_ conte
 	return claim, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) RenewManagedAgentExecutionClaim(_ context.Context, _ string, principal *authn.VerifiedPrincipal, claim RuntimeExecutionClaim, _ int32) (time.Time, error) {
+func (fake *durableRuntimeExecutionStoreFake) RenewManagedAgentExecutionClaim(ctx context.Context, _ string, principal *authn.VerifiedPrincipal, claim RuntimeExecutionClaim, _ int32) (time.Time, error) {
 	fake.recordPrincipal(principal)
-	return claim.ExpiresAt.Add(time.Minute), nil
+	if fake.renewStarted != nil {
+		select {
+		case fake.renewStarted <- ctx:
+		default:
+		}
+	}
+	if fake.renewed != nil {
+		select {
+		case fake.renewed <- struct{}{}:
+		default:
+		}
+	}
+	if fake.renewBlock != nil {
+		select {
+		case <-fake.renewBlock:
+		case <-ctx.Done():
+			return time.Time{}, ctx.Err()
+		}
+	}
+	return claim.ExpiresAt.Add(time.Minute), fake.renewError
 }
 
 func (fake *durableRuntimeExecutionStoreFake) ReleaseQueuedManagedAgentExecutionClaim(_ context.Context, _ string, principal *authn.VerifiedPrincipal, _ RuntimeExecutionClaim) error {
@@ -141,9 +186,12 @@ func (fake *durableRuntimeExecutionStoreFake) ReleaseQueuedManagedAgentExecution
 	return nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) CheckpointManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CheckpointRuntimeExecutionInput) (RuntimeExecutionCheckpoint, error) {
+func (fake *durableRuntimeExecutionStoreFake) CheckpointManagedAgentExecution(ctx context.Context, _ string, principal *authn.VerifiedPrincipal, input CheckpointRuntimeExecutionInput) (RuntimeExecutionCheckpoint, error) {
 	fake.calls = append(fake.calls, "checkpoint")
 	fake.recordPrincipal(principal)
+	if err := fake.block(ctx, "checkpoint"); err != nil {
+		return RuntimeExecutionCheckpoint{}, err
+	}
 	if fake.checkpointError != nil {
 		return RuntimeExecutionCheckpoint{}, fake.checkpointError
 	}
@@ -177,9 +225,16 @@ func (fake *durableRuntimeExecutionStoreFake) StartManagedAgentExecution(_ conte
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnRunning}, Execution: fake.execution}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(ctx context.Context, _ string, principal *authn.VerifiedPrincipal, input CompleteRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "complete")
 	fake.recordPrincipal(principal)
+	if err := fake.block(ctx, "complete"); err != nil {
+		return ExecutionTransitionResult{}, err
+	}
+	if fake.settlementStarted != nil {
+		fake.settlementStarted <- "complete"
+		<-fake.settlementRelease
+	}
 	if fake.completeError != nil {
 		return ExecutionTransitionResult{}, fake.completeError
 	}
@@ -188,9 +243,16 @@ func (fake *durableRuntimeExecutionStoreFake) CompleteManagedAgentExecution(_ co
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnCompleted}, Execution: fake.execution}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input FailRuntimeExecutionInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) FailManagedAgentExecution(ctx context.Context, _ string, principal *authn.VerifiedPrincipal, input FailRuntimeExecutionInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "fail")
 	fake.recordPrincipal(principal)
+	if err := fake.block(ctx, "fail"); err != nil {
+		return ExecutionTransitionResult{}, err
+	}
+	if fake.settlementStarted != nil {
+		fake.settlementStarted <- "fail"
+		<-fake.settlementRelease
+	}
 	fake.execution.State = ExecutionFailed
 	fake.execution.ErrorCode = input.ErrorCode
 	return ExecutionTransitionResult{
@@ -207,14 +269,19 @@ func (fake *durableRuntimeExecutionStoreFake) InterruptManagedAgentExecution(_ c
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnInterrupted}, Execution: fake.execution}, nil
 }
 
-func (fake *durableRuntimeExecutionStoreFake) CancelManagedAgentExecution(_ context.Context, _ string, principal *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
+func (fake *durableRuntimeExecutionStoreFake) CancelManagedAgentExecution(ctx context.Context, _ string, principal *authn.VerifiedPrincipal, input CancelTurnInput) (ExecutionTransitionResult, error) {
 	fake.calls = append(fake.calls, "cancel")
 	fake.recordPrincipal(principal)
+	if err := fake.block(ctx, "cancel"); err != nil {
+		return ExecutionTransitionResult{}, err
+	}
 	fake.execution.State = ExecutionCancelled
 	return ExecutionTransitionResult{Turn: TurnSnapshot{State: TurnCancelled}, Execution: fake.execution}, nil
 }
 
 func (fake *durableRuntimeExecutionStoreFake) recordPrincipal(principal *authn.VerifiedPrincipal) {
+	fake.principalMu.Lock()
+	defer fake.principalMu.Unlock()
 	if principal != nil {
 		fake.principals = append(fake.principals, principal)
 	}
@@ -726,6 +793,515 @@ func TestOpenRuntimeSessionWithRetryRecoversUnavailableWorker(t *testing.T) {
 	}
 }
 
+func TestStartRuntimeClaimHeartbeatStopsOnWorkerHealthFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	healthCalled := make(chan struct{}, 1)
+	stopCalled := make(chan struct{}, 1)
+	healthErr := errors.New("stale Worker binding")
+	coordinator := &DurableRuntimeExecutionCoordinator{claimRenewInterval: 5 * time.Millisecond}
+	claimFailure := coordinator.startRuntimeClaimHeartbeat(ctx, ctx, func() {
+		select {
+		case stopCalled <- struct{}{}:
+		default:
+		}
+		cancel()
+	}, testVerifiedPrincipalSource(), RuntimeExecutionClaim{}, func(healthContext context.Context) error {
+		if _, ok := healthContext.Deadline(); !ok {
+			t.Error("Worker health check context has no deadline")
+		}
+		healthCalled <- struct{}{}
+		return healthErr
+	})
+
+	select {
+	case <-healthCalled:
+	case <-time.After(time.Second):
+		t.Fatal("claim heartbeat did not run the Worker health check")
+	}
+	select {
+	case <-stopCalled:
+	case <-time.After(time.Second):
+		t.Fatal("claim heartbeat did not stop after Worker health failure")
+	}
+	select {
+	case err := <-claimFailure:
+		if !errors.Is(err, ErrRuntimeEnvironmentUnavailable) || !strings.Contains(err.Error(), healthErr.Error()) {
+			t.Fatalf("claim heartbeat failure = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("claim heartbeat did not report Worker health failure")
+	}
+}
+
+func TestRuntimeClaimHeartbeatIgnoresLateHealthFailureAfterRuntimeFinishes(t *testing.T) {
+	heartbeatCtx, stopHeartbeat := context.WithCancel(context.Background())
+	healthCtx, stopHealth := context.WithCancel(heartbeatCtx)
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHealth) }) }
+	t.Cleanup(func() {
+		stopHealth()
+		stopHeartbeat()
+		release()
+	})
+	renewed := make(chan struct{}, 1)
+	store := &durableRuntimeExecutionStoreFake{renewed: renewed}
+	coordinator := &DurableRuntimeExecutionCoordinator{store: store, claimRenewInterval: 5 * time.Millisecond}
+	failures := coordinator.startRuntimeClaimHeartbeat(heartbeatCtx, healthCtx, func() {
+		t.Error("late Worker health failure stopped the runtime")
+	}, testVerifiedPrincipalSource(), RuntimeExecutionClaim{}, func(context.Context) error {
+		close(healthStarted)
+		<-releaseHealth
+		return errors.New("Worker stream already closed")
+	})
+
+	select {
+	case <-healthStarted:
+	case <-time.After(time.Second):
+		t.Fatal("health check did not start")
+	}
+	stopHealth()
+	release()
+	select {
+	case <-renewed:
+	case err := <-failures:
+		t.Fatalf("late health failure stopped claim renewal: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("claim did not renew after runtime health checks stopped")
+	}
+	if err := stopRuntimeClaimHeartbeat(stopHeartbeat, func() {}, failures); err != nil {
+		t.Fatalf("heartbeat cleanup error = %v", err)
+	}
+}
+
+func TestRuntimeClaimHeartbeatBoundsBlockedRenewal(t *testing.T) {
+	interval := 40 * time.Millisecond
+	renewStarted := make(chan context.Context, 2)
+	heartbeatCtx, stopHeartbeat := context.WithCancel(context.Background())
+	t.Cleanup(stopHeartbeat)
+	store := &durableRuntimeExecutionStoreFake{renewStarted: renewStarted, renewBlock: make(chan struct{})}
+	coordinator := &DurableRuntimeExecutionCoordinator{store: store, claimRenewInterval: interval}
+	runtimeStopped := make(chan struct{})
+	var stopOnce sync.Once
+	failures := coordinator.startRuntimeClaimHeartbeat(heartbeatCtx, heartbeatCtx, func() {
+		stopOnce.Do(func() { close(runtimeStopped) })
+	}, testVerifiedPrincipalSource(), RuntimeExecutionClaim{}, nil)
+
+	var renewCtx context.Context
+	select {
+	case renewCtx = <-renewStarted:
+	case <-time.After(time.Second):
+		t.Fatal("claim renewal did not start")
+	}
+	deadline, ok := renewCtx.Deadline()
+	if !ok {
+		t.Fatal("claim renewal context has no deadline")
+	}
+	if remaining := time.Until(deadline); remaining > interval/2 {
+		t.Fatalf("claim renewal deadline remaining = %v, want no more than %v", remaining, interval/2)
+	}
+	select {
+	case <-runtimeStopped:
+	case <-time.After(time.Second):
+		t.Fatal("blocked claim renewal did not stop the runtime")
+	}
+	select {
+	case err := <-failures:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("claim renewal failure = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked claim renewal did not report its deadline")
+	}
+	select {
+	case <-renewStarted:
+		t.Fatal("claim renewal continued after its deadline")
+	case <-time.After(2 * interval):
+	}
+}
+
+func TestStopRuntimeClaimHeartbeatReturnsFailureBeforeSettlement(t *testing.T) {
+	failure := errors.New("claim lost")
+	failures := make(chan error, 1)
+	failures <- failure
+	close(failures)
+	stopped := false
+	if err := stopRuntimeClaimHeartbeat(func() { stopped = true }, func() {}, failures); !errors.Is(err, failure) || !stopped {
+		t.Fatalf("heartbeat stop = err %v stopped %t", err, stopped)
+	}
+}
+
+func TestDurableRuntimeExecutionDoesNotCompleteAfterKnownClaimFailure(t *testing.T) {
+	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+	renewStarted := make(chan context.Context, 1)
+	store := &durableRuntimeExecutionStoreFake{execution: ExecutionSnapshot{State: ExecutionQueued}, renewStarted: renewStarted, renewBlock: make(chan struct{})}
+	worker := &runtimeWorkerFake{identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}, now: now}
+	coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+		Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+		FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator.claimRenewInterval = 40 * time.Millisecond
+	finalPrincipalStarted := make(chan struct{})
+	releaseFinalPrincipal := make(chan struct{})
+	var releaseOnce sync.Once
+	releasePrincipal := func() { releaseOnce.Do(func() { close(releaseFinalPrincipal) }) }
+	t.Cleanup(releasePrincipal)
+	var principalMu sync.Mutex
+	principalCalls := 0
+	principalSource := VerifiedPrincipalSource(func() (*authn.VerifiedPrincipal, error) {
+		principalMu.Lock()
+		principalCalls++
+		call := principalCalls
+		principalMu.Unlock()
+		if call == 7 {
+			close(finalPrincipalStarted)
+			<-releaseFinalPrincipal
+		}
+		return &authn.VerifiedPrincipal{}, nil
+	})
+	type executionOutcome struct {
+		result DurableRuntimeExecutionResult
+		err    error
+	}
+	done := make(chan executionOutcome, 1)
+	go func() {
+		result, executeErr := coordinator.Execute(context.Background(), principalSource, DurableRuntimeExecutionInput{
+			Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+			Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+		})
+		done <- executionOutcome{result: result, err: executeErr}
+	}()
+
+	select {
+	case <-finalPrincipalStarted:
+	case <-time.After(time.Second):
+		t.Fatal("execution did not reach the final settlement principal")
+	}
+	var renewCtx context.Context
+	select {
+	case renewCtx = <-renewStarted:
+	case <-time.After(time.Second):
+		t.Fatal("claim heartbeat did not begin renewal")
+	}
+	if _, ok := renewCtx.Deadline(); !ok {
+		t.Fatal("claim renewal context has no deadline")
+	}
+	select {
+	case <-renewCtx.Done():
+		if !errors.Is(renewCtx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("claim renewal context error = %v", renewCtx.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("claim renewal did not reach its deadline")
+	}
+	releasePrincipal()
+	select {
+	case outcome := <-done:
+		if !errors.Is(outcome.err, context.DeadlineExceeded) || outcome.result.Transition.Execution.State != ExecutionRunning {
+			t.Fatalf("result=%#v err=%v", outcome.result, outcome.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("execution did not return the known claim failure")
+	}
+	if slices.Contains(store.calls, "complete") || slices.Contains(store.calls, "fail") {
+		t.Fatalf("settlement ran after known claim failure: %v", store.calls)
+	}
+}
+
+func TestDurableRuntimeExecutionRenewsClaimUntilSettlementReturns(t *testing.T) {
+	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name              string
+		terminalErrorCode string
+		settlement        string
+		wantState         ExecutionState
+		renewError        error
+		renewInterval     time.Duration
+		maxDuration       time.Duration
+		pastDeadline      bool
+	}{
+		{name: "completion", settlement: "complete", wantState: ExecutionSucceeded, renewError: errors.New("claim became stale during settlement"), renewInterval: 50 * time.Millisecond},
+		{name: "failure", terminalErrorCode: "provider_failed", settlement: "fail", wantState: ExecutionFailed, renewError: errors.New("claim became stale during settlement"), renewInterval: 50 * time.Millisecond},
+		{name: "completion past runtime deadline", settlement: "complete", wantState: ExecutionSucceeded, renewInterval: 20 * time.Millisecond, maxDuration: 80 * time.Millisecond, pastDeadline: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			settlementStarted := make(chan string, 1)
+			settlementRelease := make(chan struct{})
+			var releaseOnce sync.Once
+			releaseSettlement := func() { releaseOnce.Do(func() { close(settlementRelease) }) }
+			t.Cleanup(releaseSettlement)
+			renewed := make(chan struct{}, 16)
+			store := &durableRuntimeExecutionStoreFake{
+				execution: ExecutionSnapshot{State: ExecutionQueued}, settlementStarted: settlementStarted,
+				settlementRelease: settlementRelease, renewed: renewed, renewError: test.renewError,
+			}
+			worker := &runtimeWorkerFake{
+				identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+				now:      now, terminalErrorCode: test.terminalErrorCode,
+			}
+			coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+				Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+				FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace", MaxDuration: test.maxDuration,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			coordinator.claimRenewInterval = test.renewInterval
+			type executionOutcome struct {
+				result DurableRuntimeExecutionResult
+				err    error
+			}
+			done := make(chan executionOutcome, 1)
+			go func() {
+				result, executeErr := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+					Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+					Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+				})
+				done <- executionOutcome{result: result, err: executeErr}
+			}()
+
+			select {
+			case got := <-settlementStarted:
+				if got != test.settlement {
+					t.Fatalf("settlement = %q, want %q", got, test.settlement)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("execution did not reach durable settlement")
+			}
+			select {
+			case <-renewed:
+			case <-time.After(time.Second):
+				t.Fatal("claim was not renewed while durable settlement was blocked")
+			}
+			if test.pastDeadline {
+				time.Sleep(test.maxDuration + 2*test.renewInterval)
+			drainBeforeDeadlineCheck:
+				for {
+					select {
+					case <-renewed:
+					default:
+						break drainBeforeDeadlineCheck
+					}
+				}
+				select {
+				case <-renewed:
+				case <-time.After(4 * test.renewInterval):
+					t.Fatal("claim stopped renewing when the runtime deadline elapsed during settlement")
+				}
+			}
+			releaseSettlement()
+			var outcome executionOutcome
+			select {
+			case outcome = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("execution did not finish after settlement returned")
+			}
+			if outcome.result.Transition.Execution.State != test.wantState {
+				t.Fatalf("state = %q, want %q; err=%v", outcome.result.Transition.Execution.State, test.wantState, outcome.err)
+			}
+			if test.wantState == ExecutionSucceeded && outcome.err != nil {
+				t.Fatalf("completion error = %v", outcome.err)
+			}
+			if test.wantState == ExecutionFailed && !errors.Is(outcome.err, ErrDurableRuntimeExecutionFailed) {
+				t.Fatalf("failure error = %v", outcome.err)
+			}
+		drainRenewals:
+			for {
+				select {
+				case <-renewed:
+				default:
+					break drainRenewals
+				}
+			}
+			select {
+			case <-renewed:
+				t.Fatal("claim heartbeat continued after durable settlement")
+			case <-time.After(3 * test.renewInterval):
+			}
+		})
+	}
+}
+
+func TestDurableRuntimeExecutionBoundsPersistenceCalls(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name, blockedCall, terminalErrorCode string
+		wantState                            ExecutionState
+	}{
+		{name: "checkpoint", blockedCall: "checkpoint", wantState: ExecutionFailed},
+		{name: "completion", blockedCall: "complete", wantState: ExecutionRunning},
+		{name: "failure", blockedCall: "fail", terminalErrorCode: "provider_failed", wantState: ExecutionRunning},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			started := make(chan string, 1)
+			blockedDone := make(chan error, 1)
+			store := &durableRuntimeExecutionStoreFake{
+				execution: ExecutionSnapshot{State: ExecutionQueued}, blockedCall: test.blockedCall,
+				blockedCallStarted: started, blockedCallDone: blockedDone,
+			}
+			worker := &runtimeWorkerFake{
+				identity: &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"},
+				now:      now, terminalErrorCode: test.terminalErrorCode, disconnectAfterCheckpoint: test.blockedCall == "checkpoint",
+			}
+			coordinator, err := NewDurableRuntimeExecutionCoordinator(DurableRuntimeExecutionConfig{
+				Store: store, Supervisor: newRuntimeTestSupervisorForWire(t, worker), Clock: func() time.Time { return now },
+				FencingLeaseID: "lease", FencingGeneration: 7, FencingToken: []byte("token"), WorkspaceDirectory: "/workspace",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			coordinator.persistenceTimeout = 20 * time.Millisecond
+			type outcome struct {
+				result DurableRuntimeExecutionResult
+				err    error
+			}
+			finished := make(chan outcome, 1)
+			go func() {
+				result, executeErr := coordinator.Execute(context.Background(), testVerifiedPrincipalSource(), DurableRuntimeExecutionInput{
+					Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", InputText: "hello",
+					Mutation: Mutation{RequestID: "request", IdempotencyKey: "idem"},
+				})
+				finished <- outcome{result: result, err: executeErr}
+			}()
+
+			select {
+			case got := <-started:
+				if got != test.blockedCall {
+					t.Fatalf("blocked call = %q, want %q", got, test.blockedCall)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("execution did not reach the blocked persistence call")
+			}
+			select {
+			case callErr := <-blockedDone:
+				if !errors.Is(callErr, context.DeadlineExceeded) {
+					t.Fatalf("blocked call error = %v", callErr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("blocked persistence call did not reach its deadline")
+			}
+			select {
+			case got := <-finished:
+				if got.result.Transition.Execution.State != test.wantState || got.err == nil {
+					t.Fatalf("result = %#v, error = %v", got.result, got.err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("execution did not finish after the persistence deadline")
+			}
+		})
+	}
+
+	t.Run("cancel", func(t *testing.T) {
+		started := make(chan string, 1)
+		blockedDone := make(chan error, 1)
+		store := &durableRuntimeExecutionStoreFake{blockedCall: "cancel", blockedCallStarted: started, blockedCallDone: blockedDone}
+		coordinator := &DurableRuntimeExecutionCoordinator{store: store, persistenceTimeout: 20 * time.Millisecond}
+		finished := make(chan error, 1)
+		go func() {
+			_, err := coordinator.Cancel(context.Background(), &authn.VerifiedPrincipal{}, CancelTurnInput{
+				Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", TargetExecutionID: "execution", Generation: 7,
+			})
+			finished <- err
+		}()
+		select {
+		case got := <-started:
+			if got != "cancel" {
+				t.Fatalf("blocked call = %q", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("cancel did not reach the store")
+		}
+		select {
+		case callErr := <-blockedDone:
+			if !errors.Is(callErr, context.DeadlineExceeded) {
+				t.Fatalf("cancel store error = %v", callErr)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("cancel store call did not reach its deadline")
+		}
+		select {
+		case err := <-finished:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("cancel error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("cancel did not finish after the persistence deadline")
+		}
+	})
+}
+
+type blockingRuntimeSession struct {
+	closed         chan struct{}
+	closeOnce      sync.Once
+	receiveStarted chan struct{}
+}
+
+func (session *blockingRuntimeSession) Send(context.Context, runtimeprotocol.Command) error {
+	return nil
+}
+
+func (session *blockingRuntimeSession) Receive() (runtimeprotocol.Message, error) {
+	select {
+	case <-session.receiveStarted:
+	default:
+		close(session.receiveStarted)
+	}
+	<-session.closed
+	return runtimeprotocol.Message{}, io.ErrClosedPipe
+}
+
+func (session *blockingRuntimeSession) CloseRequest() error {
+	session.closeOnce.Do(func() { close(session.closed) })
+	return nil
+}
+
+func (session *blockingRuntimeSession) CloseResponse() error { return session.CloseRequest() }
+
+func TestExecuteRuntimeTurnClosesBlockingReceiveOnContextCancellation(t *testing.T) {
+	coordinator := &DurableRuntimeExecutionCoordinator{active: make(map[durableExecutionKey]*activeDurableExecution)}
+	key := durableExecutionKey{tenantID: "tenant", projectID: "project", sessionID: "session", turnID: "turn", executionID: "execution", generation: 7}
+	active, unregister, err := coordinator.registerActiveExecution(key, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unregister()
+	ctx, cancel := context.WithCancel(context.Background())
+	session := &blockingRuntimeSession{closed: make(chan struct{}), receiveStarted: make(chan struct{})}
+	resultErr := make(chan error, 1)
+	go func() {
+		_, runErr := coordinator.executeRuntimeTurn(ctx, testVerifiedPrincipalSource(), &RuntimeExecutionClaim{}, nil, key, active, session, RuntimeTurnInput{
+			Scope: Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7,
+			WorkspaceDirectory: "/workspace", ProviderKind: "codex", InputText: "hello", OccurredAt: time.Now().UTC(),
+		})
+		resultErr <- runErr
+	}()
+	select {
+	case <-session.receiveStarted:
+	case <-time.After(time.Second):
+		t.Fatal("runtime Receive did not block")
+	}
+	cancel()
+	select {
+	case runErr := <-resultErr:
+		if runErr == nil {
+			t.Fatal("runtime turn completed after context cancellation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("context cancellation did not unblock runtime Receive")
+	}
+	select {
+	case <-session.closed:
+	default:
+		t.Fatal("context cancellation did not close runtime session")
+	}
+}
+
 func TestRuntimeWorkerRouteUsesBoundEnvironmentGeneration(t *testing.T) {
 	coordinator := &DurableRuntimeExecutionCoordinator{
 		now: func() time.Time { return time.Now() }, fencingToken: []byte("token"),
@@ -748,6 +1324,25 @@ func TestRuntimeWorkerRouteUsesBoundEnvironmentGeneration(t *testing.T) {
 	}
 }
 
+func TestRuntimeWorkspaceDirectoryForWorker(t *testing.T) {
+	coordinatorWorkspace := "/tmp/cloud-agents/workspace"
+	tests := []struct {
+		name   string
+		worker runtimeWorker
+		want   string
+	}{
+		{name: "foundation", worker: runtimeWorker{foundation: &FoundationRuntime{}}, want: "/workspace"},
+		{name: "local", worker: runtimeWorker{}, want: coordinatorWorkspace},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := runtimeWorkspaceDirectoryForWorker(test.worker, coordinatorWorkspace); got != test.want {
+				t.Fatalf("runtime workspace directory = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 	wire := []runtimeprotocol.Message{
 		{RequestID: "resolve-request", CommandID: "interaction-1", MessageType: "Result"},
@@ -763,13 +1358,85 @@ func TestReceiveRuntimeMessagesPreservesBoundedTranscript(t *testing.T) {
 		return message, nil
 	}, "turn", func(message runtimeprotocol.Message) (bool, error) {
 		return message.CommandID == "interaction-1", nil
-	}, func(messages []runtimeprotocol.Message) error {
+	}, func(messages []runtimeprotocol.Message, _ runtimeprotocol.Message) error {
 		accepted = append(accepted[:0], messages...)
 		return nil
 	})
 	if err != nil || !reflect.DeepEqual(collected, wire[1:]) || !reflect.DeepEqual(accepted, wire[1:]) || terminal.MessageType != "Result" || terminal.Payload["text"] != "done" || index != len(wire) {
 		t.Fatalf("messages=%#v accepted=%#v terminal=%#v reads=%d err=%v", collected, accepted, terminal, index, err)
 	}
+}
+
+func TestReceiveRuntimeMessagesCompactsAssistantDeltasAndKeepsTerminal(t *testing.T) {
+	prior := runtimeprotocol.Message{RequestID: "prior-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "prior-command", OccurredAt: time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Progress"}
+	wire := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
+	for index := 0; index < maxRuntimeExecutionMessages-1; index++ {
+		wire = append(wire, assistantTextDeltaRuntimeMessage(index, "x"))
+	}
+	wire = append(wire, runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 31, 10, 1, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Result", Payload: map[string]any{"text": "done"}})
+	index := 0
+	collected, terminal, err := receiveRuntimeMessagesWithLimit(func() (runtimeprotocol.Message, error) {
+		message := wire[index]
+		index++
+		return message, nil
+	}, "turn", nil, nil, maxRuntimeExecutionMessages-len([]runtimeprotocol.Message{prior}))
+	if err != nil || terminal.MessageType != "Result" || len(collected) != 2 || collected[len(collected)-1].MessageType != "Result" {
+		t.Fatalf("collected=%#v terminal=%#v reads=%d err=%v", collected, terminal, index, err)
+	}
+	if delta, ok := collected[0].Payload["payload"].(map[string]any)["delta"].(string); !ok || delta != strings.Repeat("x", maxRuntimeExecutionMessages-1) {
+		t.Fatalf("compacted assistant delta = %#v", collected[0].Payload)
+	}
+	if total := len(append([]runtimeprotocol.Message{prior}, collected...)); total > maxRuntimeExecutionMessages {
+		t.Fatalf("recovery transcript length = %d", total)
+	}
+}
+
+func TestCompactRuntimeMessagesPreservesCommandOutputDeltas(t *testing.T) {
+	first := runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Event", Payload: map[string]any{"eventType": "content.delta", "payload": map[string]any{"streamKind": "command_output", "delta": "a", "byteOffset": 0, "byteLength": 1}}}
+	second := first
+	second.Payload = map[string]any{"eventType": "content.delta", "payload": map[string]any{"streamKind": "command_output", "delta": "b", "byteOffset": 1, "byteLength": 1}}
+	compacted := compactRuntimeMessages([]runtimeprotocol.Message{first, second})
+	if len(compacted) != 2 {
+		t.Fatalf("command output deltas were compacted: %#v", compacted)
+	}
+}
+
+func TestCompactRuntimeMessagesCompactsPriorAssistantTranscript(t *testing.T) {
+	prior := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
+	for index := 0; index < maxRuntimeExecutionMessages; index++ {
+		prior = append(prior, assistantTextDeltaRuntimeMessage(index, "x"))
+	}
+	compacted := compactRuntimeMessages(prior)
+	if len(compacted) != 1 || compacted[0].Payload["payload"].(map[string]any)["delta"] != strings.Repeat("x", maxRuntimeExecutionMessages) {
+		t.Fatalf("prior assistant transcript = %#v", compacted)
+	}
+	key := durableExecutionKey{executionID: "execution", generation: 7}
+	active := &activeDurableExecution{}
+	coordinator := &DurableRuntimeExecutionCoordinator{active: map[durableExecutionKey]*activeDurableExecution{key: active}}
+	for _, message := range prior {
+		coordinator.recordActiveRuntimeMessage(key, active, message)
+	}
+	if !reflect.DeepEqual(active.messages, compacted) {
+		t.Fatalf("active assistant transcript = %#v", active.messages)
+	}
+}
+
+func TestCompactedRecoveryTranscriptKeepsNewSideEffectInCheckpointState(t *testing.T) {
+	prior := make([]runtimeprotocol.Message, 0, maxRuntimeExecutionMessages)
+	for index := 0; index < maxRuntimeExecutionMessages; index++ {
+		prior = append(prior, assistantTextDeltaRuntimeMessage(index, "x"))
+	}
+	compactedPrior := compactRuntimeMessages(prior)
+	current := runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 31, 10, 2, 0, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Event", Payload: map[string]any{"eventType": "item.started", "payload": map[string]any{"itemType": "command_execution", "itemId": "command-1"}}}
+	combined := append(append([]runtimeprotocol.Message(nil), compactedPrior...), current)
+	pending, _ := runtimeCheckpointState(combined, nil, len(compactedPrior))
+	if !pending {
+		t.Fatalf("recovery side effect was skipped after transcript compaction: %#v", combined)
+	}
+}
+
+func assistantTextDeltaRuntimeMessage(index int, delta string) runtimeprotocol.Message {
+	return runtimeprotocol.Message{RequestID: "turn-request", Protocol: runtimeprotocol.Protocol{Major: 2, Minor: 3}, ExecutionID: "execution", Generation: 7, CommandID: "turn", OccurredAt: time.Date(2026, 8, 31, 10, 1, index, 0, time.UTC).Format(time.RFC3339Nano), MessageType: "Event", Payload: map[string]any{"eventType": "content.delta", "payload": map[string]any{"streamKind": "assistant_text", "delta": delta}}}
 }
 
 func TestRuntimeFailureCodeUsesOnlyPublicStableCodes(t *testing.T) {
@@ -877,14 +1544,14 @@ func TestReceiveRuntimeMessagesRejectsPublicLimits(t *testing.T) {
 	messages, _, err := receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		reads++
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress"}, nil
-	}, "turn", nil, func([]runtimeprotocol.Message) error { accepted++; return nil })
+	}, "turn", nil, func([]runtimeprotocol.Message, runtimeprotocol.Message) error { accepted++; return nil })
 	if err == nil || len(messages) != maxRuntimeExecutionMessages || accepted != maxRuntimeExecutionMessages || reads != maxRuntimeExecutionMessages+1 {
 		t.Fatalf("count limit: messages=%d accepted=%d reads=%d err=%v", len(messages), accepted, reads, err)
 	}
 	accepted = 0
 	messages, _, err = receiveRuntimeMessages(func() (runtimeprotocol.Message, error) {
 		return runtimeprotocol.Message{CommandID: "turn", MessageType: "Progress", Payload: map[string]any{"text": strings.Repeat("x", runtimeprotocol.MaxMessageBytes)}}, nil
-	}, "turn", nil, func([]runtimeprotocol.Message) error { accepted++; return nil })
+	}, "turn", nil, func([]runtimeprotocol.Message, runtimeprotocol.Message) error { accepted++; return nil })
 	if err == nil || len(messages) != 0 || accepted != 0 {
 		t.Fatalf("byte limit: messages=%d accepted=%d err=%v", len(messages), accepted, err)
 	}

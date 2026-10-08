@@ -135,9 +135,9 @@ identifier could not enter the ASCII-only authorization `ScopeRef` used by servi
 uses an operation-specific generated ASCII identity profile of at most 128 bytes with exact no-rewrite semantics;
 the public Unicode organization-reference contract and quota profile remain separate. That historical identity
 verdict remains recorded in the
-[A2.3 v3 independent review](../p1/durable-coordination-v3-independent-review-20260819.md), while the exact
+`durable-coordination-v3-independent-review-20260819.md` (历史私有归档), while the exact
 remediated candidate was independently rereviewed as `APPROVE, P0=0/P1=0/P2=0` in the
-[A2.3 remediation independent review](../p1/durable-coordination-v3-remediation-independent-review-20260820.md).
+`durable-coordination-v3-remediation-independent-review-20260820.md` (历史私有归档).
 That approval closes only the generated registry/profile, append-only PostgreSQL kernel and service/claim/matrix
 implementation-review slice. The remaining full migration closure is still required. No HTTP handler, P2 external
 effect, production write, deployment, release or Gate closure is introduced by this evidence.

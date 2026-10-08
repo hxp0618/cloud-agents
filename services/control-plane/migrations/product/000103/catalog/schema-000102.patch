@@ -1,0 +1,26 @@
+--- services/control-plane/migrations/product/000102/catalog/schema-000101.json
++++ services/control-plane/migrations/product/000103/catalog/schema-000102.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000102",
++  "schema_head": "000103",
+@@ -30111,0 +30112,20 @@
++            "grantee": null,
++            "special_case": null
++          }
++        }
++      ]
++    },
++    {
++      "migration_id": "000103",
++      "sql_sha256": "sha256:2b18f4cba10f809d86f206953dc2177c787059306f2bfa1bd7ec796471130270",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 8337,
++          "sha256": "sha256:120b01e662aaa73ffe9124522ca680263ec4e927b9257dcfe914aa6eeb7c8df7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:claim_remote_worker_sandbox_pty_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",

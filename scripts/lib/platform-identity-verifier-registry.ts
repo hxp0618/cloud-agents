@@ -164,7 +164,7 @@ export function identityVerifierRegistryInputs(_root: string): string[] {
     "docs/plan/adr/0025-p1-offline-jwt-access-token-verifier-contract.md",
     "docs/plan/p1/identity-verifier-entry-20260823.md",
     "scripts/generate-platform-identity-verifier-registry.ts",
-    "scripts/lib/platform-identity-verifier-registry.test.ts",
+    "test/scripts/platform-identity-verifier-registry.test.ts",
     "scripts/lib/platform-identity-verifier-registry.ts",
     "scripts/lib/platform-json-semantics.ts",
   ].toSorted();

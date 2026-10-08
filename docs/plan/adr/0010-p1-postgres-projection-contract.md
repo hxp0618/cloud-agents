@@ -3386,15 +3386,15 @@ introspection 未实现前继续 `NOT_IMPLEMENTED`/`UNPUBLISHED`。
 4. **A2.1b-impl-1：catalog**：实现 relation/function/child object projection、internal dependency closure 和
    denied object set；不改变 migration SQL。`ed37295` 已关闭 ordinary structural implementation 与本地
    PG15/16/17 same-bits matrix，但保留 expression slots、exported `ProjectCatalog` 和 runner binding 为 rejecting
-   boundary；固定证据见 [`postgres-catalog-structure-20260817.md`](../p1/postgres-catalog-structure-20260817.md)。
+   boundary；固定证据见 `postgres-catalog-structure-20260817.md` (历史私有归档)。
 5. **A2.1b-impl-2：expression**：实现 PG15/16/17 `pg_node_tree`/deparse adapter 与
    `cloud-agents-sql-expression/v1` normalizer，先以 fixture same-bits 验证，再接 runner。
 6. **A2.1b-impl-3：matrix/review**：执行三版本×双实例×两 snapshot mode 和 fault matrix；补齐 signed expected
    subject、dependency/provenance、SBOM/notice、reviewer closure record。完成前保持生产 CLI、Gate 和 release
    状态不变。`bbb0bf2` 已关闭 complete verified catalog entry、signed representative subject 与本地
    PG15/16/17 × A/B × idle/borrowed × normal/race matrix；固定实现证据见
-   [`postgres-catalog-matrix-20260817.md`](../p1/postgres-catalog-matrix-20260817.md)。`401206a` 已完成 fixed-source
-   supply 派生刷新，[independent catalog review](../p1/postgres-catalog-independent-review-20260817.md) 再以
+   `postgres-catalog-matrix-20260817.md` (历史私有归档)。`401206a` 已完成 fixed-source
+   supply 派生刷新，`postgres-catalog-independent-review-20260817.md` (历史私有归档) 再以
    P0/P1/P2=`0/0/0` 关闭本 implementation/review slice；这不关闭任何 aggregate Gate。
 
 实现提交必须只触碰对应切片的源码、fixture、ADR/README 和 evidence；不得修改 main、合并宿主分支、发布公开
@@ -3405,7 +3405,7 @@ npm/Go channel、写生产数据库或把 `NOT_IMPLEMENTED` 改成 `IMPLEMENTED`
 - [ADR-0008：P1 PostgreSQL Data Kernel](0008-p1-postgres-data-kernel.md)
 - [ADR-0009：P1 Migration Bundle、Runner 与 Trust Anchor](0009-p1-migration-bundle-runner.md)
 - [P1 execution README](../p1/README.md)
-- [typed projector seam](../../../services/control-plane/internal/migration/contracts.go)
+- `services/control-plane/internal/migration/contracts.go` (历史私有归档)
 - [catalog projection model](../../../services/control-plane/migrations/catalog/schema-000001.json)
 - [authority contract placeholder](../../../services/control-plane/migrations/catalog/authority-v1.json)
 - PostgreSQL official catalog semantics：[PG15 system information](https://www.postgresql.org/docs/15/functions-info.html)、[PG16 role membership](https://www.postgresql.org/docs/16/role-membership.html)、[PG17 `pg_auth_members`](https://www.postgresql.org/docs/17/catalog-pg-auth-members.html)、[PG17 `pg_attribute`](https://www.postgresql.org/docs/17/catalog-pg-attribute.html)、[PG17 `pg_index`](https://www.postgresql.org/docs/17/catalog-pg-index.html)、[PG17 `pg_proc`](https://www.postgresql.org/docs/17/catalog-pg-proc.html)

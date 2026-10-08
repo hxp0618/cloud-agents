@@ -74,7 +74,10 @@ export type PackedCloudAgentPackage = {
 export type CloudAgentReleaseSmokeOptions = {
   readonly outputDirectory: string;
   readonly allowDirty: boolean;
+  readonly registry: string;
 };
+
+export const DEFAULT_CLOUD_AGENT_NPM_REGISTRY = "https://registry.npmjs.org/";
 
 export function cloudAgentTarballClosure(
   target: CloudAgentPublicPackageName,
@@ -110,6 +113,7 @@ export function parseCloudAgentReleaseSmokeOptions(
 ): CloudAgentReleaseSmokeOptions {
   let outputDirectory: string | undefined;
   let allowDirty = false;
+  let registry = DEFAULT_CLOUD_AGENT_NPM_REGISTRY;
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
     if (value === "--skip-build") {
@@ -130,6 +134,15 @@ export function parseCloudAgentReleaseSmokeOptions(
       index += 1;
       continue;
     }
+    if (value === "--registry") {
+      const candidate = args[index + 1];
+      if (!candidate || candidate.startsWith("--")) {
+        throw new Error("--registry requires an absolute HTTPS registry URL.");
+      }
+      registry = parseCloudAgentNpmRegistry(candidate);
+      index += 1;
+      continue;
+    }
     throw new Error(`Unknown argument: ${String(value)}`);
   }
   if (!outputDirectory) {
@@ -137,7 +150,29 @@ export function parseCloudAgentReleaseSmokeOptions(
       "Usage: node scripts/cloud-agent-release-smoke.ts --output-dir <new-directory>",
     );
   }
-  return { outputDirectory: resolve(cwd, outputDirectory), allowDirty };
+  return { outputDirectory: resolve(cwd, outputDirectory), allowDirty, registry };
+}
+
+function parseCloudAgentNpmRegistry(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("--registry must be an absolute HTTPS registry URL.");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(
+      "--registry must be an absolute HTTPS registry URL without credentials, query, or fragment.",
+    );
+  }
+  return parsed.toString();
 }
 
 export function validatePackedCloudAgentManifest(manifest: JSONRecord): void {

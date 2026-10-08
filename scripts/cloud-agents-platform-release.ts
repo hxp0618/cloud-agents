@@ -10,6 +10,8 @@ import {
   buildPlatformTypeScriptSDKPackage,
   buildPlatformMigrationPackage,
   buildPlatformDeploymentPackage,
+  buildRuntimeNotice,
+  captureRuntimeReleaseCandidate,
   parsePlatformReleaseOptions,
   platformReleaseArtifact,
   PLATFORM_RELEASE_CONTRACTS,
@@ -21,10 +23,14 @@ import {
   PLATFORM_RELEASE_MIGRATIONS,
   PLATFORM_RELEASE_RUNTIME,
   PLATFORM_RELEASE_TARGETS,
+  CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+  WORKER_OCI_INSTALL_MANIFEST_FILENAME,
+  WORKER_OCI_NOTICES_FILENAME,
   type PlatformReleaseArtifact,
   type PlatformReleaseTarget,
   validatePlatformReleaseManifest,
 } from "./lib/platform-release.ts";
+import { buildWorkerOciSupplyArtifacts } from "./lib/worker-oci-supply.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const runtimePackageBuildOrder = [
@@ -44,9 +50,34 @@ const sourceStatus = run(
   ["status", "--porcelain=v1", "--untracked-files=all"],
   repositoryRoot,
 );
+const sourceCommit = run("git", ["rev-parse", "HEAD"], repositoryRoot).trim();
+const sourceDirty = sourceStatus.trim() !== "";
 if (sourceStatus.trim() && !options.allowDirty) {
   throw new Error(
     "platform release requires a clean source tree; use --allow-dirty only for local validation.",
+  );
+}
+const runtimeCandidate =
+  options.runtimeCandidateDirectory === undefined
+    ? undefined
+    : captureRuntimeReleaseCandidate(
+        options.runtimeCandidateDirectory,
+        repositoryRoot,
+        sourceCommit,
+        sourceDirty,
+      );
+if (runtimeCandidate !== undefined) {
+  process.stderr.write(
+    `${JSON.stringify({
+      runtime_candidate_binding: {
+        candidateDigest: runtimeCandidate.candidateDigest,
+        manifestSha256: runtimeCandidate.manifestSha256,
+        sourceCommit,
+        sourceDirty,
+        runtimeSha256: runtimeCandidate.runtimeArtifact.sha256,
+        noticeSha256: runtimeCandidate.noticeArtifact.sha256,
+      },
+    })}\n`,
   );
 }
 if (existsSync(options.outputDirectory))
@@ -66,28 +97,54 @@ buildGoArtifacts(
 );
 buildGoArtifacts(PLATFORM_RELEASE_CLI_TARGETS, ["cloud-agentsctl"]);
 
-for (const directory of runtimePackageBuildOrder) {
-  run("bun", ["run", "--cwd", directory, "build"], repositoryRoot);
+if (runtimeCandidate === undefined) {
+  for (const directory of runtimePackageBuildOrder) {
+    run("bun", ["run", "--cwd", directory, "build"], repositoryRoot);
+  }
 }
 const runtimeOutput = join(options.outputDirectory, PLATFORM_RELEASE_RUNTIME);
-const runtimeBytes = readFileSync(
-  join(repositoryRoot, "packages/cloud-agent-distribution/dist/stdio.mjs"),
-);
+const runtimeBytes =
+  runtimeCandidate?.runtimeBytes ??
+  readFileSync(join(repositoryRoot, "packages/cloud-agent-distribution/dist/stdio.mjs"));
+const runtimeNotice =
+  runtimeCandidate === undefined
+    ? buildRuntimeNotice(repositoryRoot)
+    : { artifact: runtimeCandidate.noticeArtifact, bytes: runtimeCandidate.noticeBytes };
 writeFileSync(runtimeOutput, runtimeBytes, { mode: 0o555 });
+writeFileSync(
+  join(options.outputDirectory, CLOUD_AGENT_RUNTIME_NOTICES_FILENAME),
+  runtimeNotice.bytes,
+  { mode: 0o444 },
+);
 artifacts.push(
-  platformReleaseArtifact(
-    "cloud-agent-runtime",
-    "portable",
-    PLATFORM_RELEASE_RUNTIME,
-    runtimeBytes,
-  ),
+  runtimeCandidate?.runtimeArtifact ??
+    platformReleaseArtifact(
+      "cloud-agent-runtime",
+      "portable",
+      PLATFORM_RELEASE_RUNTIME,
+      runtimeBytes,
+    ),
+  runtimeNotice.artifact,
 );
 
 run("bun", ["run", "--cwd", "sdk/typescript", "build"], repositoryRoot);
 run("bun", ["run", "--cwd", "apps/admin-web", "build"], repositoryRoot);
 run("bun", ["run", "--cwd", "apps/user-web", "build"], repositoryRoot);
 const deploymentOutput = join(options.outputDirectory, PLATFORM_RELEASE_DEPLOYMENT);
-const deploymentBytes = buildPlatformDeploymentPackage(repositoryRoot);
+const workerSupply = buildWorkerOciSupplyArtifacts(repositoryRoot);
+writeFileSync(
+  join(options.outputDirectory, WORKER_OCI_INSTALL_MANIFEST_FILENAME),
+  workerSupply.manifestBytes,
+  { mode: 0o444 },
+);
+writeFileSync(
+  join(options.outputDirectory, WORKER_OCI_NOTICES_FILENAME),
+  workerSupply.noticeBytes,
+  {
+    mode: 0o444,
+  },
+);
+const deploymentBytes = buildPlatformDeploymentPackage(repositoryRoot, workerSupply);
 writeFileSync(deploymentOutput, deploymentBytes, { mode: 0o444 });
 artifacts.push(
   platformReleaseArtifact(
@@ -95,6 +152,20 @@ artifacts.push(
     "portable",
     PLATFORM_RELEASE_DEPLOYMENT,
     deploymentBytes,
+  ),
+);
+artifacts.push(
+  platformReleaseArtifact(
+    "cloud-agents-worker-oci-install-manifest",
+    "portable",
+    WORKER_OCI_INSTALL_MANIFEST_FILENAME,
+    workerSupply.manifestBytes,
+  ),
+  platformReleaseArtifact(
+    "cloud-agents-worker-oci-notices",
+    "portable",
+    WORKER_OCI_NOTICES_FILENAME,
+    workerSupply.noticeBytes,
   ),
 );
 
@@ -148,8 +219,8 @@ const manifest = {
   schemaVersion: 1 as const,
   kind: "cloud-agents-platform-release" as const,
   version: options.version,
-  sourceCommit: run("git", ["rev-parse", "HEAD"], repositoryRoot).trim(),
-  sourceDirty: sourceStatus.trim() !== "",
+  sourceCommit,
+  sourceDirty,
   artifacts,
 };
 const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);

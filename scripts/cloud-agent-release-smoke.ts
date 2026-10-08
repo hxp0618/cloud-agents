@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { platformLandlockArtifacts } from "./lib/platform-landlock.ts";
+import { buildRuntimeNotice } from "./lib/platform-release-verifier.ts";
 
 import {
   assertSameCloudAgentBits,
@@ -111,7 +112,7 @@ validateDistributionManifest(packedManifests);
 
 const beforeSmoke = packedPackages.toSorted((left, right) => left.name.localeCompare(right.name));
 const nodeConformance = runExternalNode24Smoke(options.outputDirectory, beforeSmoke);
-runExternalPnpm11Smoke(options.outputDirectory, beforeSmoke);
+runExternalPnpm11Smoke(options.outputDirectory, beforeSmoke, options.registry);
 const packedBinConformance = {
   ...nodeConformance,
   passed: [...nodeConformance.passed, "pnpm-11-coordinated-peer-install"],
@@ -123,6 +124,10 @@ const afterSmoke = beforeSmoke.map((item) => ({
 assertSameCloudAgentBits(beforeSmoke, afterSmoke);
 for (const item of afterSmoke) chmodSync(join(options.outputDirectory, item.filename), 0o444);
 const nativeRuntimeDependencies = await platformLandlockArtifacts(repositoryRoot);
+const runtimeNotice = buildRuntimeNotice(repositoryRoot);
+writeFileSync(join(options.outputDirectory, runtimeNotice.artifact.filename), runtimeNotice.bytes, {
+  mode: 0o444,
+});
 for (const { artifact, bytes } of nativeRuntimeDependencies) {
   writeFileSync(join(options.outputDirectory, artifact.filename), bytes, {
     mode: artifact.target === "portable" ? 0o444 : 0o555,
@@ -138,10 +143,12 @@ const candidate = {
   nodeVersion: process.version,
   npmVersion: run("npm", ["--version"], repositoryRoot).trim(),
   bunVersion: run("bun", ["--version"], repositoryRoot).trim(),
+  npmRegistry: options.registry,
   platform: `${process.platform}-${process.arch}`,
   sameBitsVerified: true,
   packedBinConformance,
   standaloneRuntime: standaloneRuntimeArtifact(options.outputDirectory),
+  runtimeNotices: runtimeNotice.artifact,
   nativeRuntimeDependencies: nativeRuntimeDependencies.map(({ artifact }) => artifact),
   packages: afterSmoke,
 };
@@ -155,6 +162,7 @@ writeFileSync(
   `${[
     ...afterSmoke.map((item) => `${item.sha256.slice("sha256:".length)}  ${item.filename}`),
     `${candidate.standaloneRuntime.sha256.slice("sha256:".length)}  ${candidate.standaloneRuntime.filename}`,
+    `${candidate.runtimeNotices.sha256.slice("sha256:".length)}  ${candidate.runtimeNotices.filename}`,
     ...candidate.nativeRuntimeDependencies.map(
       (item) => `${item.sha256.slice("sha256:".length)}  ${item.filename}`,
     ),
@@ -177,6 +185,7 @@ writeFileSync(
       subject: [
         ...afterSmoke,
         candidate.standaloneRuntime,
+        candidate.runtimeNotices,
         ...candidate.nativeRuntimeDependencies,
       ].map((item) => ({
         name: item.filename,
@@ -295,6 +304,7 @@ function runExternalNode24Smoke(
 function runExternalPnpm11Smoke(
   candidateDirectory: string,
   packages: ReadonlyArray<PackedCloudAgentPackage>,
+  registry: string,
 ): void {
   const externalRoot = mkdtempSync(join(tmpdir(), "cloud-agents-pnpm-smoke-"));
   try {
@@ -330,7 +340,7 @@ function runExternalPnpm11Smoke(
         "install",
         "--ignore-scripts",
         "--no-frozen-lockfile",
-        "--registry=https://registry.npmjs.org/",
+        `--registry=${registry}`,
         "--store-dir=.pnpm-store",
       ],
       externalRoot,
@@ -642,7 +652,7 @@ function assertPackedFileAllowlist(tarball: string): void {
       throw new Error(`${tarball} unexpectedly contains test source ${path}.`);
     }
     if (
-      !/^package\/(?:LICENSE|README\.md|package\.json|manifest\.json|provider-capability-catalog\.json|(?:dist|src|schemas|fixtures)\/)/u.test(
+      !/^package\/(?:LICENSE|README\.md|THIRD_PARTY_NOTICES\.md|package\.json|manifest\.json|provider-capability-catalog\.json|(?:dist|src|schemas|fixtures)\/)/u.test(
         path,
       )
     ) {

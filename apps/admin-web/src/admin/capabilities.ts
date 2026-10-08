@@ -14,8 +14,54 @@ import { newRequestId } from "./request";
 export type AdminManagedAgentRuntime = Readonly<{
   sessions: readonly ManagedAgentSession[];
   executions: readonly ManagedAgentExecution[];
-  events: readonly ManagedAgentEvent[];
+  sessionPageToken?: string;
+  nextSessionPageToken?: string;
+  seenSessionPageTokens: readonly string[];
+  selectedSessionId: string;
+  executionPageToken?: string;
+  nextExecutionPageToken?: string;
+  seenExecutionPageTokens: readonly string[];
 }>;
+
+export type AdminManagedAgentEventPage = Readonly<{
+  events: readonly ManagedAgentEvent[];
+  nextCursor?: string;
+  hasMore: boolean;
+  seenCursors: readonly string[];
+}>;
+
+export async function loadAdminManagedAgentEventPage(
+  client: AdminClient,
+  tenantId: string,
+  projectId: string,
+  sessionId: string,
+  signal: AbortSignal,
+  previous?: AdminManagedAgentEventPage,
+): Promise<AdminManagedAgentEventPage> {
+  const page = await client.listAdminManagedAgentEvents(
+    tenantId,
+    projectId,
+    sessionId,
+    newRequestId(),
+    previous?.nextCursor,
+    64,
+    signal,
+  );
+  const nextCursor = page.value.nextCursor;
+  const seenCursors = new Set(previous?.seenCursors ?? []);
+  if (
+    page.value.hasMore &&
+    (!nextCursor || nextCursor === previous?.nextCursor || seenCursors.has(nextCursor))
+  )
+    throw new AdminUIError("error.agentEventCursor");
+  if (nextCursor) seenCursors.add(nextCursor);
+  return Object.freeze({
+    events: Object.freeze(page.value.events.toReversed()),
+    ...(nextCursor === undefined ? {} : { nextCursor }),
+    hasMore: page.value.hasMore,
+    seenCursors: Object.freeze([...seenCursors]),
+  });
+}
 
 export async function listAdminMcpServers(
   client: AdminClient,
@@ -65,78 +111,82 @@ export async function loadAdminManagedAgentRuntime(
   projectId: string,
   sandboxId: string,
   signal: AbortSignal,
-  includeEvents = true,
+  previous?: AdminManagedAgentRuntime,
+  nextSession = false,
+  selectedSessionId = previous?.selectedSessionId ?? "",
+  nextExecution = false,
 ): Promise<AdminManagedAgentRuntime> {
-  const sessions = (
-    await collectAdminPages<ManagedAgentSession>(
-      (pageToken) =>
-        client
-          .listAdminManagedAgentSessions(
-            tenantId,
-            projectId,
-            newRequestId(),
-            200,
-            pageToken,
-            signal,
-          )
-          .then((page) => ({
-            items: page.value.sessions,
-            nextPageToken: page.value.nextPageToken,
-          })),
-      () => new AdminUIError("error.agentSessionPageToken"),
-    )
-  ).filter(({ spec }) => sandboxId === "" || spec.sandboxId === sandboxId);
+  const sessionPageToken = nextSession
+    ? previous?.nextSessionPageToken
+    : previous?.sessionPageToken;
+  const sessionPage = await client.listAdminManagedAgentSessions(
+    tenantId,
+    projectId,
+    newRequestId(),
+    sandboxId || undefined,
+    64,
+    sessionPageToken,
+    signal,
+  );
+  const sessions = sessionPage.value.sessions;
+  const seenSessionPageTokens = new Set(previous?.seenSessionPageTokens ?? []);
+  if (
+    sessionPage.value.nextPageToken &&
+    (sessionPage.value.nextPageToken === sessionPageToken ||
+      (nextSession && seenSessionPageTokens.has(sessionPage.value.nextPageToken)))
+  )
+    throw new AdminUIError("error.agentSessionPageToken");
+  if (sessionPage.value.nextPageToken) seenSessionPageTokens.add(sessionPage.value.nextPageToken);
 
-  const executions: ManagedAgentExecution[] = [];
-  const events: ManagedAgentEvent[] = [];
-  for (const session of sessions) {
-    executions.push(
-      ...(await collectAdminPages<ManagedAgentExecution>(
-        (pageToken) =>
-          client
-            .listAdminManagedAgentExecutions(
-              tenantId,
-              projectId,
-              session.metadata.uid,
-              newRequestId(),
-              200,
-              pageToken,
-              signal,
-            )
-            .then((page) => ({
-              items: page.value.executions,
-              nextPageToken: page.value.nextPageToken,
-            })),
-        () => new AdminUIError("error.agentExecutionPageToken"),
-      )),
+  const sessionId = sessions.some(({ metadata }) => metadata.uid === selectedSessionId)
+    ? selectedSessionId
+    : (sessions[0]?.metadata.uid ?? "");
+  let executions: readonly ManagedAgentExecution[] = Object.freeze([]);
+  let executionPageToken: string | undefined;
+  let nextExecutionPageToken: string | undefined;
+  let seenExecutionPageTokens: readonly string[] = Object.freeze([]);
+  if (sessionId !== "") {
+    executionPageToken =
+      !nextSession && sessionId === previous?.selectedSessionId
+        ? nextExecution
+          ? previous.nextExecutionPageToken
+          : previous.executionPageToken
+        : undefined;
+    const executionPage = await client.listAdminManagedAgentExecutions(
+      tenantId,
+      projectId,
+      sessionId,
+      newRequestId(),
+      64,
+      executionPageToken,
+      signal,
     );
-
-    if (includeEvents) {
-      let cursor: string | undefined;
-      const seenCursors = new Set<string>();
-      for (;;) {
-        const page = await client.listAdminManagedAgentEvents(
-          tenantId,
-          projectId,
-          session.metadata.uid,
-          newRequestId(),
-          cursor,
-          64,
-          signal,
-        );
-        events.push(...page.value.events);
-        if (!page.value.hasMore) break;
-        cursor = page.value.nextCursor;
-        if (seenCursors.has(cursor) || events.length >= 4096)
-          throw new AdminUIError("error.agentEventCursor");
-        seenCursors.add(cursor);
-      }
-    }
+    executions = Object.freeze(executionPage.value.executions);
+    nextExecutionPageToken = executionPage.value.nextPageToken;
+    const seen = new Set(
+      sessionId === previous?.selectedSessionId ? previous.seenExecutionPageTokens : [],
+    );
+    if (
+      nextExecutionPageToken &&
+      (nextExecutionPageToken === executionPageToken ||
+        (nextExecution && seen.has(nextExecutionPageToken)))
+    )
+      throw new AdminUIError("error.agentExecutionPageToken");
+    if (nextExecutionPageToken) seen.add(nextExecutionPageToken);
+    seenExecutionPageTokens = Object.freeze([...seen]);
   }
   return Object.freeze({
-    sessions: Object.freeze(sessions),
-    executions: Object.freeze(executions),
-    events: Object.freeze(events.slice(-64).reverse()),
+    sessions: Object.freeze([...sessions]),
+    executions,
+    ...(sessionPageToken === undefined ? {} : { sessionPageToken }),
+    ...(sessionPage.value.nextPageToken === undefined
+      ? {}
+      : { nextSessionPageToken: sessionPage.value.nextPageToken }),
+    seenSessionPageTokens: Object.freeze([...seenSessionPageTokens]),
+    selectedSessionId: sessionId,
+    ...(executionPageToken === undefined ? {} : { executionPageToken }),
+    ...(nextExecutionPageToken === undefined ? {} : { nextExecutionPageToken }),
+    seenExecutionPageTokens,
   });
 }
 
@@ -146,7 +196,7 @@ export function listAdminManagedAgentBindings(
   projectId: string,
   signal: AbortSignal,
 ): Promise<AdminManagedAgentRuntime> {
-  return loadAdminManagedAgentRuntime(client, tenantId, projectId, "", signal, false);
+  return loadAdminManagedAgentRuntime(client, tenantId, projectId, "", signal);
 }
 
 export type AdminCapabilityBinding = Readonly<{

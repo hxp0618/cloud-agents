@@ -14,7 +14,7 @@ The next application scope is [Anywhere Runtime](docs/plan/cloud-agents-platform
 
 The portable Runtime keeps its host-neutral JavaScript/stdio ABI. Synara and T3 Code remain downstream consumers with their own logical workspace, VCS, checkpoint and application authority; they do not become dependencies of the foundation.
 
-The seven Runtime packages and the public Control Plane SDK use the independent `@cloud-agents/*` namespace. They do not depend on a Synara application root or T3-private package.
+The nine public Runtime, Provider, Testkit, and Distribution packages use the independent `@cloud-agents/*` namespace. The Control Plane SDK source and release-candidate artifacts use the same namespace but are not published to npm. None of them depends on a Synara application root or T3-private package.
 
 ## Repository layout
 
@@ -28,7 +28,7 @@ The seven Runtime packages and the public Control Plane SDK use the independent 
 | `deploy/` | Docker, Compose and Helm deployment assets |
 | `scripts/` | Checks, generators, local dev and E2E harnesses |
 | `tools/` | Pinned generator supply, contract standards and identity verifier tooling |
-| `docs/` | [Plans and design](docs/plan/README.md), [phase-1 acceptance](docs/acceptance/phase-1.md), [release candidate](docs/release-candidate.md) |
+| `docs/` | [Plans and design](docs/plan/README.md), [phase-1 acceptance](docs/acceptance/phase-1.public.md), [release candidate](docs/release-candidate.md) |
 
 ## Runtime baseline
 
@@ -45,14 +45,16 @@ The coordinated RC keeps every internal package edge as an exact peer pin. Consu
 
 ## Local development
 
-With the toolchain pinned in `.mise.toml` (Node.js, Bun, Go, Python, uv, Helm) on `PATH` — for example via `mise install` and `mise exec --` — and Docker running:
+With the toolchain pinned in `.mise.toml` (Node.js, Bun, Go, Python, uv, Helm) on `PATH` — for example via `mise install` and `mise exec -- zsh -lc` — and Docker running:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run dev
 ```
 
-The command starts an ephemeral PostgreSQL 17 database, applies the product migrations, bootstraps `tenant-local` and `organization-local`, builds the Runtime and local Go binaries, then serves the Worker on `127.0.0.1:8091` and the Control Plane on `127.0.0.1:8080`. It enables the packaged `codex` and `claudeAgent` Providers unless `CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS` is explicitly set, prints the generated 0600 bearer-token path, and prints an exact `cloud-agentsctl` prefix. `Ctrl-C` removes the owned container, local credentials, and default managed workspace; set `CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY` to an existing absolute directory to retain Runtime workspace and Provider state. Provider credential files remain optional and can be supplied with `CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR`; the local tenant uses `tenant-local.codex.json` or `tenant-local.claudeAgent.json`.
+The command starts an ephemeral PostgreSQL 17 database, applies the product migrations, bootstraps `tenant-local` and `organization-local`, builds the Runtime and local Go binaries, then serves the Worker on `127.0.0.1:8091` and the Control Plane on `127.0.0.1:8080`. It enables the packaged `codex`, `claudeAgent`, `pi`, and `deepseek-harness` Providers unless `CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS` is explicitly set, prints the generated 0600 bearer-token path, and prints an exact `cloud-agentsctl` prefix. `Ctrl-C` removes the owned container, local credentials, and default managed workspace; set `CLOUD_AGENTS_DEV_WORKSPACE_DIRECTORY` to an existing absolute directory to retain Runtime workspace and Provider state. Provider credential files remain optional and can be supplied with `CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR`; use filenames such as `tenant-local.codex.json` or `tenant-local.claudeAgent.json`.
+
+The default local stack supports startup and project operations, but does not provision the ready environment lease or Foundation Sandbox required to create a managed Agent Session. Provider credentials alone do not supply that binding. Run `mise exec -- zsh -lc 'bash test/e2e/test-cloud-agents-dev.sh'` to start the temporary Foundation fixture and verify the bound Session, `/workspace` execution path, and credential boundary; the current dev smoke passes. See the [current acceptance evidence](docs/acceptance/phase-1.public.md).
 
 ## Verification
 
@@ -61,15 +63,15 @@ bun install --frozen-lockfile --ignore-scripts
 bun run fmt:check
 bun run lint
 bun run typecheck
-bun run test
 bun run build
+bun run test
 bun run secret:scan
-node scripts/cloud-agent-release-smoke.ts --output-dir candidate
+mise exec -- zsh -lc 'node scripts/cloud-agent-release-smoke.ts --output-dir /tmp/cloud-agents-release-candidate'
 ```
 
-The Go, contract and migration checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md). Contract checks verify the exact toolchain versions, so run them under `mise exec --`.
+The Go, contract and migration checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md). Contract and Proto SDK checks verify the exact toolchain versions, so run them through `mise exec -- zsh -lc '<command>'` or set the documented `CLOUD_AGENTS_NODE` override explicitly.
 
-The release smoke emits seven read-only tarballs, a standalone runtime, checksums, an SPDX 2.3 SBOM, SLSA-shaped provenance, and a candidate manifest. See `docs/release-candidate.md` for the exact boundary.
+The release smoke emits nine read-only tarballs, a standalone runtime, checksums, an SPDX 2.3 SBOM, SLSA-shaped provenance, and a candidate manifest. See `docs/release-candidate.md` for the exact boundary.
 
 No package from this repository is published to npm yet. GitHub release candidates are engineering artifacts and do not imply deployment, public beta, production support, or GA.
 

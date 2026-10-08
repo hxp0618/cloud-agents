@@ -85,7 +85,11 @@ func (id Identity) Labels() map[string]string {
 // Observation contains only execution metadata. Running is not a readiness verdict.
 type Observation struct{ RuntimeID, RuntimeState string }
 
-const maxExecOutputBytes = 1 << 20
+const (
+	maxExecOutputBytes         = 1 << 20
+	networkPolicyReadyTimeout  = 30 * time.Second
+	networkPolicyRetryInterval = 100 * time.Millisecond
+)
 
 type ExecInput struct {
 	Identity  Identity
@@ -188,6 +192,14 @@ type PreviewResponse struct {
 	Body       []byte
 }
 
+// Callers build a Client per command or request from a fresh credential read;
+// the key travels in a header, so one pooled transport bounds idle connections.
+var sharedTransport = func() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return transport
+}()
+
 func New(endpoint, key string) (*Client, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.Path != "" && u.Path != "/") || u.Opaque != "" {
@@ -205,10 +217,8 @@ func New(endpoint, key string) (*Client, error) {
 			return nil, ErrInvalid
 		}
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
 	return &Client{endpoint: strings.TrimSuffix(endpoint, "/"), key: key, http: &http.Client{
-		Transport: transport, Timeout: 10 * time.Second,
+		Transport: sharedTransport, Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
@@ -421,21 +431,12 @@ func (c *Client) probeExecd(ctx context.Context, runtimeID string) error {
 		return err
 	}
 	execdPath(target, "/ping")
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodGet, target, headers, http.NoBody)
 	if err != nil {
-		return ErrUnavailable
-	}
-	request.Header = headers
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrUnavailable
+		return err
 	}
 	defer response.Body.Close()
-	copied, copyErr := io.Copy(io.Discard, io.LimitReader(response.Body, (1<<20)+1))
-	if copyErr != nil || copied > 1<<20 || response.StatusCode != http.StatusOK {
+	if !drainBounded(response, 1<<20) || response.StatusCode != http.StatusOK {
 		return ErrUnavailable
 	}
 	return nil
@@ -612,10 +613,35 @@ func (c *Client) serverProxyTarget(ctx context.Context, runtimeID string, port i
 	return &target, headers, nil
 }
 
+// VerifyNetworkPolicy waits briefly for the egress policy server after execd is ready;
+// the two sidecars have independent startup/readiness boundaries.
 func (c *Client) VerifyNetworkPolicy(ctx context.Context, id Identity, runtimeID string, expected *NetworkPolicy) error {
 	if c == nil || ctx == nil || !id.valid() || !identifier.MatchString(runtimeID) || expected == nil || !expected.valid() {
 		return ErrInvalid
 	}
+	readyCtx, cancel := context.WithTimeout(ctx, networkPolicyReadyTimeout)
+	defer cancel()
+	ticker := time.NewTicker(networkPolicyRetryInterval)
+	defer ticker.Stop()
+	for {
+		err := c.verifyNetworkPolicyOnce(readyCtx, id, runtimeID, expected)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, ErrUnavailable) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-readyCtx.Done():
+			return ErrUnavailable
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *Client) verifyNetworkPolicyOnce(ctx context.Context, id Identity, runtimeID string, expected *NetworkPolicy) error {
 	if err := c.verifyRuntime(ctx, PTYInput{Identity: id, RuntimeID: runtimeID}); err != nil {
 		return err
 	}
@@ -624,17 +650,9 @@ func (c *Client) VerifyNetworkPolicy(ctx context.Context, id Identity, runtimeID
 		return err
 	}
 	target.Path += "/policy"
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodGet, target, headers, http.NoBody)
 	if err != nil {
-		return ErrUnavailable
-	}
-	request.Header = headers
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrUnavailable
+		return err
 	}
 	defer response.Body.Close()
 	var status struct {
@@ -642,9 +660,7 @@ func (c *Client) VerifyNetworkPolicy(ctx context.Context, id Identity, runtimeID
 		EnforcementMode string         `json:"enforcementMode"`
 		Policy          *NetworkPolicy `json:"policy"`
 	}
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK ||
-		json.Unmarshal(data, &status) != nil || status.Status != "ok" || status.EnforcementMode != "dns+nft" ||
+	if !readBoundedJSON(response, http.StatusOK, 64<<10, &status) || status.Status != "ok" || status.EnforcementMode != "dns+nft" ||
 		status.Policy == nil || status.Policy.DefaultAction != expected.DefaultAction || len(status.Policy.Egress) != len(expected.Egress) {
 		return ErrPolicyUnenforced
 	}
@@ -658,6 +674,35 @@ func (c *Client) VerifyNetworkPolicy(ctx context.Context, id Identity, runtimeID
 
 func execdPath(target *url.URL, path string) {
 	target.Path = strings.TrimSuffix(target.Path, "/") + path
+}
+
+// doProxied sends one request through the server proxy. Every failure other
+// than the caller's own context is reported as ErrUnavailable so transport
+// details never reach callers.
+func (c *Client) doProxied(ctx context.Context, method string, target *url.URL, headers http.Header, body io.Reader) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, method, target.String(), body)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	request.Header = headers.Clone()
+	response, err := c.http.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, ErrUnavailable
+	}
+	return response, nil
+}
+
+func readBoundedJSON(response *http.Response, status int, limit int64, value any) bool {
+	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	return err == nil && int64(len(data)) <= limit && response.StatusCode == status && json.Unmarshal(data, value) == nil
+}
+
+func drainBounded(response *http.Response, limit int64) bool {
+	copied, err := io.Copy(io.Discard, io.LimitReader(response.Body, limit+1))
+	return err == nil && copied <= limit
 }
 
 // CreatePTY creates only a fixed /workspace shell session after re-verifying the
@@ -675,27 +720,18 @@ func (c *Client) CreatePTY(ctx context.Context, input PTYInput) (PTYObservation,
 		return PTYObservation{}, ErrInvalid
 	}
 	execdPath(target, "/pty")
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
+	requestHeaders := headers.Clone()
+	requestHeaders.Set("Content-Type", "application/json")
+	response, err := c.doProxied(ctx, http.MethodPost, target, requestHeaders, bytes.NewReader(body))
 	if err != nil {
-		return PTYObservation{}, ErrUnavailable
-	}
-	request.Header = headers.Clone()
-	request.Header.Set("Content-Type", "application/json")
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return PTYObservation{}, ctx.Err()
-		}
-		return PTYObservation{}, ErrUnavailable
+		return PTYObservation{}, err
 	}
 	defer response.Body.Close()
 	var result PTYObservation
 	var raw struct {
 		SessionID string `json:"session_id"`
 	}
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusCreated ||
-		json.Unmarshal(data, &raw) != nil || !identifier.MatchString(raw.SessionID) {
+	if !readBoundedJSON(response, http.StatusCreated, 64<<10, &raw) || !identifier.MatchString(raw.SessionID) {
 		return PTYObservation{}, ErrUnavailable
 	}
 	result.SessionID = raw.SessionID
@@ -711,17 +747,9 @@ func (c *Client) GetPTY(ctx context.Context, input PTYInput, sessionID string) (
 		return PTYObservation{}, ErrInvalid
 	}
 	execdPath(target, "/pty/"+sessionID)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodGet, target, headers, http.NoBody)
 	if err != nil {
-		return PTYObservation{}, ErrUnavailable
-	}
-	request.Header = headers.Clone()
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return PTYObservation{}, ctx.Err()
-		}
-		return PTYObservation{}, ErrUnavailable
+		return PTYObservation{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
@@ -732,9 +760,7 @@ func (c *Client) GetPTY(ctx context.Context, input PTYInput, sessionID string) (
 		Running      bool   `json:"running"`
 		OutputOffset int64  `json:"output_offset"`
 	}
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK ||
-		json.Unmarshal(data, &raw) != nil || raw.SessionID != sessionID || raw.OutputOffset < 0 {
+	if !readBoundedJSON(response, http.StatusOK, 64<<10, &raw) || raw.SessionID != sessionID || raw.OutputOffset < 0 {
 		return PTYObservation{}, ErrUnavailable
 	}
 	return PTYObservation{SessionID: raw.SessionID, Running: raw.Running, OutputOffset: raw.OutputOffset}, nil
@@ -749,17 +775,9 @@ func (c *Client) DeletePTY(ctx context.Context, input PTYInput, sessionID string
 		return ErrInvalid
 	}
 	execdPath(target, "/pty/"+sessionID)
-	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, target.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodDelete, target, headers, http.NoBody)
 	if err != nil {
-		return ErrUnavailable
-	}
-	request.Header = headers.Clone()
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrUnavailable
+		return err
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
@@ -848,25 +866,16 @@ func (c *Client) fileInfo(ctx context.Context, target *url.URL, headers http.Hea
 	query := requestTarget.Query()
 	query.Add("path", absolutePath)
 	requestTarget.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodGet, requestTarget, headers, http.NoBody)
 	if err != nil {
-		return candidateFileInfo{}, ErrUnavailable
-	}
-	request.Header = headers.Clone()
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return candidateFileInfo{}, ctx.Err()
-		}
-		return candidateFileInfo{}, ErrUnavailable
+		return candidateFileInfo{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		return candidateFileInfo{}, ErrNotFound
 	}
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
 	var values map[string]candidateFileInfo
-	if readErr != nil || len(data) > 64<<10 || response.StatusCode != http.StatusOK || json.Unmarshal(data, &values) != nil || len(values) != 1 {
+	if !readBoundedJSON(response, http.StatusOK, 64<<10, &values) || len(values) != 1 {
 		return candidateFileInfo{}, ErrUnavailable
 	}
 	info, ok := values[absolutePath]
@@ -948,22 +957,13 @@ func (c *Client) ListFiles(ctx context.Context, input PTYInput, relativePath str
 	query.Set("path", workspaceFilePath(relativePath))
 	query.Set("depth", "1")
 	requestTarget.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodGet, requestTarget, headers, http.NoBody)
 	if err != nil {
-		return nil, ErrUnavailable
-	}
-	request.Header = headers.Clone()
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, ErrUnavailable
+		return nil, err
 	}
 	defer response.Body.Close()
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
 	var raw []candidateFileInfo
-	if readErr != nil || len(data) > 1<<20 || response.StatusCode != http.StatusOK || json.Unmarshal(data, &raw) != nil {
+	if !readBoundedJSON(response, http.StatusOK, 1<<20, &raw) {
 		return nil, ErrUnavailable
 	}
 	if len(raw) > 1000 {
@@ -1020,18 +1020,11 @@ func (c *Client) ReadFile(ctx context.Context, input PTYInput, relativePath stri
 		query := requestTarget.Query()
 		query.Set("path", workspaceFilePath(relativePath))
 		requestTarget.RawQuery = query.Encode()
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, requestTarget.String(), http.NoBody)
+		rangeHeaders := headers.Clone()
+		rangeHeaders.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end-1))
+		response, requestErr := c.doProxied(ctx, http.MethodGet, requestTarget, rangeHeaders, http.NoBody)
 		if requestErr != nil {
-			return FileRead{}, ErrUnavailable
-		}
-		request.Header = headers.Clone()
-		request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, end-1))
-		response, responseErr := c.http.Do(request)
-		if responseErr != nil {
-			if ctx.Err() != nil {
-				return FileRead{}, ctx.Err()
-			}
-			return FileRead{}, ErrUnavailable
+			return FileRead{}, requestErr
 		}
 		result.Content, requestErr = io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 		response.Body.Close()
@@ -1082,23 +1075,15 @@ func (c *Client) WriteFile(ctx context.Context, input PTYInput, relativePath str
 	if err != nil {
 		return FileEntry{}, ErrInvalid
 	}
-	requestTarget := cloneExecdTarget(target, "/files/upload")
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestTarget.String(), &body)
+	uploadHeaders := headers.Clone()
+	uploadHeaders.Set("Content-Type", writer.FormDataContentType())
+	response, err := c.doProxied(ctx, http.MethodPost, cloneExecdTarget(target, "/files/upload"), uploadHeaders, &body)
 	if err != nil {
-		return FileEntry{}, ErrUnavailable
+		return FileEntry{}, err
 	}
-	request.Header = headers.Clone()
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return FileEntry{}, ctx.Err()
-		}
-		return FileEntry{}, ErrUnavailable
-	}
-	copied, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, (64<<10)+1))
+	drained := drainBounded(response, 64<<10)
 	response.Body.Close()
-	if readErr != nil || copied > 64<<10 || response.StatusCode != http.StatusOK {
+	if !drained || response.StatusCode != http.StatusOK {
 		return FileEntry{}, ErrUnavailable
 	}
 	info, _, err := c.checkedFileInfo(ctx, target, headers, relativePath, "file", false)
@@ -1126,21 +1111,13 @@ func (c *Client) DeleteFile(ctx context.Context, input PTYInput, relativePath st
 	query := requestTarget.Query()
 	query.Add("path", workspaceFilePath(relativePath))
 	requestTarget.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, requestTarget.String(), http.NoBody)
+	response, err := c.doProxied(ctx, http.MethodDelete, requestTarget, headers, http.NoBody)
 	if err != nil {
-		return ErrUnavailable
+		return err
 	}
-	request.Header = headers.Clone()
-	response, err := c.http.Do(request)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrUnavailable
-	}
-	copied, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, (64<<10)+1))
+	drained := drainBounded(response, 64<<10)
 	response.Body.Close()
-	if readErr != nil || copied > 64<<10 || response.StatusCode != http.StatusOK {
+	if !drained || response.StatusCode != http.StatusOK {
 		return ErrUnavailable
 	}
 	if _, err := c.fileInfo(ctx, target, headers, workspaceFilePath(relativePath)); !errors.Is(err, ErrNotFound) {

@@ -3,7 +3,6 @@ import {
   type AdminSandboxSession,
   type ManagedAgentEvent,
   type ManagedAgentExecution,
-  type ManagedAgentSession,
   type ManagedAgentSideEffectReconciliationRequest,
   type RuntimeProfile,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -13,29 +12,38 @@ import {
 } from "@cloud-agents/cloud-agent-protocol";
 import { useI18n } from "../i18n";
 import { phaseLabel, phaseTone, providerLabel, shortDigest } from "./presentation";
+import { AdminAgentEvents } from "../AdminAgentEvents";
+import type { AdminClient, AdminManagedAgentRuntime, SavedAdminConnection } from "../admin";
 
 export function ManagedAgentRuntimeSection({
   sandbox,
-  sessions,
-  executions,
-  events,
+  runtime,
+  client,
+  connection,
   runtimeProfiles,
   disabled,
   onReconcileSideEffect,
+  onNextSessions,
+  onNextExecutions,
+  onSelectSession,
 }: Readonly<{
   sandbox: AdminSandboxSession;
-  sessions: readonly ManagedAgentSession[];
-  executions: readonly ManagedAgentExecution[];
-  events: readonly ManagedAgentEvent[];
+  runtime: AdminManagedAgentRuntime;
+  client: AdminClient | null;
+  connection: SavedAdminConnection;
   runtimeProfiles: readonly RuntimeProfile[];
   disabled: boolean;
   onReconcileSideEffect: (
     execution: ManagedAgentExecution,
     outcome: ManagedAgentSideEffectReconciliationRequest["outcome"],
   ) => void;
+  onNextSessions: () => void;
+  onNextExecutions: () => void;
+  onSelectSession: (sessionId: string) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
   const [confirmedExecutionId, setConfirmedExecutionId] = useState("");
+  const { sessions, executions } = runtime;
   const profile = runtimeProfiles.find(
     ({ spec }) =>
       spec.profileId === sandbox.spec.runtimeProfileId &&
@@ -54,15 +62,47 @@ export function ManagedAgentRuntimeSection({
         <span className="mono">{number(sessions.length)}</span>
       </div>
       <p>{t("agentRuntime.description")}</p>
+      <p>{t("agentRuntime.windowDescription")}</p>
+      <div className="button-row">
+        <label>
+          <span>{t("agentRuntime.sessionWindow")}</span>
+          <select
+            value={runtime.selectedSessionId}
+            onChange={(event) => onSelectSession(event.target.value)}
+            disabled={disabled}
+          >
+            {sessions.map(({ metadata }) => (
+              <option key={metadata.uid} value={metadata.uid}>
+                {metadata.uid}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="button secondary"
+          type="button"
+          disabled={disabled || runtime.nextSessionPageToken === undefined}
+          onClick={onNextSessions}
+        >
+          {t("agentRuntime.nextSessionWindow")}
+        </button>
+        <button
+          className="button secondary"
+          type="button"
+          disabled={disabled || runtime.nextExecutionPageToken === undefined}
+          onClick={onNextExecutions}
+        >
+          {t("agentRuntime.nextExecutionWindow")}
+        </button>
+      </div>
       {sessions.length === 0 ? (
         <p className="activity-empty">{t("agentRuntime.empty")}</p>
       ) : (
         <ul className="activity-list">
           {sessions.map((session) => {
             const provider = providerEntry(session.spec.providerKind);
-            const sessionExecutions = executions.filter(
-              ({ metadata }) => metadata.sessionId === session.metadata.uid,
-            );
+            const sessionExecutions =
+              session.metadata.uid === runtime.selectedSessionId ? executions : [];
             const nativeCapabilities = Object.entries(provider?.capabilities ?? {})
               .filter(([, support]) => support === "native")
               .map(([capability]) => capability)
@@ -106,7 +146,8 @@ export function ManagedAgentRuntimeSection({
                     runtime: sandbox.spec.runtimeId ?? t("common.notBound"),
                   })}
                 </small>
-                {sessionExecutions.length === 0 ? (
+                {session.metadata.uid !==
+                runtime.selectedSessionId ? null : sessionExecutions.length === 0 ? (
                   <small>{t("agentRuntime.executionEmpty")}</small>
                 ) : (
                   <ul className="activity-list">
@@ -230,30 +271,38 @@ export function ManagedAgentRuntimeSection({
       )}
       <div className="activity-heading">
         <h3>{t("agentRuntime.auditTitle")}</h3>
-        <span className="mono">{number(events.length)}</span>
       </div>
-      {events.length === 0 ? (
-        <p className="activity-empty">{t("agentRuntime.auditEmpty")}</p>
-      ) : (
-        <ul className="activity-list">
-          {events.map((event) => (
-            <li key={event.metadata.uid}>
-              <div>
-                <strong>{event.spec.operation}</strong>
-                <span className="mono">#{event.metadata.sequence}</span>
-              </div>
-              <small>
-                {dateTime(event.metadata.occurredAt)} ·{" "}
-                {event.spec.executionId ?? sessionLabel(event)}
-              </small>
-              <small className="mono break">{shortDigest(event.spec.mutationDigest)}</small>
-              {event.spec.errorCode === undefined ? null : (
-                <small className="danger-text">{event.spec.errorCode}</small>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AdminAgentEvents
+        key={sandbox.metadata.uid}
+        client={client}
+        connection={connection}
+        sessions={sessions}
+      >
+        {(events) =>
+          events.length === 0 ? (
+            <p className="activity-empty">{t("agentRuntime.auditEmpty")}</p>
+          ) : (
+            <ul className="activity-list">
+              {events.map((event) => (
+                <li key={event.metadata.uid}>
+                  <div>
+                    <strong>{event.spec.operation}</strong>
+                    <span className="mono">#{event.metadata.sequence}</span>
+                  </div>
+                  <small>
+                    {dateTime(event.metadata.occurredAt)} ·{" "}
+                    {event.spec.executionId ?? sessionLabel(event)}
+                  </small>
+                  <small className="mono break">{shortDigest(event.spec.mutationDigest)}</small>
+                  {event.spec.errorCode === undefined ? null : (
+                    <small className="danger-text">{event.spec.errorCode}</small>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </AdminAgentEvents>
       <p className="boundary-note">{t("agentRuntime.boundary")}</p>
     </section>
   );

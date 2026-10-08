@@ -1,0 +1,26 @@
+--- services/control-plane/migrations/product/000101/catalog/schema-000100.json
++++ services/control-plane/migrations/product/000102/catalog/schema-000101.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000101",
++  "schema_head": "000102",
+@@ -30092,0 +30093,20 @@
++            "special_case": null
++          }
++        }
++      ]
++    },
++    {
++      "migration_id": "000102",
++      "sql_sha256": "sha256:a6ff55371232f70787285e921adeeced58f0532b575460e99281936b39403a7e",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 9396,
++          "sha256": "sha256:a20ed50f60f3d7670b2e2e28bb97cc48dbb510c93678de831fca4abbae092d8e",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:request_remote_worker_sandbox_file_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:bytea,unquoted:text)",
++            "grantee": null,

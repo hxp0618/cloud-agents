@@ -6,7 +6,7 @@ import {
   type ProjectLeaseQuotaSummary,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { recordPageToken } from "./pagination";
+import { collectPages } from "./pagination";
 
 export type EnvironmentClient = Pick<
   Client,
@@ -39,11 +39,8 @@ export async function loadEnvironmentProfiles(
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly EnvironmentProfileSummary[]> {
-  const profiles: EnvironmentProfileSummary[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  do {
-    const page = await client.listEnvironmentProfiles(
+  const profiles = await collectPages<EnvironmentProfileSummary>(async (pageToken) => {
+    const { value } = await client.listEnvironmentProfiles(
       tenantId,
       projectId,
       newRequestId(),
@@ -51,10 +48,8 @@ export async function loadEnvironmentProfiles(
       pageToken,
       signal,
     );
-    profiles.push(...page.value.environmentProfiles);
-    pageToken = page.value.nextPageToken;
-    recordPageToken(seenTokens, pageToken, "published Profile");
-  } while (pageToken !== undefined);
+    return { items: value.environmentProfiles, nextPageToken: value.nextPageToken };
+  }, "published Profile");
   return Object.freeze(
     profiles.toSorted(
       (left, right) =>

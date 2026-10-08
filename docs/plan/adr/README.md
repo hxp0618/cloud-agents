@@ -32,9 +32,11 @@
 - [0030-p1-g-contract-current-source-phase-successor](0030-p1-g-contract-current-source-phase-successor.md)
 - [0031-foundation-first-cloud-workspace-platform](0031-foundation-first-cloud-workspace-platform.md)
 - [0032-infrastructure-admin-delivery-and-document-routing](0032-infrastructure-admin-delivery-and-document-routing.md)
+- [0033-built-in-identity-service](0033-built-in-identity-service.md) — IDENTITY-V1 提案；P0 待批准，运行时尚未授权。
 
 ## 阅读边界
 
 - P1 数据、契约、恢复、身份和供给链决策集中在 ADR-0007–ADR-0030。
 - 产品边界、底座优先和文档路由见 ADR-0005、ADR-0006、ADR-0031、ADR-0032。
+- 内置账号、登录、邀请与租户发现的待批范围见 ADR-0033；它不改写 ADR-0025 冻结输入。
 - 运行记录、independent review 和 Gate 结果只作为审计依据，按 [evidence 索引](../cloud-agents-platform/evidence/README.md)、[P1 索引](../p1/README.md) 或 [standalone 索引](../standalone/README.md) 访问，不复制到 ADR 索引。

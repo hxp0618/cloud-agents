@@ -26,7 +26,7 @@ type managedAgentSessionStore interface {
 	CreateManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CreateSessionInput) (internalmanagedagent.SessionSnapshot, error)
 	CloseManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, internalmanagedagent.CloseSessionInput) (internalmanagedagent.SessionSnapshot, error)
 	GetManagedAgentSession(context.Context, string, *authn.VerifiedPrincipal, string, string) (internalmanagedagent.SessionSnapshot, error)
-	ListManagedAgentSessions(context.Context, string, *authn.VerifiedPrincipal, string, string, int) (postgres.ManagedAgentSessionPage, error)
+	ListManagedAgentSessions(context.Context, string, *authn.VerifiedPrincipal, string, string, string, int) (postgres.ManagedAgentSessionPage, error)
 }
 
 type ManagedAgentSessionHTTPServer struct {
@@ -107,19 +107,19 @@ func (server *ManagedAgentSessionHTTPServer) ServeHTTP(writer http.ResponseWrite
 }
 
 func (server *ManagedAgentSessionHTTPServer) list(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
-	pageSize, pageToken, ok := managedAgentPagination(request)
+	pageSize, pageToken, sandboxID, ok := managedAgentSessionPagination(request)
 	if !ok {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	validated, err := openapiv1.ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID, pageSize, pageToken)
+	validated, err := openapiv1.ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID, sandboxID, pageSize, pageToken)
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	afterSessionID := ""
 	if validated.PageToken != "" {
-		if afterSessionID, ok = decodeManagedAgentSessionPageToken(validated.TenantID, validated.ProjectID, validated.PageToken); !ok {
+		if afterSessionID, ok = decodeManagedAgentSessionPageToken(validated.TenantID, validated.ProjectID, validated.SandboxID, validated.PageToken); !ok {
 			writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 			return
 		}
@@ -129,13 +129,13 @@ func (server *ManagedAgentSessionHTTPServer) list(writer http.ResponseWriter, re
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	page, err := server.store.ListManagedAgentSessions(request.Context(), validated.TenantID, principal, validated.ProjectID, afterSessionID, validated.PageSize)
+	page, err := server.store.ListManagedAgentSessions(request.Context(), validated.TenantID, principal, validated.ProjectID, validated.SandboxID, afterSessionID, validated.PageSize)
 	if err != nil {
 		status, code := managedAgentSessionErrorStatus(err)
 		writeManagedAgentSessionError(writer, status, code)
 		return
 	}
-	writeManagedAgentSessionPage(writer, requestID, tenantID, projectID, page)
+	writeManagedAgentSessionPage(writer, requestID, tenantID, projectID, validated.SandboxID, page)
 }
 
 func (server *ManagedAgentSessionHTTPServer) create(writer http.ResponseWriter, request *http.Request, tenantID, projectID, requestID, bearer string) {
@@ -319,7 +319,7 @@ func writeManagedAgentSession(writer http.ResponseWriter, status int, requestID 
 	})
 }
 
-func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantID, projectID string, page postgres.ManagedAgentSessionPage) {
+func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantID, projectID, sandboxID string, page postgres.ManagedAgentSessionPage) {
 	sessions := make([]managedAgentSessionResource, 0, len(page.Sessions))
 	for _, snapshot := range page.Sessions {
 		sessions = append(sessions, managedAgentSessionResource{
@@ -335,7 +335,7 @@ func writeManagedAgentSessionPage(writer http.ResponseWriter, requestID, tenantI
 	nextPageToken := ""
 	if page.NextSessionID != "" {
 		var ok bool
-		nextPageToken, ok = encodeManagedAgentSessionPageToken(tenantID, projectID, page.NextSessionID)
+		nextPageToken, ok = encodeManagedAgentSessionPageToken(tenantID, projectID, sandboxID, page.NextSessionID)
 		if !ok {
 			writeManagedAgentSessionError(writer, http.StatusInternalServerError, "internal_error")
 			return
@@ -577,12 +577,58 @@ func managedAgentPagination(request *http.Request) (int, string, bool) {
 	return pageSize, pageToken, true
 }
 
-func encodeManagedAgentSessionPageToken(tenantID, projectID, sessionID string) (string, bool) {
-	return encodeProjectResourcePageToken("session/v1", tenantID, projectID, sessionID)
+func managedAgentSessionPagination(request *http.Request) (int, string, string, bool) {
+	pageSize := 50
+	pageToken, sandboxID := "", ""
+	for name, values := range request.URL.Query() {
+		if len(values) != 1 || values[0] == "" {
+			return 0, "", "", false
+		}
+		switch name {
+		case "pageSize":
+			value, err := strconv.Atoi(values[0])
+			if err != nil {
+				return 0, "", "", false
+			}
+			pageSize = value
+		case "pageToken":
+			pageToken = values[0]
+		case "sandboxId":
+			sandboxID = values[0]
+		default:
+			return 0, "", "", false
+		}
+	}
+	return pageSize, pageToken, sandboxID, true
 }
 
-func decodeManagedAgentSessionPageToken(tenantID, projectID, token string) (string, bool) {
-	return decodeProjectResourcePageToken("session/v1", tenantID, projectID, token)
+func managedAgentSessionPageTokenKind(sandboxID string) string {
+	if sandboxID == "" {
+		return "session/all/v2"
+	}
+	return "session/sandbox/v2"
+}
+
+func encodeManagedAgentSessionPageToken(tenantID, projectID, sandboxID, sessionID string) (string, bool) {
+	if sandboxID == "" {
+		return encodeProjectResourcePageToken(managedAgentSessionPageTokenKind(""), tenantID, projectID, sessionID)
+	}
+	return encodePageToken(managedAgentSessionPageTokenKind(sandboxID),
+		pageTokenPart{value: tenantID, path: "/tenantId"}, pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{value: sandboxID, path: "/sandboxId"}, pageTokenPart{value: sessionID, path: "/sessionId"})
+}
+
+func decodeManagedAgentSessionPageToken(tenantID, projectID, sandboxID, token string) (string, bool) {
+	if sandboxID == "" {
+		return decodeProjectResourcePageToken(managedAgentSessionPageTokenKind(""), tenantID, projectID, token)
+	}
+	parts, ok := decodePageToken(managedAgentSessionPageTokenKind(sandboxID), token,
+		pageTokenPart{value: tenantID, path: "/tenantId"}, pageTokenPart{value: projectID, path: "/projectId"},
+		pageTokenPart{value: sandboxID, path: "/sandboxId"}, pageTokenPart{path: "/sessionId"})
+	if !ok {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func HandlesManagedAgentSessionPath(path string) bool {

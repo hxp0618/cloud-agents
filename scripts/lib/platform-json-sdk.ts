@@ -1,12 +1,24 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+
+import { canonicalizeJson } from "./platform-json-semantics";
 
 import {
   formatWithOxfmt,
   PLATFORM_OXFMT_LIBRARY_PATH,
-  PLATFORM_OXFMT_TEST_PATH,
 } from "./platform-oxfmt";
+import {
+  dependencyFileRecords,
+  digestBytes,
+  generatedFileRecord,
+  normalizedFileManifestDigest,
+  outputTreeDigest,
+  PLATFORM_SDK_MANIFEST_LIBRARY_PATH,
+  readRegularFile,
+  SDK_INPUT_MANIFEST_ALGORITHM,
+  SDK_OUTPUT_TREE_ALGORITHM,
+  writeSDKFiles,
+} from "./platform-sdk-manifest";
 
 export const GO_COMMON_JSON_OUTPUT_PATH = "sdk/go/gen/common/v1alpha1/json_generated.go";
 export const GO_PLATFORM_JSON_OUTPUT_PATH = "sdk/go/gen/platform/v1alpha1/json_generated.go";
@@ -15,14 +27,8 @@ export const GO_JSON_MANIFEST_PATH = "sdk/go/json-generated-manifest.json";
 export const TYPESCRIPT_PLATFORM_OUTPUT_PATH = "sdk/typescript/src/platform.ts";
 export const TYPESCRIPT_JSON_MANIFEST_PATH = "sdk/typescript/json-generated-manifest.json";
 
-const GO_COMMON_JSON_TEST_PATH = "sdk/go/gen/common/v1alpha1/json_generated_test.go";
-const GO_PLATFORM_JSON_TEST_PATH = "sdk/go/gen/platform/v1alpha1/json_generated_test.go";
-const GO_OPENAPI_TEST_PATH = "sdk/go/gen/openapi/v1alpha1/client_generated_test.go";
-const TYPESCRIPT_PLATFORM_TEST_PATH = "sdk/typescript/src/platform.test.ts";
-
 const GENERATOR_PATH = "scripts/generate-platform-json-sdks.ts";
 const LIBRARY_PATH = "scripts/lib/platform-json-sdk.ts";
-const TEST_PATH = "scripts/lib/platform-json-sdk.test.ts";
 const GO_COMMON_TEMPLATE_PATH = "scripts/templates/platform-json-sdk-go-common.tmpl";
 const GO_PLATFORM_TEMPLATE_PATH = "scripts/templates/platform-json-sdk-go-platform.tmpl";
 const GO_OPENAPI_TEMPLATE_PATH = "scripts/templates/platform-json-sdk-go-openapi.tmpl";
@@ -32,6 +38,16 @@ const COMMON_MANIFEST_PATH = "contracts/common/v1alpha1/fixtures/manifest.json";
 const PLATFORM_MANIFEST_PATH = "contracts/platform/v1alpha1/fixtures/manifest.json";
 const MANAGED_AGENT_OPENAPI_PATH = "contracts/managed-agent/v1alpha1/openapi.json";
 const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json";
+const GO_MODULE_PATH = "sdk/go/go.mod";
+const GO_SUM_PATH = "sdk/go/go.sum";
+const GO_NOTICE_PATH = "sdk/go/THIRD_PARTY_NOTICES.md";
+const TYPESCRIPT_PACKAGE_PATH = "sdk/typescript/package.json";
+const BUN_LOCK_PATH = "bun.lock";
+const TYPESCRIPT_NOTICE_PATH = "sdk/typescript/THIRD_PARTY_NOTICES.md";
+const IDENTITY_GO_OUTPUT_PATH = "sdk/go/gen/common/v1alpha1/identity_generated.go";
+const IDENTITY_TYPESCRIPT_OUTPUT_PATH = "sdk/typescript/src/index.ts";
+const IDENTITY_GO_MANIFEST_PATH = "sdk/go/generated-manifest.json";
+const IDENTITY_TYPESCRIPT_MANIFEST_PATH = "sdk/typescript/generated-manifest.json";
 
 const COMMON_SCHEMAS = [
   "authorization-scope.schema.json",
@@ -50,6 +66,7 @@ const COMMON_SCHEMAS = [
   "resource-metadata.schema.json",
   "resource-version.schema.json",
   "stable-error.schema.json",
+  "namespace-ref.schema.json",
   "subject-ref.schema.json",
   "tenant-authorization-scope.schema.json",
   "tenant-ref.schema.json",
@@ -166,6 +183,10 @@ const PLATFORM_SCHEMAS = [
   "runtime-profile.schema.json",
   "sandbox-exec-request.schema.json",
   "sandbox-exec-result.schema.json",
+  "sandbox-file-entry.schema.json",
+  "sandbox-file-page.schema.json",
+  "sandbox-file-read-page.schema.json",
+  "sandbox-file-write-request.schema.json",
   "sandbox-access-grant-create-request.schema.json",
   "sandbox-access-grant-revoke-request.schema.json",
   "sandbox-access-grant.schema.json",
@@ -209,6 +230,8 @@ const MANAGED_AGENT_SCHEMAS = [
   "turn-page.schema.json",
   "turn.schema.json",
   "www-authenticate.schema.json",
+  "event-cursor.schema.json",
+  "event-limit.schema.json",
 ] as const;
 
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
@@ -224,21 +247,27 @@ type FixtureManifest = {
 
 type GeneratedOutput = { readonly path: string; readonly source: string };
 
+const JSON_SDK_CONFIG = {
+  profile: "cloud-agents-json-contract-sdk/v1alpha1",
+  jsonAuthority: "JSON Schema 2020-12",
+  routeAuthority: "OpenAPI 3.1.1 HTTP metadata only",
+  implementationBoundary: {
+    gateClosure: false,
+    publication: "NOT_AUTHORIZED",
+  },
+} as const;
+
 export function platformJSONSDKGeneratorSources(): string[] {
   return [
     GENERATOR_PATH,
     LIBRARY_PATH,
-    TEST_PATH,
     PLATFORM_OXFMT_LIBRARY_PATH,
-    PLATFORM_OXFMT_TEST_PATH,
+    "scripts/lib/platform-json-semantics.ts",
     GO_COMMON_TEMPLATE_PATH,
     GO_PLATFORM_TEMPLATE_PATH,
     GO_OPENAPI_TEMPLATE_PATH,
     TYPESCRIPT_TEMPLATE_PATH,
-    GO_COMMON_JSON_TEST_PATH,
-    GO_PLATFORM_JSON_TEST_PATH,
-    GO_OPENAPI_TEST_PATH,
-    TYPESCRIPT_PLATFORM_TEST_PATH,
+    PLATFORM_SDK_MANIFEST_LIBRARY_PATH,
   ].toSorted();
 }
 
@@ -260,6 +289,10 @@ export function platformJSONSDKContractInputs(root: string): string[] {
   return inputs;
 }
 
+export function platformJSONSDKConfigDigest(): string {
+  return digestBytes(canonicalizeJson(JSON_SDK_CONFIG));
+}
+
 export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<GeneratedOutput> {
   validateJSONSDKAuthority(root);
   return [
@@ -274,7 +307,103 @@ export function buildPlatformJSONSDKOutputs(root: string): ReadonlyArray<Generat
 }
 
 export function expectedPlatformJSONSDKFiles(root: string): ReadonlyArray<GeneratedOutput> {
-  return buildPlatformJSONSDKOutputs(root);
+  const outputs = buildPlatformJSONSDKOutputs(root);
+  return [...outputs, ...buildPlatformJSONSDKManifests(root, outputs)];
+}
+
+export function buildPlatformJSONSDKManifests(
+  root: string,
+  outputs = buildPlatformJSONSDKOutputs(root),
+): ReadonlyArray<GeneratedOutput> {
+  const contractInputs = platformJSONSDKContractInputs(root);
+  const generatorSources = platformJSONSDKGeneratorSources();
+  const common = {
+    formatVersion: "cloud-agents-generated-sdk-manifest/v2",
+    profile: JSON_SDK_CONFIG.profile,
+    status: "GENERATED_NON_GATE_EVIDENCE",
+    notGateClosure: true,
+    contract: {
+      inputManifestAlgorithm: SDK_INPUT_MANIFEST_ALGORITHM,
+      inputManifestSha256: normalizedFileManifestDigest(root, contractInputs),
+      inputs: contractInputs,
+    },
+    generator: {
+      id: "platform-json-contract-sdk-generator",
+      version: "v2",
+      entrypoint: GENERATOR_PATH,
+      sourceManifestAlgorithm: SDK_INPUT_MANIFEST_ALGORITHM,
+      sourceManifestSha256: normalizedFileManifestDigest(root, generatorSources),
+      sources: generatorSources,
+      configDigest: platformJSONSDKConfigDigest(),
+      dependencies: dependencyFileRecords(root, [
+        ["mise", ".mise.toml"],
+        ["rootPackage", "package.json"],
+        ["bunLock", BUN_LOCK_PATH],
+        ["identityGoOutput", IDENTITY_GO_OUTPUT_PATH],
+        ["identityTypeScriptOutput", IDENTITY_TYPESCRIPT_OUTPUT_PATH],
+        ["identityGoManifest", IDENTITY_GO_MANIFEST_PATH],
+        ["identityTypeScriptManifest", IDENTITY_TYPESCRIPT_MANIFEST_PATH],
+      ]),
+    },
+    implementationBoundary: JSON_SDK_CONFIG.implementationBoundary,
+  } as const;
+  const byPath = new Map(outputs.map((output) => [output.path, output]));
+  const packageMetadata = typescriptPackageMetadata(root);
+  const manifests = [
+    {
+      language: "go",
+      packageIdentity: "github.com/hxp0618/cloud-agents/sdk/go",
+      packagePrivate: undefined,
+      dependencyFiles: dependencyFileRecords(root, [
+        ["goMod", GO_MODULE_PATH],
+        ["goSum", GO_SUM_PATH],
+        ["notice", GO_NOTICE_PATH],
+      ]),
+      outputPaths: [
+        GO_COMMON_JSON_OUTPUT_PATH,
+        GO_PLATFORM_JSON_OUTPUT_PATH,
+        GO_OPENAPI_OUTPUT_PATH,
+      ],
+      manifestPath: GO_JSON_MANIFEST_PATH,
+    },
+    {
+      language: "typescript",
+      packageIdentity: `${packageMetadata.name}/platform`,
+      packagePrivate: packageMetadata.private,
+      dependencyFiles: dependencyFileRecords(root, [
+        ["package", TYPESCRIPT_PACKAGE_PATH],
+        ["bunLock", BUN_LOCK_PATH],
+        ["notice", TYPESCRIPT_NOTICE_PATH],
+      ]),
+      outputPaths: [TYPESCRIPT_PLATFORM_OUTPUT_PATH],
+      manifestPath: TYPESCRIPT_JSON_MANIFEST_PATH,
+    },
+  ] as const;
+  return manifests.map((manifest) => {
+    const files = manifest.outputPaths.map((path) => {
+      const output = byPath.get(path);
+      if (output === undefined) throw new Error(`Missing JSON SDK output ${path}.`);
+      return generatedFileRecord(output.path, output.source);
+    });
+    return {
+      path: manifest.manifestPath,
+      source: `${JSON.stringify(
+        {
+          ...common,
+          language: manifest.language,
+          packageIdentity: manifest.packageIdentity,
+          packagePrivate: manifest.packagePrivate,
+          runtimeDependencies: [],
+          dependencyFiles: manifest.dependencyFiles,
+          outputTreeAlgorithm: SDK_OUTPUT_TREE_ALGORITHM,
+          outputTreeSha256: outputTreeDigest(files),
+          outputs: files,
+        },
+        null,
+        2,
+      )}\n`,
+    };
+  });
 }
 
 export function assertPlatformJSONSDKCurrent(root: string): void {
@@ -288,11 +417,13 @@ export function assertPlatformJSONSDKCurrent(root: string): void {
 }
 
 export function writePlatformJSONSDKFiles(root: string): void {
-  for (const output of expectedPlatformJSONSDKFiles(root)) {
-    const target = resolve(root, output.path);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, output.source);
-  }
+  writeSDKFiles(
+    root,
+    expectedPlatformJSONSDKFiles(root).map((output) => ({
+      path: output.path,
+      bytes: output.source,
+    })),
+  );
 }
 
 function selectedFixtures(
@@ -472,15 +603,24 @@ function readJSON<T>(root: string, path: string): T {
 }
 
 function readText(root: string, path: string): string {
-  const target = resolve(root, path);
-  const stat = lstatSync(target);
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${path} must be a regular file.`);
-  return readFileSync(target, "utf8");
+  return readRegularFile(root, path).toString("utf8");
 }
 
 function formatOutput(root: string, path: string, source: string): string {
   if (!path.endsWith(".go")) return formatWithOxfmt(root, path, source);
-  const result = spawnSync("gofmt", [], { input: source, encoding: "utf8", cwd: root });
+  const result = spawnSync("gofmt", [], {
+    input: source,
+    encoding: "utf8",
+    cwd: root,
+    timeout: 30_000,
+    killSignal: "SIGTERM",
+  });
+  if (result.error) {
+    throw new Error(`Formatter failed for ${path}: ${result.error.message}`);
+  }
+  if (result.signal) {
+    throw new Error(`Formatter failed for ${path}: terminated by ${result.signal}`);
+  }
   if (result.status !== 0) {
     throw new Error(`Formatter failed for ${path}: ${result.stderr.trim()}`);
   }
@@ -492,4 +632,20 @@ function normalizeRelativePath(target: string, root: string): string {
   if (value === "" || value === ".." || value.startsWith("../"))
     throw new Error("Path escapes root.");
   return value;
+}
+
+function typescriptPackageMetadata(root: string): { name: string; private: true } {
+  const packageJSON = readJSON<{ readonly name?: unknown; readonly private?: unknown }>(
+    root,
+    TYPESCRIPT_PACKAGE_PATH,
+  );
+  if (typeof packageJSON.name !== "string" || !packageJSON.name.startsWith("@cloud-agents/")) {
+    throw new Error(
+      `TypeScript SDK package name must be a public @cloud-agents package: ${String(packageJSON.name)}.`,
+    );
+  }
+  if (packageJSON.private !== true) {
+    throw new Error("TypeScript SDK package must declare private: true.");
+  }
+  return { name: packageJSON.name, private: true };
 }

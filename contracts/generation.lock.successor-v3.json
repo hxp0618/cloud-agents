@@ -1,0 +1,320 @@
+{
+  "formatVersion": "cloud-agents-platform-contract-generation-lock/v3",
+  "lockVersion": 3,
+  "status": "SUCCESSOR_CURRENT_PRE_REPLAY",
+  "notGateClosure": true,
+  "gateStatus": "ALL_GATES_OPEN",
+  "predecessor": {
+    "formatVersion": "cloud-agents-platform-contract-generation-lock/v2",
+    "path": "contracts/generation.lock.json",
+    "sha256": "sha256:de62a85390e58736a5fef8272878b821415b4180948437e54edb8628e005ff53",
+    "sizeBytes": 17377,
+    "gitBlob": "39ee20e035d8770340d46a8663633c6519830de1"
+  },
+  "currentOutputSet": {
+    "algorithm": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
+    "count": 47,
+    "manifestSha256": "sha256:faa17d2883409cda0723c0f7ff01a23ec70610bba8682f29389a85f9c77def8b",
+    "files": [
+      {
+        "path": "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
+        "sha256": "sha256:01d70162427262b628362722262422dbf139c9ad852a59a017c61c86342e4b12",
+        "sizeBytes": 25097,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry-v2.json",
+        "sha256": "sha256:837e9a7f3b9e00dc5971cafb2bb37695b4fd5553db7e3003214f327be05e850e",
+        "sizeBytes": 25198,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/compatibility-recovery-registry.json",
+        "sha256": "sha256:f8a0ff0ebc91bab93b1bacf5ec6241f44c8639ae8a11dc0712b485f88156e812",
+        "sizeBytes": 11306,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v2.json",
+        "sha256": "sha256:5069f0f1bdca9b7b7c161cb36870c00be254acb315cafab45adcc944b19e33fe",
+        "sizeBytes": 8690,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/contract-closure-profile-v3.json",
+        "sha256": "sha256:e8384fb25f3828dfafeecf0040110df3a51cd64ce5877e966ecec12769099bf4",
+        "sizeBytes": 14215,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/durable-coordination-registry.json",
+        "sha256": "sha256:2dbce40aac86d2d1709c4aa07d683d916fbba3a992e7f8699843e470c0876dc6",
+        "sizeBytes": 16603,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-abort-terminal-writer-registry-v1.json",
+        "sha256": "sha256:48d580679c4dcf8ec2dac3fefa5d9f2c56f58d53fdbcb2f6fa3155eb1db1918c",
+        "sizeBytes": 7135,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-ambiguous-resolution-writer-registry-v1.json",
+        "sha256": "sha256:15d1fece1b98ffa6d224c1ae03a1f6d6cc856e99ad0878d3bc5628f12e643537",
+        "sizeBytes": 6382,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-commit-observation-writer-registry-v1.json",
+        "sha256": "sha256:eda98b19d442f1025d3fc5c560f113417b105f11f82fb3fc68a4e70847919fb5",
+        "sizeBytes": 6392,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-consumer-registry-v1.json",
+        "sha256": "sha256:fa7082803ea97d06eefa83eec3de784f7199fc0b47f0ca2d0f8203b8b7e96852",
+        "sizeBytes": 7679,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-admission-registry-v1.json",
+        "sha256": "sha256:2dc0210f1aad1dd6cff1183324837ab7e88cc5491e9046ae07302b25a1f9e372",
+        "sizeBytes": 6144,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-execution-admission-registry-v1.json",
+        "sha256": "sha256:9ef15ce291207580d7bc0426d22d7e4e5a43260a89ea5375c5f8e10e08c0dc96",
+        "sizeBytes": 6627,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-entry-success-writer-registry-v1.json",
+        "sha256": "sha256:0025cb5a4f38644848bf5317f37b8b849fc5861f56872ff6c2bd860bd841a5e6",
+        "sizeBytes": 9244,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-preflight-registry-v1.json",
+        "sha256": "sha256:2a04f67f9b06f25bc13211934d8cb914dcbe3f92d42053f636ec66b4f28ac11c",
+        "sizeBytes": 6011,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-admission-registry-v1.json",
+        "sha256": "sha256:c9ba44911eca4e5130e8ab45ea942602c93515e6f504d6daa9b730b045f59f68",
+        "sizeBytes": 11721,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-execution-admission-registry-v1.json",
+        "sha256": "sha256:3bb2e583a992a6ddc639d364d1592b46e2a453035d9fbc5baa892bbdda0122d1",
+        "sizeBytes": 6864,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-recovery-success-writer-registry-v1.json",
+        "sha256": "sha256:60af98c818427bb7ba6d73a09e37e6f80d22eba2828c5dc41dcae642fffc5754",
+        "sizeBytes": 9155,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-retry-handoff-registry-v1.json",
+        "sha256": "sha256:939b6a2b178cb93b4ec3234e52d55991b70ea8233b82d602c366feed7edfe231",
+        "sizeBytes": 6312,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/platform/v1alpha1/runner-ledger-return-failure-registry-v1.json",
+        "sha256": "sha256:33c6dc3b19080801335d2eb0fd135a5e67ab680c810e7173df6d2a41bea471b6",
+        "sizeBytes": 6365,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+        "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+        "sizeBytes": 12730,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb",
+        "sha256": "sha256:7e8b002eb5180e2e2e09730074c4dd440add4ea033e8e64ac7853e04c472a14f",
+        "sizeBytes": 9675,
+        "gitMode": "100644"
+      },
+      {
+        "path": "contracts/generated/proto/manifest.json",
+        "sha256": "sha256:bf753e591a91ee275242ddb0b1b78bdc8263172666cfae2c2e1c72a8828f6f52",
+        "sizeBytes": 6413,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platform_adapter.pb.go",
+        "sha256": "sha256:a31f2aeb625eeda25ae8e86f907dde305bed773d8d45e07aac57901c8f1880d6",
+        "sizeBytes": 46944,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/platformadapter/v1alpha1/platformadapterv1alpha1connect/platform_adapter.connect.go",
+        "sha256": "sha256:48ddafd7845c4f976f772d7b2e67aca862d4eaa8210a6d170554f5872e942dd1",
+        "sizeBytes": 24709,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/runtime/v1alpha1/runtime.pb.go",
+        "sha256": "sha256:2b9deaa7470804c6803156f7379a49326522de8e813d0294f71c92b9746d66bb",
+        "sizeBytes": 34824,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/runtime/v1alpha1/workerruntimev1alpha1connect/runtime.connect.go",
+        "sha256": "sha256:3dbf42b8f26ad24df2343d235eb40b5cf5d3b617322b9ae8d6fbe5278d6d845c",
+        "sizeBytes": 8523,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
+        "sha256": "sha256:0c10b0525f1c672a2a61935b5c1a834d07c0e6337ea4fe8ae4fc77e2a42d4a95",
+        "sizeBytes": 77653,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
+        "sha256": "sha256:5d7096fe82fd8c92491551d20fc3d859d4993f605e714794650ede5afb6c6269",
+        "sizeBytes": 4800,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/cloudagents/worker/v1alpha1/workerv1alpha1connect/worker_supervisor.connect.go",
+        "sha256": "sha256:3f47692be04424314d710e4eba626dfd5addfae348f6d162f54c9f8aa3379e9f",
+        "sizeBytes": 11575,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
+        "sha256": "sha256:ce401fe0009f9283848e7b9bcfc3e8239dcbf1e46d9db68ded98da9766669052",
+        "sizeBytes": 13237,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/common/v1alpha1/json_generated.go",
+        "sha256": "sha256:cf6363831f09af983e30f6f212982d3605f286d99a386f69390997830bc21376",
+        "sizeBytes": 28594,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
+        "sha256": "sha256:698238f0c7d65f4048b51dad6792c6be07e2e0b940badc9c7f8198b4eae43b33",
+        "sizeBytes": 354423,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
+        "sha256": "sha256:7fa9cc7af96274106ad516b7a4d2e66a0061e5f6ced737d2148c411d3634a73c",
+        "sizeBytes": 467243,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/generated-manifest.json",
+        "sha256": "sha256:64f88fcf0f4690fe6fbc4c45f615aff1088224144721f943963b20c044cf20d1",
+        "sizeBytes": 4445,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/json-generated-manifest.json",
+        "sha256": "sha256:270f73902aafdace570676c989648f67122424d3467634c0e2e99377e14f95e6",
+        "sizeBytes": 21739,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/go/proto-generated-manifest.json",
+        "sha256": "sha256:0387408c185ea21976853ed1e4a3827b054e6bb7cb4b7ad12775a32af78575f5",
+        "sizeBytes": 9358,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/generated-manifest.json",
+        "sha256": "sha256:10e3307b358be4d47d9bff974866508219dceaa07e058f7bbc6744fe4ffdaec4",
+        "sizeBytes": 4096,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/json-generated-manifest.json",
+        "sha256": "sha256:1979c5c8f11ff5e4d536b62d4fb7f71949521bb63d41233597a5f42018280259",
+        "sizeBytes": 21401,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/proto-generated-manifest.json",
+        "sha256": "sha256:5f379f13c13f1070958938c30d5b6480084c6699cc8a648095e24c13a2a3eae6",
+        "sizeBytes": 7887,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/platform-adapter/v1alpha1/platform_adapter_pb.ts",
+        "sha256": "sha256:81ede237cbe70be1935f551e3008f1e87a15af0b107b4486ee87592bb512946e",
+        "sizeBytes": 24144,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/kernel_pb.ts",
+        "sha256": "sha256:f939f0f23274668063a721fba2888a9857cd9f21ad76fcfe162fd279aac2e17c",
+        "sizeBytes": 36515,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/gen/contracts/worker/v1alpha1/worker_supervisor_pb.ts",
+        "sha256": "sha256:4d5ff4bfae60b3f712c8d87457e822acba5bba085164d237923a5f11ef8aa500",
+        "sizeBytes": 3288,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/index.ts",
+        "sha256": "sha256:e1aeed9679dea8ca56d20513e9826682eccf533d35bd8d1fbfbf1e8dd4f04c1a",
+        "sizeBytes": 12689,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/platform.ts",
+        "sha256": "sha256:aeeb76aff789221c19b4f6077a163406cd05513d4afdfae2a3652c89875a093e",
+        "sizeBytes": 596421,
+        "gitMode": "100644"
+      },
+      {
+        "path": "sdk/typescript/src/proto.ts",
+        "sha256": "sha256:db9f403f4ea942518dd37f1f01cf52262182c1c390b65e96444b61a8d6210d45",
+        "sizeBytes": 293,
+        "gitMode": "100644"
+      },
+      {
+        "path": "services/control-plane/internal/compatibility/registry_generated.go",
+        "sha256": "sha256:976ad31264546818a00c369fda7ee6552fe9cae1614d106d52f8e9b2e006f6b0",
+        "sizeBytes": 18368,
+        "gitMode": "100644"
+      },
+      {
+        "path": "services/control-plane/internal/coordination/registry_generated.go",
+        "sha256": "sha256:a5f186ff9625451a9a15b7b600f9d6e2bcd3f78adb3ae92ac1785ea84ca36b92",
+        "sizeBytes": 1689,
+        "gitMode": "100644"
+      }
+    ]
+  },
+  "projection": {
+    "exclusions": [
+      "contracts/generation.lock.successor-v3.json",
+      "tools/contract-successor/v3/evidence/replay.json",
+      "tools/contract-successor/v3/evidence/replay/projection.json",
+      "tools/contract-successor/v3/profile.json"
+    ],
+    "replayState": "REPLAY_PENDING"
+  },
+  "implementationBoundary": {
+    "productionDatabaseWrites": "NOT_AUTHORIZED",
+    "providerSideEffects": "FORBIDDEN",
+    "deployment": "NOT_AUTHORIZED",
+    "publication": "NOT_AUTHORIZED",
+    "gateStatus": "ALL_GATES_OPEN"
+  },
+  "lockDigest": "sha256:75feb8b77b9cb0b0ede62de4effdfb30390bb20a031592f863e4178a930024b4"
+}

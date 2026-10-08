@@ -1,0 +1,2081 @@
+import {
+  CLOUD_AGENT_RUNTIME_EVENT_VERSION,
+  CLOUD_AGENT_PROVIDER_CAPABILITY_CATALOG as PROVIDER_CAPABILITY_CATALOG,
+  CLOUD_AGENT_CAPABILITY_IDS as PROVIDER_CAPABILITY_IDS,
+  CLOUD_AGENT_PROTOCOL_VERSION as PROVIDER_HOST_PROTOCOL_VERSION,
+  type CloudAgentCommandEnvelope as ProviderHostCommandEnvelope,
+  type CloudAgentMessageEnvelope as ProviderHostMessageEnvelope,
+} from "@cloud-agents/cloud-agent-protocol";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import { describe, expect, it } from "vitest";
+
+import providerHostPackage from "../package.json";
+import {
+  capabilityMapForProvider,
+  createProviderHostProtocolHandler,
+  providerHostDescriptor,
+  runProviderHostProtocolV2,
+  type ProviderVersionProbeResult,
+} from "../src/providerProtocol";
+import {
+  reconstructedPrompt,
+  validateRunnerInput,
+  type ProviderRunController,
+  type RunnerInput,
+  type RunnerMessage,
+} from "../src/internalExecution";
+import {
+  MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER,
+  ManagedCapabilityCallResultUnknownError,
+  ProviderInterruptedError,
+  isManagedMcpCallResultUnknown,
+} from "../src/providerRunErrors";
+import { ManagedCapabilityUnavailableError } from "../src/capabilityManifest";
+import {
+  persistConversationHistory,
+  withPersistedConversationHistory,
+} from "../src/providerConversationHistory";
+
+type ProviderHostProviderKind = string;
+const PROVIDER_HOST_PROVIDER_KINDS = PROVIDER_CAPABILITY_CATALOG.providers.map(
+  (entry) => entry.provider,
+);
+const invalidConversationHistories = [
+  { name: "object", messages: {} },
+  { name: "null", messages: null },
+  { name: "null entry", messages: [null] },
+  { name: "missing text", messages: [{ role: "user" }] },
+  { name: "unsupported role", messages: [{ role: "system", text: "history" }] },
+  { name: "non-string text", messages: [{ role: "assistant", text: 1 }] },
+  { name: "too many UTF-8 bytes", messages: [{ role: "user", text: "é".repeat(16 << 20) }] },
+];
+
+function command(
+  commandType: ProviderHostCommandEnvelope["commandType"],
+  payload: Record<string, unknown>,
+  commandId = `command-${commandType}`,
+  generation = 1,
+): ProviderHostCommandEnvelope {
+  return {
+    requestId: `request-${commandType}`,
+    protocolVersion: PROVIDER_HOST_PROTOCOL_VERSION,
+    executionId: "execution-1",
+    generation,
+    commandType,
+    commandId: commandId as ProviderHostCommandEnvelope["commandId"],
+    occurredAt: "2026-07-13T02:00:00.000Z",
+    payload,
+  };
+}
+
+describe("Provider Host Protocol v2", () => {
+  it("binds a reconciled side effect to the recovery prompt without authorizing replay", () => {
+    const input = remoteRunnerInput(false);
+    input.workload.resumeSnapshot = {
+      version: 1,
+      sessionId: "session-1",
+      turnId: "turn-2",
+      provider: "codex",
+      messages: [{ role: "assistant", text: "partial progress" }],
+      sideEffectReconciliation: {
+        checkpointDigest: `sha256:${"a".repeat(64)}`,
+        outcome: "confirmed",
+        reconciledAt: "2026-09-01T05:00:00Z",
+      },
+    };
+
+    expect(() => validateRunnerInput(input)).not.toThrow();
+    const prompt = reconstructedPrompt(input);
+    expect(prompt).toContain('"outcome":"confirmed"');
+    expect(prompt).toContain("must not be replayed");
+  });
+
+  it("describes the fixed ordered 8 by 29 Provider matrix from the catalog", () => {
+    for (const provider of PROVIDER_HOST_PROVIDER_KINDS) {
+      const descriptor = enabledDescriptorForProvider(provider);
+      const catalogEntry = PROVIDER_CAPABILITY_CATALOG.providers.find(
+        (entry) => entry.provider === provider,
+      );
+
+      expect(catalogEntry).toBeDefined();
+      expect(descriptor.protocolVersion).toEqual({ major: 2, minor: 3 });
+      expect(descriptor.capabilityDescriptor).toMatchObject({
+        provider,
+        supportTier: catalogEntry?.supportTier,
+        adapterVersion: catalogEntry?.adapterVersion,
+      });
+      expect(Object.keys(descriptor.capabilityDescriptor.capabilities)).toEqual(
+        PROVIDER_CAPABILITY_IDS,
+      );
+      expect(descriptor.capabilityDescriptor.capabilities).toEqual(catalogEntry?.capabilities);
+      expect(capabilityMapForProvider(provider)).toEqual(catalogEntry?.capabilities);
+    }
+  });
+
+  it("advertises native suspend-active-turn for Codex and Claude Agent", () => {
+    const providers = new Map(
+      PROVIDER_CAPABILITY_CATALOG.providers.map((entry) => [entry.provider, entry] as const),
+    );
+
+    expect(providers.get("codex")?.capabilities["suspend-active-turn"]).toBe("native");
+    expect(providers.get("claudeAgent")?.capabilities["suspend-active-turn"]).toBe("native");
+  });
+
+  it("keeps Experimental Providers disabled by default and separates Local-only policy", () => {
+    const codexDisabled = providerHostDescriptor("codex", {
+      environment: {},
+      runtimeVersionProbe: compatibleCodexProbe,
+    });
+    const claudeDisabled = providerHostDescriptor("claudeAgent", { environment: {} });
+    const codexEnabled = providerHostDescriptor("codex", {
+      environment: {
+        CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: " codex, claudeAgent ",
+      },
+      runtimeVersionProbe: compatibleCodexProbe,
+    });
+    const claudeEnabled = providerHostDescriptor("claudeAgent", {
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
+    });
+    const cursor = providerHostDescriptor("cursor", {
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
+    });
+
+    expect(codexDisabled.capabilityDescriptor.releasePolicy).toEqual({
+      requiresExplicitEnablement: true,
+      enabled: false,
+    });
+    expect(claudeDisabled.capabilityDescriptor.releasePolicy.enabled).toBe(false);
+    expect(codexEnabled.capabilityDescriptor.releasePolicy.enabled).toBe(true);
+    expect(claudeEnabled.capabilityDescriptor.releasePolicy.enabled).toBe(true);
+    expect(cursor.capabilityDescriptor).toMatchObject({
+      supportTier: "local-only",
+      releasePolicy: { requiresExplicitEnablement: false, enabled: true },
+    });
+  });
+
+  it("uses Codex CLI and Claude bundle metadata as independent Runtime sources", () => {
+    const codex = enabledDescriptorForProvider("codex");
+    const claude = providerHostDescriptor("claudeAgent", {
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "claudeAgent" },
+      runtimeVersion: "0.3.207",
+      runtimeVersionProbe: () => {
+        throw new Error("Claude descriptor must not execute the Codex or Claude CLI probe.");
+      },
+    });
+
+    expect(codex.capabilityDescriptor.providerCliVersion).toBe("0.154.0");
+    expect(codex.capabilityDescriptor.runtime).toEqual({
+      kind: "cli",
+      name: "codex",
+      version: "0.154.0",
+      available: true,
+      versionSource: "probe",
+      compatibleRange: {
+        minimumInclusive: "0.154.0",
+        maximumExclusive: "0.155.0",
+      },
+      compatible: true,
+    });
+    expect(claude.capabilityDescriptor.providerCliVersion).toBeUndefined();
+    expect(claude.capabilityDescriptor.runtime).toMatchObject({
+      kind: "sdk",
+      name: "@anthropic-ai/claude-agent-sdk",
+      version: "0.3.207",
+      available: true,
+      versionSource: "package",
+      compatible: true,
+    });
+    expect(codex.runtimeEventVersions).toEqual({
+      minimum: CLOUD_AGENT_RUNTIME_EVENT_VERSION,
+      maximum: CLOUD_AGENT_RUNTIME_EVENT_VERSION,
+    });
+  });
+
+  it("uses package build metadata instead of ambient build-version environment", () => {
+    const descriptor = providerHostDescriptor("cursor", {
+      environment: { HOST_PROVIDER_BUILD_VERSION: "ambient-build-must-not-win" },
+    });
+
+    expect(descriptor.hostBuildVersion).toBe(providerHostPackage.version);
+    expect(descriptor.capabilityDescriptor.runtime?.version).toBe(providerHostPackage.version);
+  });
+
+  it("returns a versioned Describe result and replays the same terminal by commandId", async () => {
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    let described = 0;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: (provider) => {
+        described += 1;
+        return enabledDescriptorForProvider(provider);
+      },
+    });
+    const describe = command(
+      "Describe",
+      { provider: "codex", options: { second: 2, first: 1 } },
+      "describe-1",
+    );
+
+    const first = await handle(describe);
+    const second = await handle({
+      ...describe,
+      payload: { options: { first: 1, second: 2 }, provider: "codex" },
+    });
+
+    expect(first.at(-1)?.messageType).toBe("Result");
+    expect(second).toEqual([first.at(-1)]);
+    expect(emitted).toHaveLength(2);
+    expect(described).toBe(1);
+  });
+
+  it("rejects commandId reuse with different command identity", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    const describe = command("Describe", { provider: "codex" }, "shared-command");
+    await handle(describe);
+
+    const conflicts = [
+      { ...describe, commandType: "StopSession" as const, payload: {} },
+      { ...describe, payload: { provider: "pi" } },
+      { ...describe, executionId: "execution-other" },
+      { ...describe, generation: 2 },
+      { ...describe, requestId: "request-other" },
+      { ...describe, occurredAt: "2026-07-13T02:00:01.000Z" },
+    ];
+    for (const conflict of conflicts) {
+      expect((await handle(conflict)).at(-1)).toMatchObject({
+        messageType: "Error",
+        error: { code: "protocol_violation", requiresNewExecution: true },
+      });
+    }
+  });
+
+  it("shares an identical in-flight command and rejects a conflicting one", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    let runs = 0;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => {
+        runs += 1;
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => undefined,
+        };
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "start-shared"));
+    const turn = command("SendTurn", { inputText: "first" }, "turn-shared");
+    const first = handle(turn);
+    const duplicate = handle({ ...turn, payload: { inputText: "first" } });
+
+    expect((await handle({ ...turn, payload: { inputText: "different" } })).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "protocol_violation" },
+    });
+    expect(runs).toBe(1);
+    completeRun?.({ type: "result", output: { text: "done" } });
+    expect(await duplicate).toEqual(await first);
+    expect(runs).toBe(1);
+  });
+
+  it("keeps evicted receipt identities without repeating Provider work", async () => {
+    let runs = 0;
+    const largeOutput = "x".repeat(512 << 10);
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => {
+        runs += 1;
+        return {
+          result: Promise.resolve({ type: "result", output: { text: largeOutput } }),
+          interrupt: () => undefined,
+        };
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "start-capacity"));
+    const victim = command("SendTurn", { inputText: "side effect" }, "turn-victim");
+    await handle(victim);
+    for (let index = 0; index < 17; index += 1) {
+      await handle(command("CompactSession", {}, `compact-${index}`));
+    }
+    expect((await handle(victim)).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "protocol_violation", requiresNewExecution: true },
+    });
+    expect(runs).toBe(18);
+  });
+
+  it("keeps interrupt and stop controls available when command identities are full", async () => {
+    let rejectRun: ((cause: Error) => void) | undefined;
+    let interrupts = 0;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+      stopQuiesceTimeoutMs: 100,
+      startRun: () => ({
+        result: new Promise((_, reject) => {
+          rejectRun = reject;
+        }),
+        interrupt: () => {
+          interrupts += 1;
+        },
+      }),
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "start-record-capacity"),
+    );
+    const turn = handle(command("SendTurn", { inputText: "pending" }, "turn-at-capacity"));
+
+    for (let index = 0; index < 4_094; index += 1) {
+      await handle(command("Describe", { provider: "codex" }, `fill-${index}`));
+    }
+    expect(
+      (await handle(command("Describe", { provider: "codex" }, "over-capacity"))).at(-1),
+    ).toMatchObject({
+      messageType: "Error",
+      error: { code: "provider_unavailable", requiresNewExecution: true },
+    });
+    const interrupt = handle(
+      command("InterruptTurn", { targetCommandId: "turn-at-capacity" }, "interrupt-at-capacity"),
+    );
+    const stop = handle(command("StopSession", {}, "stop-at-capacity"));
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const excessStop = await Promise.race([
+      handle(command("StopSession", {}, "stop-over-capacity")),
+      new Promise<"pending">((resolve) => {
+        timeout = setTimeout(() => resolve("pending"), 5);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+    expect(excessStop).toEqual([
+      expect.objectContaining({
+        messageType: "Error",
+        error: expect.objectContaining({ code: "provider_unavailable", retryable: true }),
+      }),
+    ]);
+    expect((await interrupt).at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { interrupted: true, targetCommandId: "turn-at-capacity" },
+    });
+    expect(interrupts).toBe(2);
+    rejectRun?.(new ProviderInterruptedError());
+    await turn;
+    expect((await stop).at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { stopped: true, outcome: "quiesced" },
+    });
+  });
+
+  it("leaves StopSession available at the in-flight command limit", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "start-in-flight-capacity"),
+    );
+    const descriptions = Array.from({ length: 128 }, (_, index) =>
+      handle(command("Describe", { provider: "codex" }, `pending-describe-${index}`)),
+    );
+
+    expect(
+      (await handle(command("StopSession", {}, "stop-in-flight-capacity"))).at(-1),
+    ).toMatchObject({
+      messageType: "Result",
+      payload: { stopped: true, outcome: "quiesced" },
+    });
+    await Promise.all(descriptions);
+  });
+
+  it("allows StartSession to bind a workspace before the first Turn has input", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    const runnerInput = remoteRunnerInput();
+    const messages = await handle(
+      command("StartSession", {
+        runnerInput: {
+          ...runnerInput,
+          workload: { ...runnerInput.workload, inputText: "" },
+        },
+      }),
+    );
+
+    expect(messages.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { provider: "codex", resumed: false },
+    });
+  });
+
+  it.each(invalidConversationHistories)(
+    "rejects $name conversation history before admitting a Session or executing a Provider",
+    async ({ messages }) => {
+      let runs = 0;
+      let descriptors = 0;
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: (provider) => {
+          descriptors += 1;
+          return enabledDescriptorForProvider(provider);
+        },
+        startRun: () => {
+          runs += 1;
+          return {
+            result: Promise.resolve({ type: "result", output: {} }),
+            interrupt: () => {},
+          };
+        },
+      });
+      const runnerInput = remoteRunnerInput();
+
+      const admission = await handle(
+        command("StartSession", {
+          runnerInput: {
+            ...runnerInput,
+            workload: { ...runnerInput.workload, conversationHistory: messages },
+          },
+        }),
+      );
+      expect(errorCode(admission)).toBe("protocol_violation");
+      expect(errorCode(await handle(command("SendTurn", { inputText: "next" })))).toBe(
+        "session_resume_invalid",
+      );
+      expect(descriptors).toBe(0);
+      expect(runs).toBe(0);
+    },
+  );
+
+  it.each([
+    undefined,
+    [],
+    Array(513).fill({ role: "user", text: "" }),
+    [{ role: "assistant", text: "é".repeat(32769) }],
+  ])("accepts optional, empty or boundary-sized initial history %#", async (messages) => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    const runnerInput = remoteRunnerInput();
+    const admission = await handle(
+      command("StartSession", {
+        runnerInput: {
+          ...runnerInput,
+          workload: { ...runnerInput.workload, conversationHistory: messages },
+        },
+      }),
+    );
+
+    expect(admission.at(-1)?.messageType).toBe("Result");
+  });
+
+  it.each([
+    ...invalidConversationHistories,
+    { name: "missing", messages: undefined },
+    { name: "empty", messages: [] },
+  ])("rejects $name persisted emulated history", ({ messages }) => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-invalid-history-"));
+    try {
+      if (messages !== undefined) {
+        writeFileSync(
+          join(root, "cloud-agent-conversation-history-v1.json"),
+          JSON.stringify({ version: 1, provider: "deepseek-harness", messages }),
+        );
+      }
+      expect(() =>
+        withPersistedConversationHistory(
+          { ...remoteRunnerInput(), providerStateDirectory: root },
+          "deepseek-harness",
+          () => new Error("missing history"),
+        ),
+      ).toThrow("missing history");
+      expect(() =>
+        persistConversationHistory(
+          {
+            ...remoteRunnerInput(),
+            providerStateDirectory: root,
+            workload: {
+              provider: "deepseek-harness",
+              inputText: "",
+              conversationHistory: messages as NonNullable<
+                RunnerInput["workload"]["conversationHistory"]
+              >,
+            },
+          },
+          "deepseek-harness",
+          () => new Error("invalid history"),
+        ),
+      ).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a Local-only Provider before execution", async () => {
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: (provider) =>
+        providerHostDescriptor(provider, {
+          environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "cursor" },
+          runtimeVersionProbe: compatibleCodexProbe,
+        }),
+    });
+    const result = await handle(
+      command("StartSession", {
+        runnerInput: {
+          execution: { id: "execution-1" },
+          workload: { provider: "cursor", inputText: "unused" },
+          workspaceDirectory: "/tmp/workspace",
+        },
+      }),
+    );
+
+    const terminal = result.at(-1);
+    expect(terminal?.messageType).toBe("Error");
+    if (terminal?.messageType === "Error") {
+      expect(terminal.error.code).toBe("capability_unsupported");
+    }
+  });
+
+  it("preserves an open Provider slug before generic descriptor rejection", async () => {
+    let describedProvider: ProviderHostProviderKind | null = null;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: (provider) => {
+        describedProvider = provider;
+        return providerHostDescriptor(provider, { environment: {} });
+      },
+    });
+
+    const result = await handle(
+      command("StartSession", {
+        runnerInput: {
+          execution: { id: "execution-1" },
+          workload: { provider: "gemini", inputText: "unused" },
+          workspaceDirectory: "/tmp/workspace",
+        },
+      }),
+    );
+
+    expect(describedProvider).toBe("gemini");
+    expect(errorCode(result)).toBe("provider_unavailable");
+  });
+
+  it.each(["StartSession", "ResumeSession"] as const)(
+    "fails closed for %s when the Experimental Provider is disabled",
+    async (commandType) => {
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: (provider) =>
+          providerHostDescriptor(provider, {
+            environment: {},
+            runtimeVersionProbe: compatibleCodexProbe,
+          }),
+      });
+      const result = await handle(
+        command(
+          commandType,
+          { runnerInput: remoteRunnerInput(commandType === "ResumeSession") },
+          `disabled-${commandType}`,
+        ),
+      );
+
+      expect(errorCode(result)).toBe("capability_unsupported");
+    },
+  );
+
+  it("accepts ResumeSession when ResumeSnapshot provides authoritative history without a native Cursor", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => ({
+        result: Promise.resolve({
+          type: "result",
+          output: { provider: "claudeAgent", text: "ok" },
+        }),
+        interrupt: () => undefined,
+      }),
+    });
+
+    const result = await handle(
+      command("ResumeSession", {
+        runnerInput: {
+          ...remoteRunnerInput(false),
+          workload: {
+            provider: "codex",
+            inputText: "continue",
+            resumeSnapshot: {
+              version: 1,
+              sessionId: "session-1",
+              turnId: "turn-2",
+              provider: "codex",
+              messages: [{ role: "user", text: "prior question" }],
+            },
+          },
+        },
+      }),
+    );
+
+    expect(result.at(-1)?.messageType).toBe("Result");
+  });
+
+  it.each(["StartSession", "ResumeSession"] as const)(
+    "binds %s runner input to the command Generation",
+    async (commandType) => {
+      let receivedGeneration: number | undefined;
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: enabledDescriptorForProvider,
+        startRun: (input) => {
+          receivedGeneration = input.execution.generation;
+          return {
+            result: Promise.resolve({ type: "result", output: { text: "done" } }),
+            interrupt: () => {},
+          } satisfies ProviderRunController;
+        },
+      });
+      await handle(
+        command(
+          commandType,
+          { runnerInput: remoteRunnerInput(commandType === "ResumeSession") },
+          `generation-session-${commandType}`,
+          7,
+        ),
+      );
+
+      await handle(
+        command("SendTurn", { inputText: "continue" }, `generation-turn-${commandType}`, 7),
+      );
+
+      expect(receivedGeneration).toBe(7);
+    },
+  );
+
+  it.each(["StartSession", "ResumeSession"] as const)(
+    "rejects %s when runner input explicitly names a different Generation",
+    async (commandType) => {
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: enabledDescriptorForProvider,
+      });
+      const runnerInput = remoteRunnerInput(commandType === "ResumeSession");
+      const result = await handle(
+        command(
+          commandType,
+          {
+            runnerInput: {
+              ...runnerInput,
+              execution: { ...runnerInput.execution, generation: 6 },
+            },
+          },
+          `generation-mismatch-${commandType}`,
+          7,
+        ),
+      );
+
+      expect(result.at(-1)).toMatchObject({
+        messageType: "Error",
+        error: {
+          code: "protocol_violation",
+          message: "runnerInput.execution.generation does not match command.generation.",
+        },
+      });
+    },
+  );
+
+  it.each([
+    ["runtimeMode", "always-allow"],
+    ["interactionMode", "chat"],
+  ])("rejects invalid workload %s", async (field, value) => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+    const runnerInput = remoteRunnerInput();
+    const result = await handle(
+      command(
+        "StartSession",
+        { runnerInput: { ...runnerInput, workload: { ...runnerInput.workload, [field]: value } } },
+        `invalid-${field}`,
+      ),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      commandId: `invalid-${field}`,
+      messageType: "Error",
+      error: { code: "protocol_violation", message: "runnerInput is invalid." },
+    });
+  });
+
+  it.each(["StartSession", "ResumeSession"] as const)(
+    "fails closed for %s when the Runtime version is incompatible",
+    async (commandType) => {
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: codexDescriptorFactory({
+          available: true,
+          output: "codex-cli 0.146.0",
+        }),
+      });
+      const result = await handle(
+        command(
+          commandType,
+          { runnerInput: remoteRunnerInput(commandType === "ResumeSession") },
+          `incompatible-${commandType}`,
+        ),
+      );
+
+      expect(errorCode(result)).toBe("provider_version_incompatible");
+    },
+  );
+
+  it("keeps an unknown managed MCP result non-retryable until reconciliation", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => ({
+        result: Promise.reject(new ManagedCapabilityCallResultUnknownError()),
+        interrupt: () => {},
+      }),
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-mcp-unknown"),
+    );
+
+    const result = await handle(
+      command("SendTurn", { inputText: "call managed MCP" }, "send-mcp-unknown"),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: {
+        code: "provider_unavailable",
+        retryable: false,
+        requiresNewExecution: true,
+        requiresUserAction: false,
+        canReconstructFromHistory: false,
+        canMoveWorker: false,
+      },
+    });
+  });
+
+  it("recognizes the managed MCP unknown marker without unbounded traversal", () => {
+    expect(
+      isManagedMcpCallResultUnknown({
+        error: { code: -32_000, message: MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER },
+      }),
+    ).toBe(true);
+    expect(
+      isManagedMcpCallResultUnknown(
+        new Error(`MCP error -32000: ${MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER}`),
+      ),
+    ).toBe(true);
+    expect(
+      isManagedMcpCallResultUnknown(
+        `${"x".repeat(8_192)}${MANAGED_MCP_CALL_RESULT_UNKNOWN_MARKER}`,
+      ),
+    ).toBe(false);
+    expect(isManagedMcpCallResultUnknown({ error: "explicit tool failure" })).toBe(false);
+  });
+
+  it("reports missing Host capability materialization as capability_unsupported", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => {
+        throw new ManagedCapabilityUnavailableError("Host-managed MCP broker is unavailable.");
+      },
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-capability"),
+    );
+
+    const result = await handle(
+      command("SendTurn", { inputText: "use managed capability" }, "send-capability"),
+    );
+
+    expect(result.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "capability_unsupported", retryable: false, requiresUserAction: true },
+    });
+  });
+
+  it("enforces the Codex Runtime availability and exact compatible range", async () => {
+    const cases = [
+      {
+        label: "unavailable",
+        probe: { available: false },
+        expected: "provider_not_installed",
+      },
+      {
+        label: "unverifiable",
+        probe: { available: true, output: "codex-cli unknown" },
+        expected: "provider_version_incompatible",
+      },
+      {
+        label: "unstable-semver",
+        probe: { available: true, output: "codex-cli 0.154.0-beta.1" },
+        expected: "provider_version_incompatible",
+      },
+      {
+        label: "below-minimum",
+        probe: { available: true, output: "codex-cli 0.153.0" },
+        expected: "provider_version_incompatible",
+      },
+      {
+        label: "minimum",
+        probe: { available: true, output: "codex-cli 0.154.0" },
+        expected: "Result",
+      },
+      {
+        label: "compatible-patch",
+        probe: { available: true, output: "codex-cli 0.154.99" },
+        expected: "Result",
+      },
+      {
+        label: "compatible-next-minor",
+        probe: { available: true, output: "codex-cli 0.154.1" },
+        expected: "Result",
+      },
+      {
+        label: "maximum-exclusive",
+        probe: { available: true, output: "codex-cli 0.155.0" },
+        expected: "provider_version_incompatible",
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: codexDescriptorFactory(testCase.probe),
+      });
+      const result = await handle(
+        command("StartSession", { runnerInput: remoteRunnerInput() }, `runtime-${testCase.label}`),
+      );
+      const terminal = result.at(-1);
+
+      if (testCase.expected === "Result") {
+        expect(terminal?.messageType, testCase.label).toBe("Result");
+      } else {
+        expect(errorCode(result), testCase.label).toBe(testCase.expected);
+      }
+    }
+  });
+
+  it("processes InterruptTurn while SendTurn is still active", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((_, reject) => {
+            rejectRun = reject;
+          }),
+          interrupt: () => rejectRun?.(new Error("Provider turn was interrupted.")),
+          getResumeCursor: () => "provider-cursor-after-interrupt",
+        }) satisfies ProviderRunController,
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-interrupt"),
+    );
+
+    const send = handle(command("SendTurn", { inputText: "long task" }, "send-interrupt"));
+    const interrupt = await handle(
+      command("InterruptTurn", { targetCommandId: "send-interrupt" }, "interrupt-active"),
+    );
+    const sendMessages = await send;
+
+    expect(interrupt.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: {
+        interrupted: true,
+        targetCommandId: "send-interrupt",
+        providerResumeCursor: "provider-cursor-after-interrupt",
+      },
+    });
+    expect(sendMessages.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+  });
+
+  it("quiesces an old Turn before allowing a replacement Session", async () => {
+    let completeOldRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    const runInputs: RunnerInput[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => undefined,
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (runnerInput) => {
+        runInputs.push(runnerInput);
+        if (runInputs.length === 1) {
+          return {
+            result: new Promise((resolve) => {
+              completeOldRun = resolve;
+            }),
+            interrupt: () => undefined,
+          } satisfies ProviderRunController;
+        }
+        return {
+          result: Promise.resolve({ type: "result", output: { text: "new answer" } }),
+          interrupt: () => undefined,
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-old"));
+    const oldTurn = handle(command("SendTurn", { inputText: "old question" }, "turn-old"));
+
+    const stop = handle(command("StopSession", {}, "stop-old"));
+    let stopResolved = false;
+    void stop.then(() => {
+      stopResolved = true;
+    });
+    await Promise.resolve();
+    expect(stopResolved).toBe(false);
+
+    const overlappingStart = await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-too-early"),
+    );
+    expect(overlappingStart.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "protocol_violation" },
+    });
+
+    completeOldRun?.({ type: "result", output: { text: "old answer" } });
+    await oldTurn;
+    expect(await stop).toEqual([
+      expect.objectContaining({
+        messageType: "Result",
+        payload: expect.objectContaining({
+          stopped: true,
+          outcome: "quiesced",
+          quiesced: true,
+          graceful: true,
+        }),
+      }),
+    ]);
+
+    const replacementInput = {
+      ...remoteRunnerInput(),
+      workload: {
+        ...remoteRunnerInput().workload,
+        conversationHistory: [{ role: "user" as const, text: "replacement history" }],
+      },
+    };
+    await handle(command("StartSession", { runnerInput: replacementInput }, "session-replacement"));
+    await handle(command("SendTurn", { inputText: "new question" }, "turn-new"));
+
+    expect(runInputs[1]?.workload.conversationHistory).toEqual([
+      { role: "user", text: "replacement history" },
+    ]);
+  });
+
+  it.each([
+    { history: [], answer: "first answer" },
+    { history: Array(512).fill({ role: "user", text: "prior" }), answer: "é".repeat(32769) },
+    { history: Array(18).fill({ role: "user", text: "x".repeat(64 << 10) }), answer: "done" },
+  ])(
+    "continues and restores emulated history across host processes %#",
+    async ({ history, answer }) => {
+      const root = mkdtempSync(join(tmpdir(), "cloud-agent-emulated-history-"));
+      const descriptorForProvider = (provider: ProviderHostProviderKind) =>
+        providerHostDescriptor(provider, {
+          environment: {
+            CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "deepseek-harness",
+          },
+          runtimeVersion: "0.1.2-rc.1",
+        });
+      const runnerInput = {
+        execution: { id: "execution-1" },
+        workload: { provider: "deepseek-harness", inputText: "", model: "model-dsh" },
+        workspaceDirectory: join(root, "workspace"),
+        providerStateDirectory: join(root, "provider-state"),
+      } satisfies RunnerInput;
+      try {
+        const first = createProviderHostProtocolHandler({
+          credential: null,
+          emit: () => {},
+          descriptorForProvider,
+          startRun: (input) => {
+            validateRunnerInput(input);
+            return {
+              result: Promise.resolve({
+                type: "result",
+                output: { text: answer },
+                providerResumeCursor: "session-first",
+              }),
+              interrupt: () => {},
+            };
+          },
+        });
+        expect(
+          (
+            await first(
+              command(
+                "StartSession",
+                {
+                  runnerInput: {
+                    ...runnerInput,
+                    workload: { ...runnerInput.workload, conversationHistory: history },
+                  },
+                },
+                "session-first",
+              ),
+            )
+          ).at(-1)?.messageType,
+        ).toBe("Result");
+        expect(
+          (await first(command("SendTurn", { inputText: "first question" }, "turn-first"))).at(-1)
+            ?.messageType,
+        ).toBe("Result");
+        expect(
+          (await first(command("SendTurn", { inputText: "continue" }, "turn-continue"))).at(-1)
+            ?.messageType,
+        ).toBe("Result");
+
+        let resumedInput: RunnerInput | undefined;
+        const second = createProviderHostProtocolHandler({
+          credential: null,
+          emit: () => {},
+          descriptorForProvider,
+          startRun: (input) => {
+            validateRunnerInput(input);
+            resumedInput = input;
+            return {
+              result: Promise.resolve({ type: "result", output: { text: "second answer" } }),
+              interrupt: () => {},
+            };
+          },
+        });
+        await second(
+          command(
+            "ResumeSession",
+            { runnerInput: { ...runnerInput, providerResumeCursor: "session-first" } },
+            "session-resume",
+          ),
+        );
+        expect(
+          (await second(command("SendTurn", { inputText: "second question" }, "turn-second"))).at(
+            -1,
+          )?.messageType,
+        ).toBe("Result");
+
+        expect(resumedInput?.workload.conversationHistory).toEqual([
+          ...history,
+          { role: "user", text: "first question" },
+          { role: "assistant", text: answer },
+          { role: "user", text: "continue" },
+          { role: "assistant", text: answer },
+        ]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects a Turn before Provider work when recovered history cannot fit another Result", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-full-history-"));
+    const path = join(root, "cloud-agent-conversation-history-v1.json");
+    const saved = JSON.stringify({
+      version: 1,
+      provider: "deepseek-harness",
+      messages: [{ role: "assistant", text: "x".repeat(31 << 20) }],
+    });
+    let runs = 0;
+    try {
+      writeFileSync(path, saved);
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: (provider) =>
+          providerHostDescriptor(provider, {
+            environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "deepseek-harness" },
+            runtimeVersion: "0.1.2-rc.1",
+          }),
+        startRun: () => {
+          runs += 1;
+          throw new Error("Provider must not start");
+        },
+      });
+      const runnerInput = remoteRunnerInput(false);
+      expect(
+        (
+          await handle(
+            command("ResumeSession", {
+              runnerInput: {
+                ...runnerInput,
+                workload: { ...runnerInput.workload, provider: "deepseek-harness" },
+                providerStateDirectory: root,
+                providerResumeCursor: "saved-session",
+              },
+            }),
+          )
+        ).at(-1)?.messageType,
+      ).toBe("Result");
+      expect((await handle(command("SendTurn", { inputText: "next" }))).at(-1)).toMatchObject({
+        messageType: "Error",
+        error: { code: "session_resume_invalid", retryable: false, requiresUserAction: true },
+      });
+      expect(runs).toBe(0);
+      expect(readFileSync(path, "utf8")).toBe(saved);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("invalidates the Session if successful Provider work cannot commit its history", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloud-agent-history-commit-"));
+    const blockedDirectory = join(root, "blocked");
+    let runs = 0;
+    try {
+      writeFileSync(blockedDirectory, "not a directory");
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: (provider) =>
+          providerHostDescriptor(provider, {
+            environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "deepseek-harness" },
+            runtimeVersion: "0.1.2-rc.1",
+          }),
+        startRun: () => {
+          runs += 1;
+          return {
+            result: Promise.resolve({ type: "result", output: { text: "done" } }),
+            interrupt: () => {},
+          };
+        },
+      });
+      expect(
+        (
+          await handle(
+            command("StartSession", {
+              runnerInput: {
+                ...remoteRunnerInput(),
+                workload: { provider: "deepseek-harness", inputText: "" },
+                providerStateDirectory: blockedDirectory,
+              },
+            }),
+          )
+        ).at(-1)?.messageType,
+      ).toBe("Result");
+      expect(
+        errorCode(await handle(command("SendTurn", { inputText: "first" }, "turn-failed-commit"))),
+      ).toBe("provider_unavailable");
+      expect(
+        errorCode(
+          await handle(command("SendTurn", { inputText: "again" }, "turn-after-failed-commit")),
+        ),
+      ).toBe("session_resume_invalid");
+      expect(runs).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not resolve SuspendTurn before the active SendTurn reaches an interrupted terminal", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((_, reject) => {
+            rejectRun = reject;
+          }),
+          interrupt: () => {},
+          getResumeCursor: () => "provider-cursor-after-suspend",
+        }) satisfies ProviderRunController,
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-suspend"));
+
+    const send = handle(command("SendTurn", { inputText: "long task" }, "send-suspend"));
+    const suspend = handle(
+      command("SuspendTurn", { targetCommandId: "send-suspend" }, "suspend-active"),
+    );
+
+    let resolved = false;
+    void suspend.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    rejectRun?.(new ProviderInterruptedError());
+
+    expect((await suspend).at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: {
+        quiesced: true,
+        targetCommandId: "send-suspend",
+        checkpointProtocol: "provider-host-suspend-terminal-v1",
+        providerResumeCursor: "provider-cursor-after-suspend",
+      },
+    });
+    expect((await send).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+  });
+
+  it("fails SuspendTurn closed when the interrupted terminal lacks a resume cursor", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((_, reject) => {
+            rejectRun = reject;
+          }),
+          interrupt: () => {},
+          getResumeCursor: () => undefined,
+        }) satisfies ProviderRunController,
+    });
+    await handle(
+      command("ResumeSession", { runnerInput: remoteRunnerInput(true) }, "session-suspend-cursor"),
+    );
+
+    const send = handle(command("SendTurn", { inputText: "long task" }, "send-suspend-cursor"));
+    const suspend = handle(
+      command("SuspendTurn", { targetCommandId: "send-suspend-cursor" }, "suspend-missing-cursor"),
+    );
+
+    rejectRun?.(new ProviderInterruptedError());
+
+    expect((await suspend).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "provider_unavailable" },
+    });
+    expect((await send).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+  });
+
+  it("fails SuspendTurn closed when the active SendTurn ends without an interrupted terminal", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+          getResumeCursor: () => "provider-cursor-after-natural-completion",
+        }) satisfies ProviderRunController,
+    });
+    await handle(
+      command("ResumeSession", { runnerInput: remoteRunnerInput(true) }, "session-suspend-race"),
+    );
+
+    const send = handle(command("SendTurn", { inputText: "long task" }, "send-suspend-race"));
+    const suspend = handle(
+      command("SuspendTurn", { targetCommandId: "send-suspend-race" }, "suspend-race"),
+    );
+
+    completeRun?.({ type: "result", output: { text: "completed normally" } });
+
+    expect((await suspend).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "provider_unavailable" },
+    });
+    expect((await send).at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { output: { text: "completed normally" } },
+    });
+  });
+
+  it.each([
+    {
+      message: "HTTP 429 Too Many Requests: rate_limit_error",
+      code: "provider_rate_limited",
+      retryable: true,
+      requiresNewExecution: true,
+      requiresUserAction: false,
+    },
+    {
+      message: "Status code 401 Unauthorized: invalid API key",
+      code: "authentication_required",
+      retryable: false,
+      requiresNewExecution: false,
+      requiresUserAction: true,
+    },
+    {
+      message: "Provider Credential payload is invalid",
+      code: "credential_invalid",
+      retryable: false,
+      requiresNewExecution: false,
+      requiresUserAction: true,
+    },
+    {
+      message: "Authoritative history reconstruction failed",
+      code: "provider_unavailable",
+      retryable: true,
+      requiresNewExecution: true,
+      requiresUserAction: false,
+    },
+  ])(
+    "classifies real Provider failure text without treating authoritative as authentication: $code",
+    async ({ message, code, retryable, requiresNewExecution, requiresUserAction }) => {
+      const handle = createProviderHostProtocolHandler({
+        credential: null,
+        emit: () => {},
+        descriptorForProvider: enabledDescriptorForProvider,
+        startRun: () => ({
+          result: Promise.reject(new Error(message)),
+          interrupt: () => {},
+        }),
+      });
+      await handle(
+        command("StartSession", { runnerInput: remoteRunnerInput() }, `session-${code}`),
+      );
+
+      const result = await handle(command("SendTurn", { inputText: "fail" }, `send-${code}`));
+
+      expect(result.at(-1)).toMatchObject({
+        messageType: "Error",
+        error: {
+          code,
+          retryable,
+          requiresNewExecution,
+          requiresUserAction,
+          canReconstructFromHistory: code !== "credential_invalid",
+          canMoveWorker: code !== "credential_invalid",
+        },
+      });
+    },
+  );
+
+  it("runs native CompactSession as the sole active primary operation and exposes its boundary", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    let operation: unknown;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, _emit, options) => {
+        operation = options?.operation;
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(
+      command("ResumeSession", { runnerInput: remoteRunnerInput(true) }, "session-compact"),
+    );
+
+    const compact = handle(command("CompactSession", {}, "compact-active"));
+    expect(operation).toEqual({ commandType: "CompactSession", payload: {} });
+    completeRun?.({
+      type: "result",
+      output: {
+        operation: "compact",
+        supportMode: "native",
+        boundary: {
+          kind: "context_compaction",
+          summaryAvailable: false,
+          detail: "Codex did not expose a summary.",
+        },
+      },
+      providerResumeCursor: "provider-cursor",
+    });
+
+    await expect(compact).resolves.toEqual([
+      expect.objectContaining({
+        messageType: "Result",
+        payload: {
+          output: expect.objectContaining({ operation: "compact", supportMode: "native" }),
+          providerResumeCursor: "provider-cursor",
+          supportMode: "native",
+          boundary: expect.objectContaining({
+            kind: "context_compaction",
+            summaryAvailable: false,
+          }),
+        },
+      }),
+    ]);
+  });
+
+  it("runs Protocol 2.3 GenerateText in an isolated Provider execution", async () => {
+    let observedInput: unknown;
+    let observedOptions: unknown;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (input, _credential, _emit, options) => {
+        observedInput = input;
+        observedOptions = options;
+        return {
+          result: Promise.resolve({
+            type: "result",
+            output: { text: '{"task":"thread-title","title":"Portable agents"}' },
+          }),
+          interrupt: () => {},
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(
+      command("ResumeSession", { runnerInput: remoteRunnerInput(true) }, "session-generate-text"),
+    );
+
+    const result = await handle(
+      command(
+        "GenerateText",
+        {
+          task: "thread-title",
+          model: "gpt-test",
+          input: { message: "Design portable Cloud Agents" },
+        },
+        "generate-title",
+      ),
+    );
+
+    expect(observedInput).toMatchObject({
+      execution: { id: "execution-1:text:generate-title" },
+      workload: {
+        model: "gpt-test",
+        conversationHistory: [],
+        resumeSnapshot: null,
+      },
+    });
+    expect(observedInput).not.toHaveProperty("providerResumeCursor");
+    expect(observedOptions).toEqual({
+      interactive: false,
+      operation: {
+        commandType: "GenerateText",
+        payload: {
+          task: "thread-title",
+          model: "gpt-test",
+          input: { message: "Design portable Cloud Agents" },
+        },
+      },
+    });
+    expect(result.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: {
+        result: { task: "thread-title", title: "Portable agents" },
+      },
+    });
+  });
+
+  it("tracks GenerateText as an active operation and StopSession interrupts it before quiescing", async () => {
+    let rejectGeneration: ((error: Error) => void) | undefined;
+    let interrupts = 0;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => ({
+        result: new Promise((_, reject) => {
+          rejectGeneration = reject;
+        }),
+        interrupt: () => {
+          interrupts += 1;
+          rejectGeneration?.(new ProviderInterruptedError());
+        },
+      }),
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-generate-stop"),
+    );
+    const generation = handle(
+      command(
+        "GenerateText",
+        { task: "branch-name", input: { message: "Long metadata generation" } },
+        "generate-stop",
+      ),
+    );
+
+    const stop = await handle(command("StopSession", {}, "stop-generation"));
+
+    expect(interrupts).toBe(1);
+    expect((await generation).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+    expect(stop.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { outcome: "quiesced", quiesced: true, graceful: true },
+    });
+  });
+
+  it.each([
+    {
+      name: "timed-out",
+      forceStop: undefined,
+      expected: "timed-out",
+    },
+    {
+      name: "failed",
+      forceStop: () => {
+        throw new Error("forced teardown failed");
+      },
+      expected: "failed",
+    },
+  ])("reports a stable $name StopSession outcome", async ({ forceStop, expected }) => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      stopQuiesceTimeoutMs: 1,
+      stopForceTimeoutMs: 1,
+      startRun: () => ({
+        result: new Promise(() => {}),
+        interrupt: () => {},
+        ...(forceStop ? { forceStop } : {}),
+      }),
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, `session-${expected}`),
+    );
+    void handle(command("SendTurn", { inputText: "hang" }, `turn-${expected}`));
+
+    const stop = await handle(command("StopSession", {}, `stop-${expected}`));
+
+    expect(stop.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { outcome: expected, quiesced: false, graceful: false },
+    });
+  });
+
+  it("reports forced only after forced teardown reaches the operation terminal", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      stopQuiesceTimeoutMs: 1,
+      stopForceTimeoutMs: 25,
+      startRun: () => ({
+        result: new Promise((_, reject) => {
+          rejectRun = reject;
+        }),
+        interrupt: () => {},
+        forceStop: () => rejectRun?.(new ProviderInterruptedError()),
+      }),
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-forced"));
+    const turn = handle(command("SendTurn", { inputText: "hang" }, "turn-forced"));
+
+    const stop = await handle(command("StopSession", {}, "stop-forced"));
+
+    await turn;
+    expect(stop.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { outcome: "forced", quiesced: false, graceful: false },
+    });
+  });
+
+  it("targets InterruptTurn at an active primary operation", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((_, reject) => {
+            rejectRun = reject;
+          }),
+          interrupt: () => rejectRun?.(new Error("Provider operation was interrupted.")),
+          getResumeCursor: () => "provider-cursor-after-primary-interrupt",
+        }) satisfies ProviderRunController,
+    });
+    await handle(
+      command(
+        "ResumeSession",
+        { runnerInput: remoteRunnerInput(true) },
+        "session-primary-interrupt",
+      ),
+    );
+
+    const compact = handle(command("CompactSession", {}, "compact-interrupt"));
+    const interrupt = await handle(
+      command("InterruptTurn", { targetCommandId: "compact-interrupt" }, "interrupt-primary"),
+    );
+
+    expect(interrupt.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: {
+        interrupted: true,
+        targetCommandId: "compact-interrupt",
+        providerResumeCursor: "provider-cursor-after-primary-interrupt",
+      },
+    });
+    expect((await compact).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+  });
+
+  it("rejects SuspendTurn for an active primary operation", async () => {
+    let rejectRun: ((error: Error) => void) | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((_, reject) => {
+            rejectRun = reject;
+          }),
+          interrupt: () => rejectRun?.(new Error("Provider operation was interrupted.")),
+          getResumeCursor: () => "provider-cursor-after-primary-interrupt",
+        }) satisfies ProviderRunController,
+    });
+    await handle(
+      command("ResumeSession", { runnerInput: remoteRunnerInput(true) }, "session-primary-suspend"),
+    );
+
+    const compact = handle(command("CompactSession", {}, "compact-suspend"));
+    const suspend = await handle(
+      command("SuspendTurn", { targetCommandId: "compact-suspend" }, "suspend-primary"),
+    );
+
+    expect(suspend.at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "capability_unsupported" },
+    });
+
+    rejectRun?.(new Error("Provider operation was interrupted."));
+    expect((await compact).at(-1)).toMatchObject({
+      messageType: "Error",
+      error: { code: "interrupted" },
+    });
+  });
+
+  it("keeps Claude manual compact and Provider-native rollback/fork stably unsupported", async () => {
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () => ({
+        result: Promise.resolve({
+          type: "result",
+          output: { provider: "claudeAgent", text: "ok" },
+        }),
+        interrupt: () => undefined,
+      }),
+    });
+    const claudeInput = {
+      ...remoteRunnerInput(),
+      workload: { provider: "claudeAgent", inputText: "initial" },
+    };
+    await handle(command("StartSession", { runnerInput: claudeInput }, "session-claude-compact"));
+    expect(errorCode(await handle(command("CompactSession", {}, "compact-claude")))).toBe(
+      "capability_unsupported",
+    );
+
+    for (const commandType of ["RollbackSession", "ForkSession"] as const) {
+      expect(errorCode(await handle(command(commandType, {}, `unsupported-${commandType}`)))).toBe(
+        "capability_unsupported",
+      );
+    }
+  });
+
+  it("emits only canonical Runtime Event v2 payloads on the v2 wire", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, emit) => {
+        emit({
+          type: "event",
+          eventType: "runtime.output.delta",
+          payload: { text: "canonical" },
+        });
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-events"));
+
+    const send = handle(command("SendTurn", { inputText: "stream" }, "send-events"));
+    completeRun?.({ type: "result", output: { text: "canonical" } });
+    await send;
+
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        commandId: "send-events",
+        messageType: "Event",
+        payload: {
+          eventVersion: CLOUD_AGENT_RUNTIME_EVENT_VERSION,
+          eventType: "content.delta",
+          payload: { streamKind: "assistant_text", delta: "canonical" },
+        },
+      }),
+    );
+  });
+
+  it("streams intermediate Turn events without retaining them in the handler result", async () => {
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, emit) => {
+        for (let index = 0; index < 200; index += 1) {
+          emit({
+            type: "event",
+            eventType: "runtime.output.delta",
+            payload: { text: `chunk-${index}` },
+          });
+        }
+        return {
+          result: Promise.resolve({ type: "result", output: { text: "done" } }),
+          interrupt: () => {},
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-streaming"),
+    );
+    emitted.length = 0;
+
+    const result = await handle(command("SendTurn", { inputText: "stream" }, "send-streaming"));
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ commandId: "send-streaming", messageType: "Result" });
+    expect(emitted).toHaveLength(201);
+  });
+
+  it("maps Runner Artifacts to Provider Host ArtifactCandidate messages", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, emit) => {
+        emit({
+          type: "artifact",
+          artifact: {
+            path: "tool-results/terminal.log",
+            kind: "terminal_log",
+            originalName: "claude-terminal.log",
+            contentType: "text/plain",
+            sourceRoot: "runtime-output",
+            terminalId: "terminal-1",
+            encoding: "utf-8",
+            reportedSize: 8_192,
+          },
+        });
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-artifact"));
+
+    const send = handle(command("SendTurn", { inputText: "produce output" }, "send-artifact"));
+    completeRun?.({ type: "result", output: { text: "done" } });
+    await send;
+
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        commandId: "send-artifact",
+        messageType: "ArtifactCandidate",
+        payload: {
+          artifact: {
+            path: "tool-results/terminal.log",
+            kind: "terminal_log",
+            originalName: "claude-terminal.log",
+            contentType: "text/plain",
+            sourceRoot: "runtime-output",
+            terminalId: "terminal-1",
+            encoding: "utf-8",
+            reportedSize: 8_192,
+          },
+        },
+      }),
+    );
+  });
+
+  it("processes SteerTurn while SendTurn remains active", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    let steeredPayload: Record<string, unknown> | undefined;
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: () => {},
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: () =>
+        ({
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+          steer: (payload) => {
+            steeredPayload = payload;
+          },
+        }) satisfies ProviderRunController,
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-steer"));
+
+    const send = handle(command("SendTurn", { inputText: "long task" }, "send-steer"));
+    const steer = await handle(
+      command(
+        "SteerTurn",
+        { targetCommandId: "send-steer", inputText: "focus on tests" },
+        "steer-active",
+      ),
+    );
+    completeRun?.({ type: "result", output: { text: "done" } });
+    const sendMessages = await send;
+
+    expect(steeredPayload).toEqual({ inputText: "focus on tests" });
+    expect(steer.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { steered: true, targetCommandId: "send-steer" },
+    });
+    expect(sendMessages.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { output: { text: "done" } },
+    });
+  });
+
+  it("delivers a correlated approval resolution during an active SendTurn", async () => {
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    let resolvedPayload: Record<string, unknown> | undefined;
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    const handle = createProviderHostProtocolHandler({
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, emit) => {
+        emit({
+          type: "interaction",
+          interactionType: "approval",
+          payload: { requestId: "approval-1", summary: "Run command" },
+        });
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+          resolveApproval: (payload) => {
+            resolvedPayload = payload;
+            completeRun?.({ type: "result", output: { text: "approved" } });
+          },
+        } satisfies ProviderRunController;
+      },
+    });
+    await handle(command("StartSession", { runnerInput: remoteRunnerInput() }, "session-approval"));
+
+    const send = handle(command("SendTurn", { inputText: "needs approval" }, "send-approval"));
+    const resolution = await handle(
+      command(
+        "ResolveApproval",
+        { requestId: "approval-1", resolution: { decision: "accept" } },
+        "approval-1:resolution",
+      ),
+    );
+    const sendMessages = await send;
+
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        commandId: "send-approval",
+        messageType: "InteractionRequest",
+        payload: expect.objectContaining({ interactionType: "approval", requestId: "approval-1" }),
+      }),
+    );
+    expect(resolvedPayload).toEqual({
+      requestId: "approval-1",
+      resolution: { decision: "accept" },
+    });
+    expect(resolution.at(-1)?.messageType).toBe("Result");
+    expect(sendMessages.at(-1)).toMatchObject({
+      messageType: "Result",
+      payload: { output: { text: "approved" } },
+    });
+  });
+
+  it("keeps reading stdin commands while SendTurn is pending", async () => {
+    const source = new PassThrough();
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    let completeRun: ((message: Extract<RunnerMessage, { type: "result" }>) => void) | undefined;
+    const protocol = runProviderHostProtocolV2({
+      source,
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: enabledDescriptorForProvider,
+      startRun: (_input, _credential, emit) => {
+        emit({
+          type: "interaction",
+          interactionType: "approval",
+          payload: { requestId: "approval-stream" },
+        });
+        return {
+          result: new Promise((resolve) => {
+            completeRun = resolve;
+          }),
+          interrupt: () => {},
+          resolveApproval: () => {
+            completeRun?.({ type: "result", output: { text: "stream-approved" } });
+          },
+        } satisfies ProviderRunController;
+      },
+    });
+
+    for (const item of [
+      command("StartSession", { runnerInput: remoteRunnerInput() }, "session-stream"),
+      command("SendTurn", { inputText: "stream task" }, "send-stream"),
+      command(
+        "ResolveApproval",
+        { requestId: "approval-stream", resolution: { decision: "accept" } },
+        "approval-stream:resolution",
+      ),
+    ]) {
+      source.write(`${JSON.stringify(item)}\n`);
+    }
+    source.end();
+    await protocol;
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ commandId: "approval-stream:resolution", messageType: "Result" }),
+        expect.objectContaining({
+          commandId: "send-stream",
+          messageType: "Result",
+          payload: { output: { text: "stream-approved" } },
+        }),
+      ]),
+    );
+  });
+
+  it("rejects invalid command envelopes before provider dispatch", async () => {
+    const source = new PassThrough();
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    let described = 0;
+    const invalid = {
+      ...command("Describe", { provider: "codex" }, "invalid-generation"),
+      generation: 0,
+    };
+
+    const protocol = runProviderHostProtocolV2({
+      source,
+      credential: null,
+      emit: (message) => emitted.push(message),
+      descriptorForProvider: (provider) => {
+        described += 1;
+        return enabledDescriptorForProvider(provider);
+      },
+    });
+    source.end(`${JSON.stringify(invalid)}\n`);
+    await protocol;
+
+    expect(described).toBe(0);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      commandId: "invalid-generation",
+      messageType: "Error",
+      error: { code: "protocol_violation" },
+    });
+  });
+
+  it("flushes the output sink before the protocol run resolves", async () => {
+    const source = new PassThrough();
+    const emitted: ProviderHostMessageEnvelope[] = [];
+    let flushedMessageCount = -1;
+    const protocol = runProviderHostProtocolV2({
+      source,
+      credential: null,
+      emit: (message) => emitted.push(message),
+      flush: async () => {
+        await Promise.resolve();
+        flushedMessageCount = emitted.length;
+      },
+      descriptorForProvider: enabledDescriptorForProvider,
+    });
+
+    source.end(`${JSON.stringify(command("Describe", { provider: "codex" }, "describe-flush"))}\n`);
+    await protocol;
+
+    expect(flushedMessageCount).toBe(1);
+    expect(emitted[0]).toMatchObject({ commandId: "describe-flush", messageType: "Result" });
+  });
+});
+
+function compatibleCodexProbe(): ProviderVersionProbeResult {
+  return { available: true, output: "codex-cli 0.154.0" };
+}
+
+function enabledDescriptorForProvider(provider: ProviderHostProviderKind) {
+  return providerHostDescriptor(provider, {
+    environment: {
+      CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex,claudeAgent,pi,deepseek-harness",
+    },
+    runtimeVersionProbe: compatibleCodexProbe,
+    runtimeVersion: "0.3.207",
+  });
+}
+
+function codexDescriptorFactory(probe: ProviderVersionProbeResult) {
+  return (provider: ProviderHostProviderKind) =>
+    providerHostDescriptor(provider, {
+      environment: { CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS: "codex" },
+      runtimeVersionProbe: () => probe,
+    });
+}
+
+function errorCode(messages: ReadonlyArray<ProviderHostMessageEnvelope>): string | undefined {
+  const terminal = messages.at(-1);
+  return terminal?.messageType === "Error" ? terminal.error.code : terminal?.messageType;
+}
+
+function remoteRunnerInput(resume = false): RunnerInput {
+  return {
+    execution: { id: "execution-1" },
+    workload: { provider: "codex", inputText: "initial" },
+    workspaceDirectory: "/tmp/workspace",
+    ...(resume ? { providerResumeCursor: "provider-cursor" } : {}),
+  };
+}

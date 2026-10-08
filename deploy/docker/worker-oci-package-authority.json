@@ -1,0 +1,922 @@
+{
+  "schemaVersion": 2,
+  "registry": "https://registry.npmmirror.com/",
+  "blockedReasons": [
+    "The bound @img/sharp-libvips-linux-arm64 and @img/sharp-libvips-linux-x64 1.3.4 packages ship versions.json as a publisher declaration, not a complete native-component inventory: it lists proxy-libintl, which the fixed Linux glibc recipe does not build, and omits vendored libnsgif, for which source and exact-ELF observations exist. The upstream recipe is https://github.com/lovell/sharp-libvips/blob/ebb95f8add54eee8bed840e3fb587e4cbec857d7/build/posix.sh; native-libnsgif-copying already binds the vendored component's license source. Upstream package bytes and notices are preserved.",
+    "The bound sharp-libvips 1.3.4 binaries have no exact-build final Cargo graph, static-link/object membership, or complete toolchain/base input record. Verified npm provenance and source/license materials do not supply those records; native source and component closure remain unproven."
+  ],
+  "packages": [
+    {
+      "path": "node_modules/@anthropic-ai/claude-agent-sdk-linux-arm64",
+      "name": "@anthropic-ai/claude-agent-sdk-linux-arm64",
+      "version": "0.3.207",
+      "sourceUrl": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-arm64/-/claude-agent-sdk-linux-arm64-0.3.207.tgz",
+      "integrity": "sha512-X4uezYOifDiNTTmmugfRCdg3nNamrr1LFRY9hg30vWYTShL+bbN+nfC3KaFfSYCl4GTtsEEUbYdOTC2F3bBpcA==",
+      "license": "SEE LICENSE IN LICENSE.md"
+    },
+    {
+      "path": "node_modules/@anthropic-ai/claude-agent-sdk-linux-x64",
+      "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
+      "version": "0.3.207",
+      "sourceUrl": "https://registry.npmmirror.com/@anthropic-ai/claude-agent-sdk-linux-x64/-/claude-agent-sdk-linux-x64-0.3.207.tgz",
+      "integrity": "sha512-Kg6BPH8Ee0ny/oEUWJmvT1jCRBne4jVpRSOMsJcYp1Fav1rMEgpU219oJJs+LWwx4ifuuLtNWedqJNnVw7mnKg==",
+      "license": "SEE LICENSE IN LICENSE.md"
+    },
+    {
+      "path": "node_modules/@aws-sdk/credential-provider-http",
+      "name": "@aws-sdk/credential-provider-http",
+      "version": "3.972.74",
+      "sourceUrl": "https://registry.npmmirror.com/@aws-sdk/credential-provider-http/-/credential-provider-http-3.972.74.tgz",
+      "integrity": "sha512-u91E/hT8f4d1xy0Jl7VG4nVKJ3lxbrZkoBTeSVoJdWBiSEUMwMS/9+e0H/aJVQV//Lt5wuzP+E69v4aRSsNTmw==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["aws-sdk-license"]
+    },
+    {
+      "path": "node_modules/@aws-sdk/credential-provider-login",
+      "name": "@aws-sdk/credential-provider-login",
+      "version": "3.972.79",
+      "sourceUrl": "https://registry.npmmirror.com/@aws-sdk/credential-provider-login/-/credential-provider-login-3.972.79.tgz",
+      "integrity": "sha512-L+Z85anONJd8MaiuraO4wRxATCdEejBZ3K3eymzWI5JPXa9sOS9CkIm72PBKqXKX+Z9p9NGMX5AIMXm0LEflgw==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["aws-sdk-license"]
+    },
+    {
+      "path": "node_modules/@aws-sdk/nested-clients",
+      "name": "@aws-sdk/nested-clients",
+      "version": "3.997.46",
+      "sourceUrl": "https://registry.npmmirror.com/@aws-sdk/nested-clients/-/nested-clients-3.997.46.tgz",
+      "integrity": "sha512-oRxtBcka/JGHGs9l9p9IVajGoTP8vTPmoAzdHGy4Qcy9P5vPnDf6nhIeM/COQNY9k/OahImTRaLkHftoXvfcmQ==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["aws-sdk-license"]
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh",
+      "name": "@deepseek-ai/dsh",
+      "version": "0.1.2-rc.1",
+      "sourceUrl": "https://registry.npmmirror.com/@deepseek-ai/dsh/-/dsh-0.1.2-rc.1.tgz",
+      "integrity": "sha512-RPq48TzxvwpdT9/7W1tbhZDBMmeK+bxDrX9cqQC27Wx/LqtgJF8PSa3b3xriU8oxtvhwYmk21w2cej3uMQrnVA==",
+      "license": "MIT"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-llm-pi-ai",
+      "name": "@deepseek-ai/dsh-llm-pi-ai",
+      "version": "0.1.2-rc.1",
+      "sourceUrl": "https://registry.npmmirror.com/@deepseek-ai/dsh-llm-pi-ai/-/dsh-llm-pi-ai-0.1.2-rc.1.tgz",
+      "integrity": "sha512-aT+21AUbZ1JYco9bBcmCgLYG85LLeWTCWUysBqcAkZADb7Vfn5F77LEpztE6BvRHKCtzVvsgp/HKKESwkK0zNA==",
+      "license": "MIT"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai",
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.4",
+      "sourceUrl": "https://registry.npmmirror.com/@earendil-works/pi-ai/-/pi-ai-0.84.4.tgz",
+      "integrity": "sha512-AClAZxf5+c4RRu44NJPS6wyQy+Nmq+Mzyyrdvm4ZVMNuixelO02RZX4G4Aq1F145Yzp43wnM5S+hLlSI7ypfVw==",
+      "license": "MIT",
+      "supplementalLicenseTextIds": ["pi-license"]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-telemetry",
+      "name": "@earendil-works/pi-telemetry",
+      "version": "0.84.4",
+      "sourceUrl": "https://registry.npmmirror.com/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.4.tgz",
+      "integrity": "sha512-8e2CuxM+ht+hedQXTZmi5JVl6/xDK9RpSDL2+MbITevKYQhMZ/z6lJOTFgox3HQyGxO8mOZEtYGVeQNaD4OzqA==",
+      "license": "MIT",
+      "supplementalLicenseTextIds": ["pi-license"]
+    },
+    {
+      "path": "node_modules/@img/sharp-libvips-linux-arm64",
+      "name": "@img/sharp-libvips-linux-arm64",
+      "version": "1.3.4",
+      "sourceUrl": "https://registry.npmmirror.com/@img/sharp-libvips-linux-arm64/-/sharp-libvips-linux-arm64-1.3.4.tgz",
+      "integrity": "sha512-Y3dgX/6lE2QhQb+Gxy0WZxfg9MEm/JBjamZpS2IklP7xIQoKN4hzAm7KcMVGtaVDt3neE9OKBC7vAfonA/Lr1A==",
+      "license": "LGPL-3.0-or-later",
+      "supplementalLicenseTextIds": [
+        "libvips-license",
+        "native-aom-fastfeat-license",
+        "native-aom-libyuv-license",
+        "native-aom-license",
+        "native-aom-patents",
+        "native-aom-vector-license",
+        "native-archive-copying",
+        "native-cairo-copying",
+        "native-cairo-mpl-copying-mpl-1-1",
+        "native-cgif-license",
+        "native-exif-copying",
+        "native-expat-copying",
+        "native-ffi-license",
+        "native-fontconfig-copying",
+        "native-freetype-ftl-ftl-txt",
+        "native-freetype-selector-license-txt",
+        "native-fribidi-copying",
+        "native-glib-lgpl-2-1-or-later-txt",
+        "native-harfbuzz-copying",
+        "native-harfbuzz-ms-use-copying",
+        "native-heif-copying",
+        "native-highway-license",
+        "native-imagequant-copyright",
+        "native-lcms-license",
+        "native-libnsgif-copying",
+        "native-mozjpeg-ijg-readme-ijg",
+        "native-mozjpeg-license-md",
+        "native-pango-copying",
+        "native-pixman-copying",
+        "native-png-license",
+        "native-tiff-license-md",
+        "native-uhdr-adobe-notice-notice",
+        "native-uhdr-image-io-license",
+        "native-uhdr-license",
+        "native-uhdr-modp-license",
+        "native-webp-copying",
+        "native-webp-patents-patents",
+        "native-xml2-copyright",
+        "native-zlib-ng-license-md",
+        "sharp-build-license",
+        "sharp-third-party-notices"
+      ],
+      "packageFiles": [
+        {
+          "path": "README.md",
+          "sha256": "bdf6919b0ffd7dcd31907ca49f520f26e8543825e0358f51b9036fed428eddb6",
+          "size": 4340
+        },
+        {
+          "path": "lib/glib-2.0/include/glibconfig.h",
+          "sha256": "e16664ca5e04d335dad128774ae10e92014c06ef5486fd0174e603aec3632fb7",
+          "size": 5894
+        },
+        {
+          "path": "lib/index.js",
+          "sha256": "516a08c06660cddb50d5f30ccac29a0514b05724956a11e8a7e6b799f2e1ab72",
+          "size": 28
+        },
+        {
+          "path": "lib/libvips-cpp.so.8.18.7",
+          "sha256": "97c2ae9a663cd3de58a34d68820994e49e0e261fddbd4616bd726a72610bbc8f",
+          "size": 18324712
+        },
+        {
+          "path": "package.json",
+          "sha256": "a3d16b47b7c0a55ddb43afa9678a9a83b6a27edbd3cf42d41e53c7838930982b",
+          "size": 948
+        },
+        {
+          "path": "versions.json",
+          "sha256": "e2611d5d854815a8b33c8a3d2ec649511a9596ccf16844e8eae7cf81e79881c4",
+          "size": 596
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@img/sharp-libvips-linux-x64",
+      "name": "@img/sharp-libvips-linux-x64",
+      "version": "1.3.4",
+      "sourceUrl": "https://registry.npmmirror.com/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.3.4.tgz",
+      "integrity": "sha512-GJ//SSXbnwSDes02umB3nDJLFcQzw8a18V8fyhqr6tV515tOEMdImjjxj1AoafMRz56F3PHgftnj1QEKSU1zkw==",
+      "license": "LGPL-3.0-or-later",
+      "supplementalLicenseTextIds": [
+        "libvips-license",
+        "native-aom-fastfeat-license",
+        "native-aom-libyuv-license",
+        "native-aom-license",
+        "native-aom-patents",
+        "native-aom-vector-license",
+        "native-aom-x86inc-license",
+        "native-archive-copying",
+        "native-cairo-copying",
+        "native-cairo-mpl-copying-mpl-1-1",
+        "native-cgif-license",
+        "native-exif-copying",
+        "native-expat-copying",
+        "native-ffi-license",
+        "native-fontconfig-copying",
+        "native-freetype-ftl-ftl-txt",
+        "native-freetype-selector-license-txt",
+        "native-fribidi-copying",
+        "native-glib-lgpl-2-1-or-later-txt",
+        "native-harfbuzz-copying",
+        "native-harfbuzz-ms-use-copying",
+        "native-heif-copying",
+        "native-highway-license",
+        "native-imagequant-copyright",
+        "native-lcms-license",
+        "native-libnsgif-copying",
+        "native-mozjpeg-ijg-readme-ijg",
+        "native-mozjpeg-license-md",
+        "native-pango-copying",
+        "native-pixman-copying",
+        "native-png-license",
+        "native-tiff-license-md",
+        "native-uhdr-adobe-notice-notice",
+        "native-uhdr-image-io-license",
+        "native-uhdr-license",
+        "native-uhdr-modp-license",
+        "native-webp-copying",
+        "native-webp-patents-patents",
+        "native-xml2-copyright",
+        "native-zlib-ng-license-md",
+        "sharp-build-license",
+        "sharp-third-party-notices"
+      ],
+      "packageFiles": [
+        {
+          "path": "README.md",
+          "sha256": "b4fb1a9f5909cfd58edb4177c2028ce3033cf8651aef740a554c1dc58b3c5ee3",
+          "size": 4331
+        },
+        {
+          "path": "lib/glib-2.0/include/glibconfig.h",
+          "sha256": "07baaf7ef57ac20fa5e0220ab88b9cf2f23d6a433b5305360ef285b36633d9ca",
+          "size": 5923
+        },
+        {
+          "path": "lib/index.js",
+          "sha256": "516a08c06660cddb50d5f30ccac29a0514b05724956a11e8a7e6b799f2e1ab72",
+          "size": 28
+        },
+        {
+          "path": "lib/libvips-cpp.so.8.18.7",
+          "sha256": "4aa73553408c3964071728f4a231a8e86918e39bc49f1fbae75355f7ea933ea9",
+          "size": 18699288
+        },
+        {
+          "path": "package.json",
+          "sha256": "2c5f6f9abf74c1492622d5dc4e4da056ab0712fd71de61e03a687c88b8cdab4e",
+          "size": 935
+        },
+        {
+          "path": "versions.json",
+          "sha256": "e2611d5d854815a8b33c8a3d2ec649511a9596ccf16844e8eae7cf81e79881c4",
+          "size": 596
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@img/sharp-linux-arm64",
+      "name": "@img/sharp-linux-arm64",
+      "version": "0.35.5",
+      "sourceUrl": "https://registry.npmmirror.com/@img/sharp-linux-arm64/-/sharp-linux-arm64-0.35.5.tgz",
+      "integrity": "sha512-LYVx5JTsOM2CBzmxreh+nl64/3H6Xb09iSLknqH47z2T2DFFxDeFLP5y4dJwe6H7uGQlHPyEEtIqyo3DYsRwdQ==",
+      "license": "Apache-2.0",
+      "packageFiles": [
+        {
+          "path": "LICENSE",
+          "sha256": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68",
+          "size": 10273
+        },
+        {
+          "path": "README.md",
+          "sha256": "ccc883ec303dac4dbe86e7e255d86c62263323aec600978761e57353c55cd63e",
+          "size": 706
+        },
+        {
+          "path": "index.cjs",
+          "sha256": "5fefc8e2a4db759ab7b80f26ffff131b9a4251ff5cfd07030f968ba5698ebdc2",
+          "size": 139
+        },
+        {
+          "path": "lib/sharp-linux-arm64-0.35.5.node",
+          "sha256": "6c3c549bd1bae0fe0b34832917a39950abd4db8feea874f8447ed07cded7854b",
+          "size": 530120
+        },
+        {
+          "path": "package.json",
+          "sha256": "46b7220846b8c6a552f002f62ab2c855f33a4013fb97d1e54c6a4895e4317c8b",
+          "size": 936
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@img/sharp-linux-x64",
+      "name": "@img/sharp-linux-x64",
+      "version": "0.35.5",
+      "sourceUrl": "https://registry.npmmirror.com/@img/sharp-linux-x64/-/sharp-linux-x64-0.35.5.tgz",
+      "integrity": "sha512-SxFtLTeJInhAA9Q836kux2vZNeOBQEx658qvbboZScr0wIARym3IcGmW7KpVD5sbVg0Ojy+udFQdayYIZyoNog==",
+      "license": "Apache-2.0",
+      "packageFiles": [
+        {
+          "path": "LICENSE",
+          "sha256": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68",
+          "size": 10273
+        },
+        {
+          "path": "README.md",
+          "sha256": "8f8f907a15368c3ab82e675dde406263c321e1d14533285f6827da72b2bb7f55",
+          "size": 697
+        },
+        {
+          "path": "index.cjs",
+          "sha256": "01ae7daa0380ea031c8c5133808f5afb5a42ca00ee9057139e28c5b885705c4a",
+          "size": 135
+        },
+        {
+          "path": "lib/sharp-linux-x64-0.35.5.node",
+          "sha256": "cf896cc1b7f3ae9c3e8eb3d7b2b198b8de2824ff7d0681d684bab5a825def335",
+          "size": 415112
+        },
+        {
+          "path": "package.json",
+          "sha256": "181c58413d16ac3ce035f39c94c614031e03c023d88315712a81ed210c9fa04c",
+          "size": 921
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-arm64",
+      "name": "@koromix/koffi-linux-arm64",
+      "version": "3.3.2",
+      "sourceUrl": "https://registry.npmmirror.com/@koromix/koffi-linux-arm64/-/koffi-linux-arm64-3.3.2.tgz",
+      "integrity": "sha512-adabETUHezNDJ6jpqpJV01oJRW8rI4KWH3xV6EpFlIAXCtj6l4aLCbJ6DbGH8fNmsJBLnWiuLkyoNm8zkVotCw==",
+      "license": "MIT",
+      "supplementalLicenseTextIds": ["koffi-license"]
+    },
+    {
+      "path": "node_modules/@koromix/koffi-linux-x64",
+      "name": "@koromix/koffi-linux-x64",
+      "version": "3.3.2",
+      "sourceUrl": "https://registry.npmmirror.com/@koromix/koffi-linux-x64/-/koffi-linux-x64-3.3.2.tgz",
+      "integrity": "sha512-78qO1oqd9GYfzcKOxIaRiN0KgvzQzgbPfdClf0/jErlWYdxnr8gB4i9KOFvsYMdnc7kTIa/wnubl1lPCiQnqvA==",
+      "license": "MIT",
+      "supplementalLicenseTextIds": ["koffi-license"]
+    },
+    {
+      "path": "node_modules/@openai/codex",
+      "name": "@openai/codex",
+      "version": "0.154.0",
+      "sourceUrl": "https://registry.npmmirror.com/@openai/codex/-/codex-0.154.0.tgz",
+      "integrity": "sha512-FV/x1OHXYv/ifjf3mXj9ThTTAWcUZN6cGIRQRhRxkKNOPuImu1WW0c8ev1vUkE9XGH90dEnYG1tBjIkxRikg0w==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["codex-license", "codex-notice"]
+    },
+    {
+      "path": "node_modules/@openai/codex-linux-arm64",
+      "name": "@openai/codex",
+      "version": "0.154.0-linux-arm64",
+      "sourceUrl": "https://registry.npmmirror.com/@openai/codex/-/codex-0.154.0-linux-arm64.tgz",
+      "integrity": "sha512-KmTCB6ST484zeYlPpKP/K5P/gRaYmt6TihVD+zotoe6O9q0JSBP+FYvCz4A/zZXR7xDOHURTSjHp0sD8wWS0YQ==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["codex-license", "codex-notice"]
+    },
+    {
+      "path": "node_modules/@openai/codex-linux-x64",
+      "name": "@openai/codex",
+      "version": "0.154.0-linux-x64",
+      "sourceUrl": "https://registry.npmmirror.com/@openai/codex/-/codex-0.154.0-linux-x64.tgz",
+      "integrity": "sha512-a4FI3A8sGtwGrOqltrPbrS2hajrHQG591EwmRfiRoLMb10VxdBtUGW4gu6IJVYENiYGA7k3P4jlRHEoCZU/s9Q==",
+      "license": "Apache-2.0",
+      "supplementalLicenseTextIds": ["codex-license", "codex-notice"]
+    },
+    {
+      "path": "node_modules/@xterm/headless",
+      "name": "@xterm/headless",
+      "version": "6.0.0",
+      "sourceUrl": "https://registry.npmmirror.com/@xterm/headless/-/headless-6.0.0.tgz",
+      "integrity": "sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw==",
+      "license": "MIT",
+      "supplementalLicenseTextIds": ["xterm-license"]
+    },
+    {
+      "path": "node_modules/data-uri-to-buffer",
+      "name": "data-uri-to-buffer",
+      "version": "4.0.1",
+      "sourceUrl": "https://registry.npmmirror.com/data-uri-to-buffer/-/data-uri-to-buffer-4.0.1.tgz",
+      "integrity": "sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==",
+      "license": "MIT",
+      "bundledLicenseFiles": [
+        {
+          "path": "README.md",
+          "sha256": "a7cc4332acfa1f9b6530e01aac77fefe74f2efa32579215fddaa473013f9a25c"
+        }
+      ]
+    }
+  ],
+  "supplementalLicenseTexts": [
+    {
+      "id": "aws-sdk-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/aws-sdk-license/LICENSE",
+      "sha256": "edea91454b811f127fbdea3d86f378f6719bd372ed440abf82b232f6fca06c3d",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/aws/aws-sdk-js-v3",
+        "commit": "c68e50e4a6e0469a20c2894fe8a29c140553ebb8",
+        "path": "LICENSE"
+      }
+    },
+    {
+      "id": "codex-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/codex-license/LICENSE",
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/openai/codex",
+        "commit": "6b9826e3aa83b1a5947db50f4332cb9c65f1b340",
+        "path": "LICENSE"
+      }
+    },
+    {
+      "id": "codex-notice",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/codex-notice/NOTICE",
+      "sha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/openai/codex",
+        "commit": "6b9826e3aa83b1a5947db50f4332cb9c65f1b340",
+        "path": "NOTICE"
+      }
+    },
+    {
+      "id": "koffi-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/koffi-license/LICENSE.txt",
+      "sha256": "22bcbbbacd739b026a8dc484f62a31484ce4c4e31f3408b60b29b4e41d62b290",
+      "source": {
+        "kind": "npm-tarball",
+        "url": "https://registry.npmmirror.com/koffi/-/koffi-3.3.2.tgz",
+        "integrity": "sha512-f9Rrcmpy7lQs0ayJfhaxiG5OLp1aZjXKOFLXo7Gax6snJRKmdpYnYEOkpQ7ImCBrbvOdzFT06EP+FaLZv35W7Q==",
+        "member": "package/LICENSE.txt"
+      }
+    },
+    {
+      "id": "libvips-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/libvips-license/LICENSE",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/libvips/libvips",
+        "commit": "24ad4d042940e6bf99a68871ba886ca8847c9c82",
+        "path": "LICENSE"
+      }
+    },
+    {
+      "id": "native-aom-fastfeat-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom-fastfeat/LICENSE",
+      "sha256": "499041ddee5227b6f29ca06c17803e5fe24d60f243c69635cd76b7ba08d0ddd5",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/third_party/fastfeat/LICENSE"
+      }
+    },
+    {
+      "id": "native-aom-libyuv-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom-libyuv/LICENSE",
+      "sha256": "2b2cc1180c7e6988328ad2033b04b80117419db9c4c584918bbb3cfec7e9364f",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/third_party/libyuv/LICENSE"
+      }
+    },
+    {
+      "id": "native-aom-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom/LICENSE",
+      "sha256": "4764a286d8b2faeaf42f4418e7d7a28d58fc8fd4d00a3d0a7f44b0a4099de7f2",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/LICENSE"
+      }
+    },
+    {
+      "id": "native-aom-patents",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom/PATENTS",
+      "sha256": "661fb8e504744e95587b556b94a58343448300606a41bea8c7a9b97125696e61",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/PATENTS"
+      }
+    },
+    {
+      "id": "native-aom-vector-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom-vector/LICENSE",
+      "sha256": "ff6c857ce2708e87701323078aef115c1872a1f80a9649f86dc899b48083bc60",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/third_party/vector/LICENSE"
+      }
+    },
+    {
+      "id": "native-aom-x86inc-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/aom-x86inc/LICENSE",
+      "sha256": "719d8fa235f2068e0ae6d6a7dceb0a7720d7840f0f0ebed29957989e6ded3cd8",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.1.tar.gz",
+        "sha256": "8ca0c52746174603500f0adb6f2a215d69c9ca2aab2acb3caa06fb791d8d01bf",
+        "member": "libaom-3.15.1/third_party/x86inc/LICENSE"
+      }
+    },
+    {
+      "id": "native-archive-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/archive/COPYING",
+      "sha256": "30e556b3959e3985d66efefec5eaac51d4995053caa1d3cffe6eb916f146f229",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/libarchive/libarchive/releases/download/v3.8.9/libarchive-3.8.9.tar.xz",
+        "sha256": "888c934f9d95648ecb9163dc8e23ab80a476ecb81a8f1154704a227b5b676dde",
+        "member": "libarchive-3.8.9/COPYING"
+      }
+    },
+    {
+      "id": "native-cairo-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/cairo/COPYING",
+      "sha256": "67228a9f7c5f9b67c58f556f1be178f62da4d9e2e6285318d8c74d567255abdf",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://cairographics.org/releases/cairo-1.18.6.tar.xz",
+        "sha256": "1c767308174337a74694da0f3ec069c271452163a1ef4540964c50c301f157d4",
+        "member": "cairo-1.18.6/COPYING"
+      }
+    },
+    {
+      "id": "native-cairo-mpl-copying-mpl-1-1",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/cairo-mpl/COPYING-MPL-1.1",
+      "sha256": "53692a2ed6c6a2c6ec9b32dd0b820dfae91e0a1fcdf625ca9ed0bdf8705fcc4f",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://cairographics.org/releases/cairo-1.18.6.tar.xz",
+        "sha256": "1c767308174337a74694da0f3ec069c271452163a1ef4540964c50c301f157d4",
+        "member": "cairo-1.18.6/COPYING-MPL-1.1"
+      }
+    },
+    {
+      "id": "native-cgif-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/cgif/LICENSE",
+      "sha256": "7264dede477abab4ac3fe8236beb8153845c04ccd33b18f281085087e219fc6d",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/dloebl/cgif/archive/v0.5.4.tar.gz",
+        "sha256": "83a70a15bc2da41f081a44ebc58ee48e2e1d524a6d3fdb4a24064afa08d5ad4d",
+        "member": "cgif-0.5.4/LICENSE"
+      }
+    },
+    {
+      "id": "native-exif-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/exif/COPYING",
+      "sha256": "36b6d3fa47916943fd5fec313c584784946047ec1337a78b440e5992cb595f89",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/libexif/libexif/releases/download/v0.6.26/libexif-0.6.26.tar.xz",
+        "sha256": "4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c",
+        "member": "libexif-0.6.26/COPYING"
+      }
+    },
+    {
+      "id": "native-expat-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/expat/COPYING",
+      "sha256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.xz",
+        "sha256": "1e727b8933ec51a77a9a9d9afcf8e688bce45d907c13e36ab7393fe36e703182",
+        "member": "expat-2.8.5/COPYING"
+      }
+    },
+    {
+      "id": "native-ffi-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/ffi/LICENSE",
+      "sha256": "17b64dc60f3b6897a60f971e288b973f655c2edcdf08b25f3c3dd5549857881c",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz",
+        "sha256": "7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4",
+        "member": "libffi-3.8.0/LICENSE"
+      }
+    },
+    {
+      "id": "native-fontconfig-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/fontconfig/COPYING",
+      "sha256": "51a51aa9823704fd90bccc616cdd17ebabb5b2b3e9cbde886ca02c7002288067",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.18.3/fontconfig-2.18.3.tar.gz",
+        "sha256": "9ae01e1d53acdef56010c5451cd34aa41d325b2faccd8606448d8fa01b2496b3",
+        "member": "fontconfig-2.18.3/COPYING"
+      }
+    },
+    {
+      "id": "native-freetype-ftl-ftl-txt",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/freetype-ftl/FTL.TXT",
+      "sha256": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/freetype/freetype/archive/VER-2-14-3.tar.gz",
+        "sha256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
+        "member": "freetype-VER-2-14-3/docs/FTL.TXT"
+      }
+    },
+    {
+      "id": "native-freetype-selector-license-txt",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/freetype-selector/LICENSE.TXT",
+      "sha256": "bd36c8b474855fa294c2ec5c184544478ef3720aad37d65a6296a4f264fd2d3b",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/freetype/freetype/archive/VER-2-14-3.tar.gz",
+        "sha256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
+        "member": "freetype-VER-2-14-3/LICENSE.TXT"
+      }
+    },
+    {
+      "id": "native-fribidi-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/fribidi/COPYING",
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/fribidi/fribidi/releases/download/v1.0.17/fribidi-1.0.17.tar.xz",
+        "sha256": "6949dcde27d41cebad1fd741fcafc36d55a1020d2d872d4a6eb3914caabbada2",
+        "member": "fribidi-1.0.17/COPYING"
+      }
+    },
+    {
+      "id": "native-glib-lgpl-2-1-or-later-txt",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/glib/LGPL-2.1-or-later.txt",
+      "sha256": "fa6f36630bb1e0c571d34b2bbdf188d08495c9dbf58f28cac112f303fc1f58fb",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://download.gnome.org/sources/glib/2.90/glib-2.90.0.tar.xz",
+        "sha256": "17d15cac2af80a33271127408e0abc2748eb297c595c2a26409e81e14e7d1b8f",
+        "member": "glib-2.90.0/LICENSES/LGPL-2.1-or-later.txt"
+      }
+    },
+    {
+      "id": "native-harfbuzz-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/harfbuzz/COPYING",
+      "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/harfbuzz/harfbuzz/archive/14.5.0.tar.gz",
+        "sha256": "97ec7488a46b974e18e08ee774af93173e7e1dbf738424796eb315ebcb735ec5",
+        "member": "harfbuzz-14.5.0/COPYING"
+      }
+    },
+    {
+      "id": "native-harfbuzz-ms-use-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/harfbuzz-ms-use/COPYING",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/harfbuzz/harfbuzz/archive/14.5.0.tar.gz",
+        "sha256": "97ec7488a46b974e18e08ee774af93173e7e1dbf738424796eb315ebcb735ec5",
+        "member": "harfbuzz-14.5.0/src/ms-use/COPYING"
+      }
+    },
+    {
+      "id": "native-heif-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/heif/COPYING",
+      "sha256": "fa81ce652315b013359d6e8e4744335f31a50c7c192907176d3632f78a3b4596",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/strukturag/libheif/releases/download/v1.23.5/libheif-1.23.5.tar.gz",
+        "sha256": "fd9036064c4432f0550d15072ddf34956a248279ee9aeaff0fba3fa0f77d8f1a",
+        "member": "libheif-1.23.5/COPYING"
+      }
+    },
+    {
+      "id": "native-highway-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/highway/LICENSE",
+      "sha256": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/google/highway/archive/1.4.0.tar.gz",
+        "sha256": "e72241ac9524bb653ae52ced768b508045d4438726a303f10181a38f764a453c",
+        "member": "highway-1.4.0/LICENSE"
+      }
+    },
+    {
+      "id": "native-imagequant-copyright",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/imagequant/COPYRIGHT",
+      "sha256": "7391bfbcde4404cefb9849553362c3ab436f929f5cc1abb57071ec045590ee99",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/lovell/libimagequant/archive/v2.4.1.tar.gz",
+        "sha256": "47d2a84b7b1052975c9d50a3d4e3cacbf57b43d84a4c3131210848ead9964dfb",
+        "member": "libimagequant-2.4.1/COPYRIGHT"
+      }
+    },
+    {
+      "id": "native-lcms-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/lcms/LICENSE",
+      "sha256": "6dbd60437f8ef91d8de1f08ad75882547fd4931bfcc3566a0735f28db1484d31",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/mm2/Little-CMS/releases/download/lcms2.19.1/lcms2-2.19.1.tar.gz",
+        "sha256": "bfc54f7bab59fbc921012014a8032e4cba4abd46db47d46b76416a8c0b2815c8",
+        "member": "lcms2-2.19.1/LICENSE"
+      }
+    },
+    {
+      "id": "native-libnsgif-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/libnsgif/COPYING",
+      "sha256": "1469b759cf18e43c6e1b4ff892307d3962cbbb337ac497620d6690a219fad10c",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/libvips/libvips/releases/download/v8.18.7/vips-8.18.7.tar.xz",
+        "sha256": "5baaead3b0bb20ffdb9e9ff09aa9fda08620923df77b63b436654cb5e0b3bf94",
+        "member": "vips-8.18.7/libvips/foreign/libnsgif/COPYING"
+      }
+    },
+    {
+      "id": "native-mozjpeg-ijg-readme-ijg",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/mozjpeg-ijg/README.ijg",
+      "sha256": "f4a85f8677ca4e41b185c0a9f7c31a30ddb9ce43c561483ee92ef12db37c2a10",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/mozilla/mozjpeg/archive/0826579.tar.gz",
+        "sha256": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5",
+        "member": "mozjpeg-08265790774cd0714832c9e675522acbe5581437/README.ijg"
+      }
+    },
+    {
+      "id": "native-mozjpeg-license-md",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/mozjpeg/LICENSE.md",
+      "sha256": "96f5b328adbb78eeaaec6980d73fd558cb1e4d62560ed615646bc3cf5e532430",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/mozilla/mozjpeg/archive/0826579.tar.gz",
+        "sha256": "b680167bd5d9afebdd576a12f8c49d2c9066a3b92ef96a2b2c5f7829b8600fe5",
+        "member": "mozjpeg-08265790774cd0714832c9e675522acbe5581437/LICENSE.md"
+      }
+    },
+    {
+      "id": "native-pango-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/pango/COPYING",
+      "sha256": "d245807f90032872d1438d741ed21e2490e1175dc8aa3afa5ddb6c8e529b58e5",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://download.gnome.org/sources/pango/1.58/pango-1.58.2.tar.xz",
+        "sha256": "342385b6ca3b7c73455d7c80a13b7dbe4489e00bc3bd4c5bd6ed4dce421e374a",
+        "member": "pango-1.58.2/COPYING"
+      }
+    },
+    {
+      "id": "native-pixman-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/pixman/COPYING",
+      "sha256": "fac9270f0987b96ff4533fca3548c633e02083cbba4a0172a3b149b2e4019793",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://cairographics.org/releases/pixman-0.46.4.tar.gz",
+        "sha256": "d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c",
+        "member": "pixman-0.46.4/COPYING"
+      }
+    },
+    {
+      "id": "native-png-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/png/LICENSE",
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/pnggroup/libpng/archive/v1.6.58.tar.gz",
+        "sha256": "a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf",
+        "member": "libpng-1.6.58/LICENSE"
+      }
+    },
+    {
+      "id": "native-tiff-license-md",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/tiff/LICENSE.md",
+      "sha256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://gitlab.com/libtiff/libtiff/-/archive/v4.7.2/libtiff-v4.7.2.tar.gz",
+        "sha256": "62b15f44c10106065211efa22a2dc77937bd97ee1f6e3afd2c9659010de112eb",
+        "member": "libtiff-v4.7.2/LICENSE.md"
+      }
+    },
+    {
+      "id": "native-uhdr-adobe-notice-notice",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/uhdr-adobe-notice/NOTICE",
+      "sha256": "746d8c9c414b335bb7c9615918a15a6489a4dcc1c5c3aac2bda410d1072c332a",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/google/libultrahdr/archive/v2.0.2.tar.gz",
+        "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
+        "member": "libultrahdr-2.0.2/adobe-hdr-gain-map-license/NOTICE"
+      }
+    },
+    {
+      "id": "native-uhdr-image-io-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/uhdr-image-io/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/google/libultrahdr/archive/v2.0.2.tar.gz",
+        "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
+        "member": "libultrahdr-2.0.2/third_party/image_io/LICENSE"
+      }
+    },
+    {
+      "id": "native-uhdr-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/uhdr/LICENSE",
+      "sha256": "c9247b5cb07866938643cc238292434e6f2af8642e1fce10771c0e4cc7909316",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/google/libultrahdr/archive/v2.0.2.tar.gz",
+        "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
+        "member": "libultrahdr-2.0.2/LICENSE"
+      }
+    },
+    {
+      "id": "native-uhdr-modp-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/uhdr-modp/LICENSE",
+      "sha256": "d47e8390fb0d7ad4a18f26aedd6283c7ab6b5b4fabab536ccb4db7f9f6d90c08",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/google/libultrahdr/archive/v2.0.2.tar.gz",
+        "sha256": "aa8d193bb887c348c419780511dd03b374f4e07af8812b6d3f80c8537cf1ef2c",
+        "member": "libultrahdr-2.0.2/third_party/image_io/src/modp_b64/LICENSE"
+      }
+    },
+    {
+      "id": "native-webp-copying",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/webp/COPYING",
+      "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+        "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+        "member": "libwebp-1.6.0/COPYING"
+      }
+    },
+    {
+      "id": "native-webp-patents-patents",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/webp-patents/PATENTS",
+      "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+        "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+        "member": "libwebp-1.6.0/PATENTS"
+      }
+    },
+    {
+      "id": "native-xml2-copyright",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/xml2/Copyright",
+      "sha256": "5d4873884a890122a4b9b20ad56ac6f7da1d796a5bfcf04a427970ac96217626",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz",
+        "sha256": "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821",
+        "member": "libxml2-2.15.4/Copyright"
+      }
+    },
+    {
+      "id": "native-zlib-ng-license-md",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/native/zlib-ng/LICENSE.md",
+      "sha256": "6c9f0d975b41afaa34d22f55bb8986ce69e5cb7ad327cb2b28820cd425edf5ee",
+      "source": {
+        "kind": "source-archive",
+        "url": "https://github.com/zlib-ng/zlib-ng/archive/2.3.3.tar.gz",
+        "sha256": "f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1",
+        "member": "zlib-ng-2.3.3/LICENSE.md"
+      }
+    },
+    {
+      "id": "pi-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/pi-license/LICENSE",
+      "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/earendil-works/pi",
+        "commit": "b79e4cc834970cca69daebffab7df1da7d1e52c4",
+        "path": "LICENSE"
+      }
+    },
+    {
+      "id": "sharp-build-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/sharp-build-license/LICENSE",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/lovell/sharp-libvips",
+        "commit": "ebb95f8add54eee8bed840e3fb587e4cbec857d7",
+        "path": "LICENSE"
+      }
+    },
+    {
+      "id": "sharp-third-party-notices",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/sharp-third-party-notices/THIRD-PARTY-NOTICES.md",
+      "sha256": "6f0d5086e3bcbee12bcdacf5878b31d1104002aeecaeb241d3fff466108082fe",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/lovell/sharp-libvips",
+        "commit": "ebb95f8add54eee8bed840e3fb587e4cbec857d7",
+        "path": "THIRD-PARTY-NOTICES.md"
+      }
+    },
+    {
+      "id": "xterm-license",
+      "artifactPath": "deploy/docker/worker-oci-supplemental-licenses/xterm-license/LICENSE",
+      "sha256": "b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd",
+      "source": {
+        "kind": "repository",
+        "repository": "https://github.com/xtermjs/xterm.js",
+        "commit": "f447274f430fd22513f6adbf9862d19524471c04",
+        "path": "LICENSE"
+      }
+    }
+  ]
+}

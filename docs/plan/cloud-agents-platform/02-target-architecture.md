@@ -133,6 +133,31 @@ Resource health observer 只提供观察，不替代生命周期调谐、到期�
 快照/checkpoint 记录一致性策略、缺失窗口与版本兼容；Secret 不进快照。按故障类型测量 RTO/RPO，不承诺通用零丢失或 exactly-once。
 详细故障矩阵由 [05 的 ANYWHERE-RUNTIME-V1](05-gates-and-acceptance.md#anywhere-runtime-v1) 维护。
 
+<a id="identity-v1-architecture"></a>
+
+### 0.8 内置身份与会话代理（IDENTITY-V1，P0 提案）
+
+本节依 [ADR-0033](../adr/0033-built-in-identity-service.md) 描述待批准的目标；不是当前运行状态。身份服务为新进程，复用当前 Go 与 PostgreSQL 基础，不把登录逻辑放进离线 verifier。
+
+```text
+Admin Browser ── Admin HttpOnly cookie ── Admin Web server ──┐
+User Browser  ── User HttpOnly cookie  ── User Web server  ──┤
+                                                          ├── Identity service
+                                                          │   账号/登录/会话/邀请/平台绑定
+                                                          │   单租户 token 签发 + JWKS
+                                                          └── CP（server 添加 token）
+                                                              验签 + 在线活性 + 当前 RBAC
+                                                              → 单 tenant context / RLS
+```
+
+Identity service 是登录状态与签发记录唯一 writer；Web server 管 cookie、同源代理和派生 token 缓存。CP 继续拥有 Tenant/Organization/Project/Membership/RoleBinding；邀请消费与成员/绑定写入通过双方拥有的受限数据库函数在同一事务完成。跨租户发现只返回已授权的有限元数据，不给在线数据库角色表级直读或 RLS bypass。
+
+每个请求从路径获取 tenant/project，签发与缓存按 session、应用及目标隔离；切换 tenant 重新授权和签发。scope 来自当前 binding 与应用权限交集，CP 每次重新判断资源权限。`platform.admin` 在 tenant 外有显式绑定，选中租户后按契约中有限的管理 permission 工作；不获得用户内容权限，User Web 仍要求 active membership。
+
+CP 通过现有配置适配器的后继刷新受信任 JWKS 与有界 trust snapshot，保留 [ADR-0025](../adr/0025-p1-offline-jwt-access-token-verifier-contract.md) 冻结算法、claims、key lineage 和拒绝规则。15 分钟 token 由服务端续签；立即撤销另由受认证的在线 user/session/jti 校验实现，拒绝缓存的允许结果，身份服务不可用时 fail closed。新请求在撤销提交后拒绝；长连接按动作与最长 15 秒心跳重检，已接受事务不承诺回滚。
+
+Admin/User 各自 HTTPS origin、cookie 与应用用途强制隔离，浏览器不持有 CP/IdP bearer token。TLS 是 P2 登录 E2E 前置；P5 再交付 Compose/Helm 的正式打包配置。OIDC/OAuth 回调、邮箱验证、账号关联、会话和密码细则见 ADR-0033 与 [SECURITY.md](../../../SECURITY.md#identity-v1-proposed)，实施顺序见 [04](04-extraction-and-migration.md#identity-v1-plan)。
+
 ## 1. 既有消费者与兼容拓扑
 
 ```mermaid

@@ -363,7 +363,7 @@ export function runnerLedgerEntryExecutionAdmissionRegistryInputs(_root: string)
     "scripts/generate-platform-runner-ledger-entry-writer-registries.ts",
     "scripts/lib/platform-json-semantics.ts",
     "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
-    "scripts/lib/platform-runner-ledger-entry-writer-registry.test.ts",
+    "test/scripts/platform-runner-ledger-entry-writer-registry.test.ts",
     "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
   ].toSorted();
 }
@@ -378,7 +378,7 @@ export function runnerLedgerEntrySuccessWriterRegistryInputs(_root: string): str
     "docs/plan/p1/runner-ledger-entry-writer-contract-audit-20260822.md",
     "scripts/generate-platform-runner-ledger-entry-writer-registries.ts",
     "scripts/lib/platform-json-semantics.ts",
-    "scripts/lib/platform-runner-ledger-entry-writer-registry.test.ts",
+    "test/scripts/platform-runner-ledger-entry-writer-registry.test.ts",
     "scripts/lib/platform-runner-ledger-entry-writer-registry.ts",
   ].toSorted();
 }

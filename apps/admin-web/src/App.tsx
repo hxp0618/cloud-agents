@@ -1,4 +1,4 @@
-import { ConnectionView } from "./app/connection";
+import { LoginView } from "./app/connection";
 import {
   PaginatedTargets,
   TargetTable,
@@ -44,9 +44,10 @@ import {
   quotaFormFrom,
   storagePolicyFormFrom,
 } from "./app/policies";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  createHTTPClient,
+  ClientError,
+  createSessionHTTPClient,
   type AdminSandboxAccessGrant,
   type AdminSandboxSession,
   type AdminAuditEvent,
@@ -57,9 +58,7 @@ import {
   type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
   type MaintenanceOperation,
-  type ManagedAgentEvent,
   type ManagedAgentExecution,
-  type ManagedAgentSession,
   type McpServer,
   type ManagedAgentSideEffectReconciliationRequest,
   type NetworkPolicy,
@@ -78,13 +77,18 @@ import {
   type WorkspaceSnapshotCleanupRequest,
   type WorkspaceSnapshotCreateRequest,
   type WorkspaceSnapshotRestoreRequest,
+  type BrowserAuthConfig,
+  type BrowserSession,
+  type BrowserTenant,
+  type Client,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { ResourceRefresh } from "./ResourceRefresh";
 import { SuccessToast } from "./SuccessToast";
 import { AdminSheet } from "./AdminSheet";
 
 import {
-  adminFailure,
+  adminFailure as adminFailureFrom,
+  adminMutationKey,
   filterAdminLeases,
   filterAdminWorkers,
   cleanupRequestFromPreview,
@@ -96,12 +100,9 @@ import {
   listAdminStoragePolicyAuditEvents,
   capabilityBindingRelations,
   listAdminSandboxAccessGrants,
-  listAdminSandboxes,
-  listAdminWorkspaceSnapshots,
   listAdminWorkers,
-  newIdempotencyKey,
   newRequestId,
-  readSavedAdminConnection,
+  pendingIdempotencyKey,
   replaceLease,
   replaceProfile,
   replaceRuntimeProfile,
@@ -111,12 +112,22 @@ import {
   schedulingRequestFromPreview,
   selectAdminResourceId,
   workerRefreshKey,
-  writeSavedAdminConnection,
   type AdminClient,
+  type AdminManagedAgentRuntime,
   type SavedAdminConnection,
   type SandboxLifecycleAction,
   type WorkerStatusFilter,
 } from "./admin";
+
+function emptyManagedAgentRuntime(): AdminManagedAgentRuntime {
+  return Object.freeze({
+    sessions: Object.freeze([]),
+    executions: Object.freeze([]),
+    seenSessionPageTokens: Object.freeze([]),
+    selectedSessionId: "",
+    seenExecutionPageTokens: Object.freeze([]),
+  });
+}
 import { NetworkPolicyPanel } from "./NetworkPolicyPanel";
 import { CapabilityPanel } from "./CapabilityPanel";
 import { DeniedWritePanel } from "./DeniedWritePanel";
@@ -127,21 +138,21 @@ import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } fro
 import { normalizeLocale, useI18n, type MessageKey, type MessageValues } from "./i18n";
 import {
   loadAdminWorkspaceData,
+  loadAdminPollData,
   type AdminWorkspaceData,
+  type AdminPageData,
   loadProfileAudit,
   loadTargetActivity,
-  loadTargetAuthority,
-  loadLeaseAuthority,
 } from "./app/loaders";
 import {
   executableFoundationNetworkPolicy,
   phaseTone,
   phaseLabel,
   auditLabel,
-  type ConnectionStatus,
   type TargetKind,
 } from "./app/presentation";
 import { deriveAdminView } from "./app/derived";
+import { parseEmailDomains } from "./app/auth";
 
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -149,31 +160,40 @@ type OperationNotice = LocalizedMessage & Readonly<{ accepted?: boolean }>;
 type BusyOperation = Readonly<{ message: LocalizedMessage }>;
 type Theme = "light" | "dark";
 
-function initialConnection(): SavedAdminConnection {
-  const saved = readSavedAdminConnection(window.sessionStorage);
-  return {
-    endpoint: saved.endpoint || window.location.origin,
-    tenantId: saved.tenantId,
-    projectId: saved.projectId,
-  };
-}
-
 function initialTheme(): Theme {
   const saved = window.localStorage.getItem("cloud-agents-admin-theme");
   if (saved === "light" || saved === "dark") return saved;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function App() {
+type DashboardProps = Readonly<{
+  authConfig: BrowserAuthConfig;
+  client: Client;
+  connection: SavedAdminConnection;
+  session: BrowserSession;
+  tenant: BrowserTenant;
+  project: BrowserTenant["projects"][number];
+  onScopeChange: (tenantId: string, projectId: string) => void;
+  onSessionChange: (session: BrowserSession) => void;
+  onSessionExpired: () => void;
+}>;
+
+function Dashboard({
+  authConfig,
+  client,
+  connection,
+  session,
+  tenant,
+  project,
+  onScopeChange,
+  onSessionChange,
+  onSessionExpired,
+}: DashboardProps) {
   const { locale, setLocale, t, number, dateTime } = useI18n();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
-  const [connection, setConnection] = useState(initialConnection);
-  const [token, setToken] = useState("");
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
-  const [client, setClient] = useState<AdminClient | null>(null);
   const [targets, setTargets] = useState<readonly DeploymentTarget[]>(Object.freeze([]));
   const [selectedTargetId, setSelectedTargetId] = useState("");
   const [targetOperations, setTargetOperations] = useState<readonly MaintenanceOperation[]>(
@@ -200,15 +220,7 @@ export function App() {
   );
   const [selectedRuntimeProfileVersionId, setSelectedRuntimeProfileVersionId] = useState("");
   const [sandboxes, setSandboxes] = useState<readonly AdminSandboxSession[]>(Object.freeze([]));
-  const [managedAgentSessions, setManagedAgentSessions] = useState<readonly ManagedAgentSession[]>(
-    Object.freeze([]),
-  );
-  const [managedAgentExecutions, setManagedAgentExecutions] = useState<
-    readonly ManagedAgentExecution[]
-  >(Object.freeze([]));
-  const [managedAgentEvents, setManagedAgentEvents] = useState<readonly ManagedAgentEvent[]>(
-    Object.freeze([]),
-  );
+  const [managedAgentRuntime, setManagedAgentRuntime] = useState(emptyManagedAgentRuntime);
   const [workspaceSnapshots, setWorkspaceSnapshots] = useState<readonly WorkspaceSnapshot[]>(
     Object.freeze([]),
   );
@@ -226,15 +238,7 @@ export function App() {
   const [networkPolicies, setNetworkPolicies] = useState<readonly NetworkPolicy[]>([]);
   const [mcpServers, setMcpServers] = useState<readonly McpServer[]>(Object.freeze([]));
   const [skillBundles, setSkillBundles] = useState<readonly SkillBundle[]>(Object.freeze([]));
-  const [capabilitySessions, setCapabilitySessions] = useState<readonly ManagedAgentSession[]>(
-    Object.freeze([]),
-  );
-  const [capabilityExecutions, setCapabilityExecutions] = useState<
-    readonly ManagedAgentExecution[]
-  >(Object.freeze([]));
-  const [capabilityEvents, setCapabilityEvents] = useState<readonly ManagedAgentEvent[]>(
-    Object.freeze([]),
-  );
+  const [capabilityRuntime, setCapabilityRuntime] = useState(emptyManagedAgentRuntime);
   const [networkEditorEpoch, setNetworkEditorEpoch] = useState(0);
   const [selectedStoragePolicyId, setSelectedStoragePolicyId] = useState("");
   const [storagePolicyAudit, setStoragePolicyAudit] = useState<readonly AdminAuditEvent[]>(
@@ -249,6 +253,12 @@ export function App() {
   >(Object.freeze([]));
   const [selectedMaintenanceOperationId, setSelectedMaintenanceOperationId] = useState("");
   const [page, setPage] = useState<Page>("overview");
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageErrors, setPageErrors] = useState<AdminPageData["errors"]>({});
+  const [loadedResources, setLoadedResources] = useState<Set<keyof AdminWorkspaceData>>(
+    () => new Set(),
+  );
+  const loadedPageRef = useRef<Page | null>(null);
   const [query, setQuery] = useState("");
   const [targetKindFilter, setTargetKindFilter] = useState<readonly TargetKind[]>([]);
   const [leaseAttentionOnly, setLeaseAttentionOnly] = useState(false);
@@ -288,6 +298,7 @@ export function App() {
   const [releaseForm, setReleaseForm] = useState(workerReleaseForm);
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
+  const [emailDomains, setEmailDomains] = useState(() => tenant.emailDomains.join("\n"));
   const [snapshotForm, setSnapshotForm] = useState({
     snapshotId: "",
     sourceSandboxId: "",
@@ -303,12 +314,18 @@ export function App() {
   });
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
+  const pageLoadingRef = useRef(false);
   const operationTriggerRef = useRef<HTMLElement | null>(null);
   const cancelledFeedbackRef = useRef<HTMLElement | null>(null);
   const pendingKeysRef = useRef(new Map<string, string>());
   const profileMenuRef = useRef<HTMLDetailsElement>(null);
 
-  const connected = status === "connected" && client !== null;
+  const connected = true;
+  const interactionDisabled = busy !== null || pageLoading;
+  function adminFailure(cause: unknown) {
+    if (cause instanceof ClientError && cause.status === 401) onSessionExpired();
+    return adminFailureFrom(cause);
+  }
   useLayoutEffect(() => {
     if (busy !== null) return;
     const feedback = cancelledFeedbackRef.current;
@@ -403,6 +420,60 @@ export function App() {
   });
 
   useEffect(() => {
+    if (!connected || client === null) return;
+    if (loadedPageRef.current === page) {
+      pageLoadingRef.current = false;
+      setPageLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    pageLoadingRef.current = true;
+    setPageLoading(true);
+    setPageErrors({});
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+    void loadAdminWorkspaceData(
+      client,
+      connection,
+      selectedTargetId,
+      selectedLeaseId,
+      selectedProfileVersionId,
+      signal,
+      page,
+    )
+      .then(async (loaded) => {
+        if (controller.signal.aborted) return;
+        applyWorkspaceData(loaded.data, "preserve");
+        setPageErrors(loaded.errors);
+        const runtime =
+          page === "capabilities"
+            ? await loadAdminManagedAgentRuntime(
+                client,
+                connection.tenantId,
+                connection.projectId,
+                "",
+                signal,
+              )
+            : undefined;
+        if (controller.signal.aborted) return;
+        if (runtime !== undefined) setCapabilityRuntime(runtime);
+        loadedPageRef.current = page;
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(adminFailure(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          pageLoadingRef.current = false;
+          setPageLoading(false);
+        }
+      });
+    return () => {
+      controller.abort();
+      pageLoadingRef.current = false;
+    };
+  }, [client, connected, connection, page]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem("cloud-agents-admin-theme", theme);
@@ -453,29 +524,6 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (page !== "capabilities" || client === null) return;
-    const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-    void loadAdminManagedAgentRuntime(
-      client,
-      connection.tenantId,
-      connection.projectId,
-      "",
-      signal,
-      true,
-    )
-      .then((runtime) => {
-        setCapabilitySessions(runtime.sessions);
-        setCapabilityExecutions(runtime.executions);
-        setCapabilityEvents(runtime.events);
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) setError(adminFailure(cause));
-      });
-    return () => controller.abort();
-  }, [client, connection.projectId, connection.tenantId, page]);
-
   useEffect(
     () => () => {
       requestRef.current?.abort();
@@ -490,16 +538,15 @@ export function App() {
     const snapshotPending = workspaceSnapshots.some(({ spec }) =>
       ["pending", "unknown", "deleting"].includes(spec.status),
     );
+    const targetLifecyclePending = targets.some(({ spec }) => spec.observedPhase === "probing");
+    const leaseLifecyclePending = leases.some(
+      ({ spec }) =>
+        spec.observedPhase === "provisioning" ||
+        spec.observedPhase === "terminating" ||
+        ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
+    );
     const lifecyclePending =
-      targets.some(({ spec }) => spec.observedPhase === "probing") ||
-      leases.some(
-        ({ spec }) =>
-          spec.observedPhase === "provisioning" ||
-          spec.observedPhase === "terminating" ||
-          ["pending", "revoking", "reaping"].includes(spec.cleanupPhase),
-      ) ||
-      sandboxLifecyclePending ||
-      snapshotPending;
+      targetLifecyclePending || leaseLifecyclePending || sandboxLifecyclePending || snapshotPending;
     const observeHealth =
       (page === "workers" || page === "overview") &&
       workers.some(({ spec }) => spec.state === "ready");
@@ -508,46 +555,52 @@ export function App() {
     let polling = false;
     const interval = window.setInterval(
       () => {
-        if (document.visibilityState !== "visible" || busyRef.current || polling) return;
+        if (
+          document.visibilityState !== "visible" ||
+          busyRef.current ||
+          pageLoadingRef.current ||
+          polling
+        )
+          return;
         polling = true;
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-        void Promise.all([
-          lifecyclePending
-            ? loadTargetAuthority(client, connection, selectedTargetId, signal)
-            : Promise.resolve({ targets, selectedTargetId }),
-          lifecyclePending
-            ? loadLeaseAuthority(client, connection, selectedLeaseId, signal)
-            : Promise.resolve({ leases, selectedLeaseId }),
-          listAdminWorkers(client, connection.tenantId, connection.projectId, signal),
-          sandboxLifecyclePending
-            ? listAdminSandboxes(client, connection.tenantId, connection.projectId, signal)
-            : Promise.resolve(sandboxes),
-          snapshotPending
-            ? listAdminWorkspaceSnapshots(client, connection.tenantId, connection.projectId, signal)
-            : Promise.resolve(workspaceSnapshots),
-        ])
-          .then(
-            ([
-              loadedTargets,
-              loadedLeases,
-              loadedWorkers,
-              loadedSandboxes,
-              loadedWorkspaceSnapshots,
-            ]) => {
-              if (controller.signal.aborted) return;
-              // Unchanged polls keep references, so they neither re-render nor restart this effect.
-              setTargets((current) => keepIfUnchanged(current, loadedTargets.targets));
-              setSelectedTargetId(loadedTargets.selectedTargetId);
-              setLeases((current) => keepIfUnchanged(current, loadedLeases.leases));
-              setSelectedLeaseId(loadedLeases.selectedLeaseId);
-              setWorkers((current) => keepIfUnchanged(current, loadedWorkers, workerRefreshKey));
-              setSandboxes((current) => keepIfUnchanged(current, loadedSandboxes));
+        void loadAdminPollData(
+          client,
+          connection,
+          selectedTargetId,
+          selectedLeaseId,
+          {
+            targets: targetLifecyclePending,
+            leases: leaseLifecyclePending,
+            workers: observeHealth,
+            sandboxes: sandboxLifecyclePending,
+            workspaceSnapshots: snapshotPending,
+          },
+          signal,
+        )
+          .then(({ data, errors }) => {
+            if (controller.signal.aborted) return;
+            if (data.targets !== undefined) {
+              setTargets((current) => keepIfUnchanged(current, data.targets!.targets));
+              setSelectedTargetId(data.targets.selectedTargetId);
+            }
+            if (data.leases !== undefined) {
+              setLeases((current) => keepIfUnchanged(current, data.leases!.leases));
+              setSelectedLeaseId(data.leases.selectedLeaseId);
+            }
+            if (data.workers !== undefined) {
+              setWorkers((current) => keepIfUnchanged(current, data.workers!, workerRefreshKey));
+              setSelectedWorkerId((current) => selectAdminResourceId(data.workers!, current));
+            }
+            if (data.sandboxes !== undefined)
+              setSandboxes((current) => keepIfUnchanged(current, data.sandboxes!));
+            if (data.workspaceSnapshots !== undefined)
               setWorkspaceSnapshots((current) =>
-                keepIfUnchanged(current, loadedWorkspaceSnapshots),
+                keepIfUnchanged(current, data.workspaceSnapshots!),
               );
-              setSelectedWorkerId((current) => selectAdminResourceId(loadedWorkers, current));
-            },
-          )
+            const failure = Object.values(errors)[0];
+            if (failure !== undefined) setError(adminFailure(failure));
+          })
           .catch((cause: unknown) => {
             if (!controller.signal.aborted) setError(adminFailure(cause));
           })
@@ -575,11 +628,12 @@ export function App() {
     page,
   ]);
 
-  function updateConnection(field: keyof SavedAdminConnection, value: string) {
-    setConnection((current) => ({ ...current, [field]: value }));
-  }
-
   function navigate(nextPage: Page) {
+    if (busyRef.current) {
+      setCommandsOpen(false);
+      setMobileNavOpen(false);
+      return;
+    }
     setError(null);
     setCommandsOpen(false);
     setPage(nextPage);
@@ -610,146 +664,8 @@ export function App() {
     setRegisteringRelease(false);
   }
 
-  function disconnect() {
-    setCommandsOpen(false);
-    requestRef.current?.abort();
-    requestRef.current = null;
-    setClient(null);
-    setToken("");
-    setTargets(Object.freeze([]));
-    setSelectedTargetId("");
-    setTargetOperations(Object.freeze([]));
-    setTargetAudit(Object.freeze([]));
-    setCleanupPreview(null);
-    setSchedulingPreview(null);
-    setLeases(Object.freeze([]));
-    setSelectedLeaseId("");
-    setLeaseReleasePreview(null);
-    setLeaseReleaseConfirmationOpen(false);
-    setSelectedUpgradeReleaseDigest("");
-    setWorkers(Object.freeze([]));
-    setSelectedWorkerId("");
-    setReleases(Object.freeze([]));
-    setProfiles(Object.freeze([]));
-    setSelectedProfileVersionId("");
-    setProfileAudit(Object.freeze([]));
-    setRuntimeProfiles(Object.freeze([]));
-    setSelectedRuntimeProfileVersionId("");
-    setSandboxes(Object.freeze([]));
-    setWorkspaceSnapshots(Object.freeze([]));
-    setSnapshotCleanup(null);
-    setSelectedSandboxId("");
-    setSandboxAccessGrants(Object.freeze([]));
-    setSandboxGrantRevoke(null);
-    setManagedAgentSessions(Object.freeze([]));
-    setManagedAgentExecutions(Object.freeze([]));
-    setManagedAgentEvents(Object.freeze([]));
-    setStoragePolicies(Object.freeze([]));
-    setNetworkPolicies([]);
-    setMcpServers(Object.freeze([]));
-    setSkillBundles(Object.freeze([]));
-    setCapabilitySessions(Object.freeze([]));
-    setCapabilityExecutions(Object.freeze([]));
-    setNetworkEditorEpoch((current) => current + 1);
-    setSelectedStoragePolicyId("");
-    setStoragePolicyAudit(Object.freeze([]));
-    setStoragePolicyForm(storagePolicyFormFrom());
-    setSnapshotForm({
-      snapshotId: "",
-      sourceSandboxId: "",
-      retentionSeconds: "604800",
-    });
-    setRestoreForm({
-      snapshotId: "",
-      workspaceId: "",
-      workspaceName: "",
-      sandboxId: "",
-      runtimeProfileVersionId: "",
-      ttlSeconds: "3600",
-    });
-    setLeaseQuota(undefined);
-    setLeaseQuotaAudit(Object.freeze([]));
-    setQuotaForm(quotaFormFrom());
-    setMaintenanceOperations(Object.freeze([]));
-    setSelectedMaintenanceOperationId("");
-    setTargetDetailOpen(false);
-    setCleanupConfirmationOpen(false);
-    setSchedulingConfirmationOpen(false);
-    setLeaseDetailOpen(false);
-    setWorkerDetailOpen(false);
-    setRegisteringRelease(false);
-    setProfileDetailOpen(false);
-    setRuntimeProfileDetailOpen(false);
-    setSandboxDetailOpen(false);
-    setSandboxLifecycleTransition(null);
-    setMaintenanceDetailOpen(false);
-    setProfileTransition(null);
-    setRuntimeProfileTransition(null);
-    setCreatingProfile(false);
-    setCreatingRuntimeProfile(false);
-    setRuntimeProfileDraft(runtimeProfileForm());
-    setMobileNavOpen(false);
-    setBusy(null);
-    setError(null);
-    setNotice(null);
-    setStatus("disconnected");
-  }
-
-  async function connect(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (status === "connecting") return;
-    const nextConnection = {
-      endpoint: connection.endpoint.trim().replace(/\/+$/u, ""),
-      tenantId: connection.tenantId.trim(),
-      projectId: connection.projectId.trim(),
-    };
-    const bearer = token.trim();
-    if (Object.values(nextConnection).some((value) => value === "") || bearer === "") {
-      setStatus("error");
-      setError({ key: "connection.required", code: null });
-      return;
-    }
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setStatus("connecting");
-    setError(null);
-    try {
-      const nextClient = createHTTPClient(nextConnection.endpoint, bearer);
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
-      const loaded = await loadAdminWorkspaceData(
-        nextClient,
-        nextConnection,
-        selectedTargetId,
-        selectedLeaseId,
-        selectedProfileVersionId,
-        signal,
-      );
-      setClient(nextClient);
-      setConnection(nextConnection);
-      applyWorkspaceData(loaded, "first");
-      setTargetOperations(Object.freeze([]));
-      setTargetAudit(Object.freeze([]));
-      setProfileAudit(Object.freeze([]));
-      setStoragePolicyAudit(Object.freeze([]));
-      setStoragePolicyForm(storagePolicyFormFrom(loaded.storagePolicies[0]));
-      writeSavedAdminConnection(window.sessionStorage, nextConnection);
-      setToken("");
-      setStatus("connected");
-    } catch (cause) {
-      setClient(null);
-      setStatus(controller.signal.aborted ? "disconnected" : "error");
-      setError(controller.signal.aborted ? null : adminFailure(cause));
-    } finally {
-      if (requestRef.current === controller) requestRef.current = null;
-    }
-  }
-
   function idempotencyKey(key: string): string {
-    const existing = pendingKeysRef.current.get(key);
-    if (existing !== undefined) return existing;
-    const created = newIdempotencyKey();
-    pendingKeysRef.current.set(key, created);
-    return created;
+    return pendingIdempotencyKey(pendingKeysRef.current, key);
   }
 
   async function runOperation(
@@ -758,7 +674,7 @@ export function App() {
     operation: (signal: AbortSignal) => Promise<void>,
     accepted = false,
   ) {
-    if (busyRef.current) return;
+    if (busyRef.current || pageLoading || pageLoadingRef.current) return;
     operationTriggerRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     busyRef.current = true;
@@ -778,6 +694,40 @@ export function App() {
       busyRef.current = false;
       setBusy(null);
     }
+  }
+
+  function logout() {
+    void runOperation("auth:logout", { key: "operation.logout" }, async (signal) => {
+      await client.logoutBrowserSession(signal);
+      onSessionExpired();
+    });
+  }
+
+  function linkIdentity(providerId: string) {
+    void runOperation(`auth:link:${providerId}`, { key: "operation.linkIdentity" }, async (signal) => {
+      const { authorizationUrl } = await client.linkBrowserOIDC(providerId, signal);
+      window.location.assign(authorizationUrl);
+    });
+  }
+
+  function saveEmailDomains(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = parseEmailDomains(emailDomains);
+    if (parsed === null) {
+      setError({ key: "auth.emailDomainsInvalid", code: null });
+      return;
+    }
+    void runOperation("auth:email-domains", { key: "operation.setEmailDomains" }, async (signal) => {
+      const updated = await client.setBrowserTenantEmailDomains(
+        tenant.id,
+        { emailDomains: parsed, expectedResourceVersion: tenant.resourceVersion },
+        signal,
+      );
+      setEmailDomains(
+        updated.tenants.find(({ id }) => id === tenant.id)?.emailDomains.join("\n") ?? "",
+      );
+      onSessionChange(updated);
+    });
   }
 
   async function reloadMaintenanceOperations(signal: AbortSignal) {
@@ -802,77 +752,126 @@ export function App() {
     setTargetPhaseFilter([]);
   }
 
-  function applyWorkspaceData(loaded: AdminWorkspaceData, selection: "first" | "preserve") {
-    setTargets(loaded.targets.targets);
-    setSelectedTargetId(loaded.targets.selectedTargetId);
-    setLeases(loaded.leases.leases);
-    setSelectedLeaseId(loaded.leases.selectedLeaseId);
-    setWorkers(loaded.workers);
-    setSelectedWorkerId((current) =>
-      selectAdminResourceId(loaded.workers, selection === "preserve" ? current : ""),
+  function applyWorkspaceData(
+    loaded: Partial<AdminWorkspaceData>,
+    selection: "first" | "preserve",
+  ) {
+    setLoadedResources(
+      (current) => new Set([...current, ...(Object.keys(loaded) as (keyof AdminWorkspaceData)[])]),
     );
-    setReleases(loaded.releases);
-    setProfiles(loaded.profiles.profiles);
-    setSelectedProfileVersionId(loaded.profiles.selectedProfileVersionId);
-    setRuntimeProfiles(loaded.runtimeProfiles);
-    setSelectedRuntimeProfileVersionId((current) =>
-      selectAdminResourceId(loaded.runtimeProfiles, selection === "preserve" ? current : ""),
-    );
-    setSandboxes(loaded.sandboxes);
-    setSelectedSandboxId((current) =>
-      selectAdminResourceId(loaded.sandboxes, selection === "preserve" ? current : ""),
-    );
-    setWorkspaceSnapshots(loaded.workspaceSnapshots);
-    setStoragePolicies(loaded.storagePolicies);
-    setNetworkPolicies(loaded.networkPolicies);
-    setMcpServers(loaded.mcpServers);
-    setSkillBundles(loaded.skillBundles);
-    setSelectedStoragePolicyId((current) =>
-      selectAdminResourceId(loaded.storagePolicies, selection === "preserve" ? current : ""),
-    );
-    setLeaseQuota(loaded.quota);
-    setLeaseQuotaAudit(loaded.quotaAudit);
-    setQuotaForm(quotaFormFrom(loaded.quota));
-    setMaintenanceOperations(loaded.maintenanceOperations);
-    setSelectedMaintenanceOperationId((current) =>
-      selection === "preserve" &&
-      loaded.maintenanceOperations.some(({ operationId }) => operationId === current)
-        ? current
-        : (loaded.maintenanceOperations[0]?.operationId ?? ""),
-    );
+    if (loaded.targets !== undefined) {
+      setTargets(loaded.targets.targets);
+      setSelectedTargetId(loaded.targets.selectedTargetId);
+    }
+    if (loaded.leases !== undefined) {
+      setLeases(loaded.leases.leases);
+      setSelectedLeaseId(loaded.leases.selectedLeaseId);
+    }
+    if (loaded.workers !== undefined) {
+      setWorkers(loaded.workers);
+      setSelectedWorkerId((current) =>
+        selectAdminResourceId(loaded.workers!, selection === "preserve" ? current : ""),
+      );
+    }
+    if (loaded.releases !== undefined) setReleases(loaded.releases);
+    if (loaded.profiles !== undefined) {
+      setProfiles(loaded.profiles.profiles);
+      setSelectedProfileVersionId(loaded.profiles.selectedProfileVersionId);
+    }
+    if (loaded.runtimeProfiles !== undefined) {
+      setRuntimeProfiles(loaded.runtimeProfiles);
+      setSelectedRuntimeProfileVersionId((current) =>
+        selectAdminResourceId(loaded.runtimeProfiles!, selection === "preserve" ? current : ""),
+      );
+    }
+    if (loaded.sandboxes !== undefined) {
+      setSandboxes(loaded.sandboxes);
+      setSelectedSandboxId((current) =>
+        selectAdminResourceId(loaded.sandboxes!, selection === "preserve" ? current : ""),
+      );
+    }
+    if (loaded.workspaceSnapshots !== undefined) setWorkspaceSnapshots(loaded.workspaceSnapshots);
+    if (loaded.storagePolicies !== undefined) {
+      setStoragePolicies(loaded.storagePolicies);
+      setSelectedStoragePolicyId((current) =>
+        selectAdminResourceId(loaded.storagePolicies!, selection === "preserve" ? current : ""),
+      );
+    }
+    if (loaded.networkPolicies !== undefined) setNetworkPolicies(loaded.networkPolicies);
+    if (loaded.mcpServers !== undefined) setMcpServers(loaded.mcpServers);
+    if (loaded.skillBundles !== undefined) setSkillBundles(loaded.skillBundles);
+    if (Object.hasOwn(loaded, "quota")) {
+      setLeaseQuota(loaded.quota);
+      setQuotaForm(quotaFormFrom(loaded.quota));
+    }
+    if (loaded.quotaAudit !== undefined) setLeaseQuotaAudit(loaded.quotaAudit);
+    if (loaded.maintenanceOperations !== undefined) {
+      setMaintenanceOperations(loaded.maintenanceOperations);
+      setSelectedMaintenanceOperationId((current) =>
+        selection === "preserve" &&
+        loaded.maintenanceOperations!.some(({ operationId }) => operationId === current)
+          ? current
+          : (loaded.maintenanceOperations![0]?.operationId ?? ""),
+      );
+    }
   }
 
   function refresh() {
     if (client === null) return;
     void runOperation("refresh", { key: "operation.refresh" }, async (signal) => {
-      const loaded = await loadAdminWorkspaceData(
-        client,
-        connection,
-        selectedTargetId,
-        selectedLeaseId,
-        selectedProfileVersionId,
-        signal,
-      );
-      applyWorkspaceData(loaded, "preserve");
-      if (targetDetailOpen && loaded.targets.selectedTargetId !== "") {
+      const [workspaceResult, runtimeResult] = await Promise.allSettled([
+        loadAdminWorkspaceData(
+          client,
+          connection,
+          selectedTargetId,
+          selectedLeaseId,
+          selectedProfileVersionId,
+          signal,
+          page,
+        ),
+        page === "capabilities"
+          ? loadAdminManagedAgentRuntime(
+              client,
+              connection.tenantId,
+              connection.projectId,
+              "",
+              signal,
+              capabilityRuntime,
+            )
+          : Promise.resolve(undefined),
+      ]);
+      if (signal.aborted) return;
+      if (runtimeResult.status === "fulfilled" && runtimeResult.value !== undefined)
+        setCapabilityRuntime(runtimeResult.value);
+      if (workspaceResult.status === "rejected") throw workspaceResult.reason;
+      const loaded = workspaceResult.value;
+      applyWorkspaceData(loaded.data, "preserve");
+      setPageErrors(loaded.errors);
+      const failure =
+        Object.values(loaded.errors)[0] ??
+        (runtimeResult.status === "rejected" ? runtimeResult.reason : undefined);
+      if (failure !== undefined) throw failure;
+      const data = loaded.data;
+      if (targetDetailOpen && data.targets !== undefined && data.targets.selectedTargetId !== "") {
         const activity = await loadTargetActivity(
           client,
           connection,
-          loaded.targets.selectedTargetId,
+          data.targets.selectedTargetId,
           signal,
         );
         setTargetOperations(activity.operations);
         setTargetAudit(activity.audit);
       }
-      const profile = loaded.profiles.profiles.find(
-        ({ metadata }) => metadata.uid === loaded.profiles.selectedProfileVersionId,
+      const profile = data.profiles?.profiles.find(
+        ({ metadata }) => metadata.uid === data.profiles?.selectedProfileVersionId,
       );
       if (profileDetailOpen && profile !== undefined) {
         setProfileAudit(await loadProfileAudit(client, connection, profile, signal));
       }
       const storagePolicy =
-        loaded.storagePolicies.find(({ metadata }) => metadata.uid === selectedStoragePolicyId) ??
-        loaded.storagePolicies[0];
+        data.storagePolicies?.find(({ metadata }) => metadata.uid === selectedStoragePolicyId) ??
+        data.storagePolicies?.[0];
+      if (data.storagePolicies === undefined) return;
       setStoragePolicyForm(storagePolicyFormFrom(storagePolicy));
       setStoragePolicyAudit(
         storagePolicy === undefined
@@ -1092,9 +1091,7 @@ export function App() {
     setSandboxLifecycleTransition(null);
     setSandboxGrantRevoke(null);
     setSandboxAccessGrants(Object.freeze([]));
-    setManagedAgentSessions(Object.freeze([]));
-    setManagedAgentExecutions(Object.freeze([]));
-    setManagedAgentEvents(Object.freeze([]));
+    setManagedAgentRuntime(emptyManagedAgentRuntime());
     setSelectedSandboxId(sandboxId);
     if (client === null) return;
     void runOperation(
@@ -1130,9 +1127,36 @@ export function App() {
           ),
         );
         setSandboxAccessGrants(grants);
-        setManagedAgentSessions(agentRuntime.sessions);
-        setManagedAgentExecutions(agentRuntime.executions);
-        setManagedAgentEvents(agentRuntime.events);
+        setManagedAgentRuntime(agentRuntime);
+      },
+    );
+  }
+
+  function pageManagedAgentRuntime(
+    scope: "capability" | "sandbox",
+    action: "sessions" | "executions" | "select",
+    sessionId = "",
+  ) {
+    if (client === null) return;
+    const current = scope === "capability" ? capabilityRuntime : managedAgentRuntime;
+    const sandboxId = scope === "sandbox" ? selectedSandboxId : "";
+    void runOperation(
+      `managed-agent:${scope}:${action}:${sessionId || "next"}`,
+      { key: "operation.refresh" },
+      async (signal) => {
+        const runtime = await loadAdminManagedAgentRuntime(
+          client,
+          connection.tenantId,
+          connection.projectId,
+          sandboxId,
+          signal,
+          current,
+          action === "sessions",
+          action === "select" ? sessionId : current.selectedSessionId,
+          action === "executions",
+        );
+        if (scope === "capability") setCapabilityRuntime(runtime);
+        else setManagedAgentRuntime(runtime);
       },
     );
   }
@@ -1166,10 +1190,9 @@ export function App() {
           connection.projectId,
           selectedSandbox.metadata.uid,
           signal,
+          managedAgentRuntime,
         );
-        setManagedAgentSessions(runtime.sessions);
-        setManagedAgentExecutions(runtime.executions);
-        setManagedAgentEvents(runtime.events);
+        setManagedAgentRuntime(runtime);
       },
       true,
     );
@@ -1282,7 +1305,7 @@ export function App() {
       expectedResourceVersion: sandbox.metadata.resourceVersion,
       confirmedSandboxId: sandbox.metadata.uid,
     };
-    const key = `sandbox:correct-usage:${sandbox.metadata.uid}:${sandbox.metadata.resourceVersion}:${correction.metric}:${correction.adjustment}:${correction.reasonCode}`;
+    const key = adminMutationKey("sandbox:correct-usage", body);
     void runOperation(
       key,
       { key: "operation.correctSandboxUsage", values: { name: sandbox.metadata.name } },
@@ -1312,7 +1335,7 @@ export function App() {
     event.preventDefault();
     if (client === null) return;
     const body = runtimeProfileCreateRequestFrom(runtimeProfileDraft);
-    const key = `create-runtime-profile:${body.profileId}:${body.version}`;
+    const key = adminMutationKey("create-runtime-profile", body);
     void runOperation(key, { key: "operation.createRuntimeProfile" }, async (signal) => {
       const result = await client.createAdminRuntimeProfile(
         connection.tenantId,
@@ -1383,7 +1406,7 @@ export function App() {
       maxMemoryBytes: Number(quotaForm.maxMemoryMiB) * 1_048_576,
       maxLeaseTtlSeconds: Number(quotaForm.maxLeaseTtlSeconds),
     };
-    const key = `set-lease-quota:${Object.values(body).join(":")}`;
+    const key = adminMutationKey("set-lease-quota", body);
     void runOperation(key, { key: "operation.setQuota" }, async (signal) => {
       const result = await client.setAdminProjectLeaseQuota(
         connection.tenantId,
@@ -1422,7 +1445,7 @@ export function App() {
       expectedSandboxGeneration: source.spec.generation,
       retentionSeconds: Number(snapshotForm.retentionSeconds),
     };
-    const key = `create-workspace-snapshot:${Object.values(body).join(":")}`;
+    const key = adminMutationKey("create-workspace-snapshot", body);
     void runOperation(key, { key: "operation.createWorkspaceSnapshot" }, async (signal) => {
       const result = await client.createAdminWorkspaceSnapshot(
         connection.tenantId,
@@ -1454,7 +1477,7 @@ export function App() {
       confirmedSourceWorkspaceId: snapshotCleanup.spec.sourceWorkspaceId,
       snapshotDisposition: "delete",
     };
-    const key = `cleanup-workspace-snapshot:${Object.values(body).join(":")}`;
+    const key = adminMutationKey("cleanup-workspace-snapshot", body);
     void runOperation(
       key,
       { key: "operation.cleanupWorkspaceSnapshot" },
@@ -1497,7 +1520,10 @@ export function App() {
       runtimeProfileVersion: profile.spec.version,
       ttlSeconds: Number(restoreForm.ttlSeconds),
     };
-    const key = `restore-workspace-snapshot:${selectedRestoreSnapshot.metadata.uid}:${Object.values(body).join(":")}`;
+    const key = adminMutationKey(
+      `restore-workspace-snapshot:${selectedRestoreSnapshot.metadata.uid}`,
+      body,
+    );
     void runOperation(
       key,
       { key: "operation.restoreWorkspaceSnapshot" },
@@ -1596,7 +1622,7 @@ export function App() {
         : { artifactBackendRef: storagePolicyForm.artifactBackendRef.trim() }),
       allowWorkspaceReuse: true,
     };
-    const key = `set-storage-policy:${policyId}:${body.expectedResourceVersion}`;
+    const key = adminMutationKey(`set-storage-policy:${policyId}`, body);
     void runOperation(key, { key: "operation.setStoragePolicy" }, async (signal) => {
       const result = await client.setAdminStoragePolicy(
         connection.tenantId,
@@ -1626,7 +1652,7 @@ export function App() {
     event.preventDefault();
     if (client === null) return;
     const body = workerReleaseRegisterRequestFrom(releaseForm);
-    const key = `register-release:${body.releaseId}`;
+    const key = adminMutationKey("register-release", body);
     void runOperation(
       key,
       { key: "operation.registerRelease", values: { name: body.releaseName } },
@@ -1650,7 +1676,7 @@ export function App() {
     event.preventDefault();
     if (client === null) return;
     const body = environmentProfileCreateRequestFrom(profileForm);
-    const key = `create-profile:${body.profileId}:${body.version}`;
+    const key = adminMutationKey("create-profile", body);
     void runOperation(
       key,
       {
@@ -1713,7 +1739,7 @@ export function App() {
     event.preventDefault();
     if (client === null) return;
     const body = deploymentTargetRegisterRequestFrom(targetForm);
-    const key = `register:${body.targetId}`;
+    const key = adminMutationKey("register-target", body);
     void runOperation(
       key,
       { key: "operation.registerTarget", values: { name: body.targetName } },
@@ -1898,22 +1924,6 @@ export function App() {
     );
   }
 
-  if (!connected) {
-    return (
-      <ConnectionView
-        connection={connection}
-        token={token}
-        status={status}
-        error={error}
-        theme={theme}
-        onConnectionChange={updateConnection}
-        onTokenChange={setToken}
-        onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
-        onConnect={connect}
-      />
-    );
-  }
-
   const feedback =
     busy !== null || error !== null ? (
       <div className="operation-feedback">
@@ -1986,21 +1996,28 @@ export function App() {
         </div>
         <ResourceNavigation
           page={page}
+          disabled={busy !== null}
           onNavigate={navigate}
           onSearch={() => setCommandsOpen(true)}
           counts={{
-            targets: targets.length,
-            leases: leases.length,
-            workers: workers.length,
-            releases: releases.length,
-            profiles: profiles.length,
-            runtimeProfiles: runtimeProfiles.length,
-            sandboxes: sandboxes.length,
-            storage: storagePolicies.length,
-            network: networkPolicies.length,
-            capabilities: mcpServers.length + skillBundles.length,
-            quotas: leaseQuota === undefined ? 0 : 1,
-            maintenance: maintenanceOperations.length,
+            ...(loadedResources.has("targets") ? { targets: targets.length } : {}),
+            ...(loadedResources.has("leases") ? { leases: leases.length } : {}),
+            ...(loadedResources.has("workers") ? { workers: workers.length } : {}),
+            ...(loadedResources.has("releases") ? { releases: releases.length } : {}),
+            ...(loadedResources.has("profiles") ? { profiles: profiles.length } : {}),
+            ...(loadedResources.has("runtimeProfiles")
+              ? { runtimeProfiles: runtimeProfiles.length }
+              : {}),
+            ...(loadedResources.has("sandboxes") ? { sandboxes: sandboxes.length } : {}),
+            ...(loadedResources.has("storagePolicies") ? { storage: storagePolicies.length } : {}),
+            ...(loadedResources.has("networkPolicies") ? { network: networkPolicies.length } : {}),
+            ...(loadedResources.has("mcpServers") && loadedResources.has("skillBundles")
+              ? { capabilities: mcpServers.length + skillBundles.length }
+              : {}),
+            ...(loadedResources.has("quota") ? { quotas: leaseQuota === undefined ? 0 : 1 } : {}),
+            ...(loadedResources.has("maintenanceOperations")
+              ? { maintenance: maintenanceOperations.length }
+              : {}),
           }}
         />
         <div className="sidebar-boundary">
@@ -2020,22 +2037,55 @@ export function App() {
           >
             <NavigationIcon name="sidebar" />
           </button>
-          <div className="breadcrumbs">
-            <strong>{connection.projectId}</strong>
-            <small>{connection.tenantId}</small>
+          <div className="scope-switchers">
+            <label>
+              <span>{t("scope.tenant")}</span>
+              <select
+                aria-label={t("scope.tenant")}
+                value={tenant.id}
+                disabled={interactionDisabled}
+                onChange={(event) => {
+                  const nextTenant = session.tenants.find(({ id }) => id === event.target.value);
+                  if (nextTenant?.projects[0] !== undefined)
+                    onScopeChange(nextTenant.id, nextTenant.projects[0].id);
+                }}
+              >
+                {session.tenants.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t("scope.project")}</span>
+              <select
+                aria-label={t("scope.project")}
+                value={project.id}
+                disabled={interactionDisabled}
+                onChange={(event) => onScopeChange(tenant.id, event.target.value)}
+              >
+                {tenant.projects.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div className="topbar-context">
-            <span title={connection.endpoint}>{connection.endpoint}</span>
             <span className="live">
               <i /> Admin API
             </span>
           </div>
           <details ref={profileMenuRef} className="profile-menu">
-            <summary className="button outline compact">{t("account.admin")}</summary>
+            <summary className="button outline compact">
+              {session.user.displayName || session.user.email}
+            </summary>
             <div className="dropdown-menu">
               <div className="dropdown-context">
-                <strong>{connection.projectId}</strong>
-                <small>{connection.tenantId}</small>
+                <strong>{session.user.displayName || session.user.email}</strong>
+                <small>{session.user.email}</small>
               </div>
               <label className="locale-picker">
                 <span>{t("account.language")}</span>
@@ -2057,8 +2107,42 @@ export function App() {
               >
                 {t(theme === "dark" ? "action.lightMode" : "action.darkMode")}
               </button>
-              <button type="button" onClick={disconnect}>
-                {t("action.disconnect")}
+              {authConfig.providers.map((provider) => {
+                const linked = session.identities.some(
+                  ({ providerId }) => providerId === provider.id,
+                );
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    disabled={interactionDisabled || linked}
+                    onClick={() => linkIdentity(provider.id)}
+                  >
+                    {linked
+                      ? t("auth.identityLinked", { provider: provider.name })
+                      : t("auth.linkIdentity", { provider: provider.name })}
+                  </button>
+                );
+              })}
+              {tenant.canManage ? (
+                <form className="email-domain-form" onSubmit={saveEmailDomains}>
+                  <label>
+                    <span>{t("auth.emailDomains")}</span>
+                    <textarea
+                      value={emailDomains}
+                      disabled={interactionDisabled}
+                      placeholder={t("auth.emailDomainsPlaceholder")}
+                      onChange={(event) => setEmailDomains(event.target.value)}
+                    />
+                    <small>{t("auth.emailDomainsHelp")}</small>
+                  </label>
+                  <button type="submit" disabled={interactionDisabled}>
+                    {t("auth.saveEmailDomains")}
+                  </button>
+                </form>
+              ) : null}
+              <button type="button" disabled={interactionDisabled} onClick={logout}>
+                {t("auth.logout")}
               </button>
             </div>
           </details>
@@ -2075,7 +2159,7 @@ export function App() {
                 className="button outline"
                 type="button"
                 onClick={refresh}
-                disabled={busy !== null}
+                disabled={interactionDisabled}
               >
                 {t("action.refresh")}
               </button>
@@ -2084,7 +2168,7 @@ export function App() {
                   className="button primary"
                   type="button"
                   onClick={() => setRegisteringRelease(true)}
-                  disabled={busy !== null}
+                  disabled={interactionDisabled}
                 >
                   {t("action.registerRelease")}
                 </button>
@@ -2103,7 +2187,7 @@ export function App() {
                     setCreatingProfile(true);
                   }}
                   disabled={
-                    busy !== null ||
+                    interactionDisabled ||
                     releases.length === 0 ||
                     storagePolicies.length === 0 ||
                     networkPolicies.length === 0
@@ -2144,7 +2228,7 @@ export function App() {
                     setCreatingRuntimeProfile(true);
                   }}
                   disabled={
-                    busy !== null ||
+                    interactionDisabled ||
                     !targets.some(
                       ({ spec }) =>
                         spec.targetKind === "docker" || spec.targetKind === "remote-worker",
@@ -2160,7 +2244,7 @@ export function App() {
                 <button
                   className="button primary"
                   type="button"
-                  disabled={busy !== null}
+                  disabled={interactionDisabled}
                   onClick={() => setNetworkEditorEpoch((current) => current + 1)}
                 >
                   {t("action.newNetworkPolicy")}
@@ -2170,7 +2254,7 @@ export function App() {
                   className="button primary"
                   type="button"
                   onClick={newStoragePolicy}
-                  disabled={busy !== null}
+                  disabled={interactionDisabled}
                 >
                   {t("action.newStoragePolicy")}
                 </button>
@@ -2182,7 +2266,7 @@ export function App() {
                     navigate("targets");
                     setRegistering(true);
                   }}
-                  disabled={busy !== null}
+                  disabled={interactionDisabled}
                 >
                   {t("action.registerTarget")}
                 </button>
@@ -2191,6 +2275,16 @@ export function App() {
           </div>
 
           {feedback}
+          {pageLoading ? <p role="status">{t("page.loading")}</p> : null}
+          {Object.entries(pageErrors).map(([resource, cause]) => {
+            const failure = adminFailure(cause);
+            return (
+              <p className="danger-text" role="alert" key={resource}>
+                {t("page.resourceFailed", { resource })} {t(failure.key)}
+                {failure.code ? ` · ${failure.code}` : ""}
+              </p>
+            );
+          })}
           {notice !== null ? (
             <SuccessToast
               message={t(notice.accepted ? "notice.accepted" : "notice.completed", {
@@ -2653,12 +2747,19 @@ export function App() {
               bindings={capabilityBindingRelations(
                 mcpServers,
                 skillBundles,
-                capabilitySessions,
-                capabilityExecutions,
+                capabilityRuntime.sessions,
+                capabilityRuntime.executions,
               )}
-              events={capabilityEvents}
+              runtime={capabilityRuntime}
+              client={client}
+              connection={connection}
               query={query}
               onQuery={setQuery}
+              onNextSessions={() => pageManagedAgentRuntime("capability", "sessions")}
+              onNextExecutions={() => pageManagedAgentRuntime("capability", "executions")}
+              onSelectSession={(sessionId) =>
+                pageManagedAgentRuntime("capability", "select", sessionId)
+              }
             />
           ) : page === "storage" ? (
             <section className="resource-list">
@@ -3200,15 +3301,20 @@ export function App() {
             <SandboxDetail
               sandbox={selectedSandbox}
               grants={sandboxAccessGrants}
-              sessions={managedAgentSessions}
-              executions={managedAgentExecutions}
-              events={managedAgentEvents}
+              runtime={managedAgentRuntime}
+              client={client}
+              connection={connection}
               runtimeProfiles={runtimeProfiles}
               disabled={busy !== null}
               onTransition={setSandboxLifecycleTransition}
               onRevokeGrant={setSandboxGrantRevoke}
               onCorrectUsage={correctSandboxUsage}
               onReconcileSideEffect={reconcileManagedAgentSideEffect}
+              onNextSessions={() => pageManagedAgentRuntime("sandbox", "sessions")}
+              onNextExecutions={() => pageManagedAgentRuntime("sandbox", "executions")}
+              onSelectSession={(sessionId) =>
+                pageManagedAgentRuntime("sandbox", "select", sessionId)
+              }
             />
           </aside>
         </AdminSheet>

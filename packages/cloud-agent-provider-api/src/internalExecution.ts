@@ -3,12 +3,9 @@ import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
 
 import type { TerminalRedactor } from "./terminalEvents";
-import {
-  CLOUD_AGENT_ENVIRONMENT,
-  readCloudAgentEnvironment,
-  type CloudAgentEnvironmentName,
-} from "./environment";
+import { CLOUD_AGENT_ENVIRONMENT, type CloudAgentEnvironmentName } from "./environment";
 import { isRecord } from "./json";
+import { validateConversationHistory } from "./providerConversationHistory";
 
 export type RunnerInput = {
   execution: { id: string; generation?: number };
@@ -258,10 +255,7 @@ const CONTROLLED_PROVIDER_PACKAGE_ENVIRONMENT = [
 ] as const;
 
 export function readRunnerCredential(environment: NodeJS.ProcessEnv): RunnerCredential | null {
-  const value = readCloudAgentEnvironment(
-    environment,
-    CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
-  )?.trim();
+  const value = environment[CLOUD_AGENT_ENVIRONMENT.providerCredentialFd]?.trim();
   if (!value) return null;
   const fd = Number(value);
   if (!Number.isSafeInteger(fd) || fd < 3 || fd > 1024) {
@@ -373,7 +367,7 @@ function configuredValue(
   values: ReadonlyMap<string, string>,
   name: CloudAgentEnvironmentName,
 ): string | undefined {
-  return readCloudAgentEnvironment(Object.fromEntries(values), name);
+  return values.get(name);
 }
 
 function normalizeProviderProxy(
@@ -717,6 +711,9 @@ export function validateRunnerInput(
     if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
   }
   validateMemoryDocuments(input.memoryDocuments);
+  if (input.workload.conversationHistory !== undefined) {
+    validateConversationHistory(input.workload.conversationHistory);
+  }
   const hasPrimaryOperation = isRecord(input.workload.primaryOperation);
   if (
     typeof input.workload.inputText !== "string" ||

@@ -2,10 +2,7 @@ import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
-import {
-  CLOUD_AGENT_ENVIRONMENT,
-  writeCloudAgentEnvironment,
-} from "@cloud-agents/cloud-agent-provider-api";
+import { CLOUD_AGENT_ENVIRONMENT } from "@cloud-agents/cloud-agent-provider-api";
 import {
   createProviderPlugin,
   assertCredentialKeys,
@@ -111,8 +108,9 @@ export function startCodexProviderRun(
         "Codex Credential requires the immutable Provider Host tool-policy hook command.",
       );
   }
-  if (options.operation?.commandType === "GenerateText")
-    writeCloudAgentEnvironment(environment, CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation, "1");
+  if (options.operation?.commandType === "GenerateText") {
+    environment[CLOUD_AGENT_ENVIRONMENT.codexNoToolOperation] = "1";
+  }
   const durable = hasAuthoritativeResumeData(input.workload, input.memoryDocuments);
   return startCodexAppServerRun({
     input: effectiveInput,

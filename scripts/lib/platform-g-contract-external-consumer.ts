@@ -90,7 +90,7 @@ const EXPECTED_INPUT_BINDINGS = [
   "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
   "scripts/generate-platform-g-contract-external-consumer.ts",
   "scripts/lib/platform-g-contract-external-consumer.ts",
-  "scripts/lib/platform-g-contract-external-consumer.test.ts",
+  "test/scripts/platform-g-contract-external-consumer.test.ts",
   "tools/g-contract-external-consumer/v1/source.schema.json",
   "tools/g-contract-external-consumer/v1/profile.schema.json",
   "sdk/typescript/package.json",

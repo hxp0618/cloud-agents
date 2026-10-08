@@ -48,7 +48,7 @@ const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json"
 const ADR_PATH = "docs/plan/adr/0013-p1-durable-coordination-contract.md";
 const GENERATOR_PATH = "scripts/generate-platform-durable-coordination-registry.ts";
 const LIBRARY_PATH = "scripts/lib/platform-durable-coordination-registry.ts";
-const LIBRARY_TEST_PATH = "scripts/lib/platform-durable-coordination-registry.test.ts";
+const LIBRARY_TEST_PATH = "test/scripts/platform-durable-coordination-registry.test.ts";
 const JSON_SEMANTICS_PATH = "scripts/lib/platform-json-semantics.ts";
 
 const DURABLE_COORDINATION_V2_SOURCE_SCHEMA_PATH =

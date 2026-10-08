@@ -42,15 +42,18 @@ func RuntimeMessageDigest(message runtimeprotocol.Message) (string, error) {
 }
 
 func RuntimeMessagesDigest(messages []runtimeprotocol.Message, executionID string, generation uint64) (string, error) {
-	if err := validateRuntimeMessageTranscript(messages, executionID, generation, false); err != nil {
-		return "", err
-	}
-	encoded, err := json.Marshal(messages)
+	_, digest, err := EncodeRuntimeMessages(messages, executionID, generation)
+	return digest, err
+}
+
+// EncodeRuntimeMessages validates a checkpoint transcript and returns the bytes used by its digest.
+func EncodeRuntimeMessages(messages []runtimeprotocol.Message, executionID string, generation uint64) ([]byte, string, error) {
+	encoded, err := encodeRuntimeMessageTranscript(messages, executionID, generation, false)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	digest := sha256.Sum256(encoded)
-	return "sha256:" + hex.EncodeToString(digest[:]), nil
+	return encoded, "sha256:" + hex.EncodeToString(digest[:]), nil
 }
 
 func RuntimeInteractionResolutionDigest(input ResolveRuntimeInteractionInput) (string, string, error) {
@@ -116,28 +119,37 @@ func validateRuntimeFailureMessages(input FailRuntimeExecutionInput) error {
 }
 
 func validateRuntimeMessageTranscript(messages []runtimeprotocol.Message, executionID string, generation uint64, requireResult bool) error {
+	_, err := encodeRuntimeMessageTranscript(messages, executionID, generation, requireResult)
+	return err
+}
+
+func encodeRuntimeMessageTranscript(messages []runtimeprotocol.Message, executionID string, generation uint64, requireResult bool) ([]byte, error) {
 	if len(messages) == 0 {
 		if requireResult {
-			return ErrInvalidInput
+			return nil, ErrInvalidInput
 		}
-		return nil
+		encoded, err := json.Marshal(messages)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		return encoded, nil
 	}
 	if len(messages) > maxRuntimeExecutionMessages {
-		return ErrInvalidInput
+		return nil, ErrInvalidInput
 	}
 	for index, message := range messages {
 		terminal := message.MessageType == "Result" || message.MessageType == "Error"
 		// Recovery appends frames from a new Runtime command; request/command IDs
 		// may change across attempts while execution and generation remain fenced.
 		if runtimeprotocol.ValidateMessage(message) != nil || message.ExecutionID != executionID || message.Generation != generation || terminal && index != len(messages)-1 || !requireResult && message.MessageType == "Result" {
-			return ErrInvalidInput
+			return nil, ErrInvalidInput
 		}
 	}
 	encoded, err := json.Marshal(messages)
 	if err != nil || len(encoded) > runtimeprotocol.MaxMessageBytes || requireResult && messages[len(messages)-1].MessageType != "Result" {
-		return ErrInvalidInput
+		return nil, ErrInvalidInput
 	}
-	return nil
+	return encoded, nil
 }
 
 func ValidRuntimeErrorCode(value string) bool {

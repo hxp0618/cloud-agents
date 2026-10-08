@@ -184,7 +184,7 @@ export function runnerLedgerPreflightRegistryInputs(_root: string): string[] {
     SOURCE_SCHEMA_PATH,
     OUTPUT_SCHEMA_PATH,
     "scripts/generate-platform-runner-ledger-preflight-registry.ts",
-    "scripts/lib/platform-runner-ledger-preflight-registry.test.ts",
+    "test/scripts/platform-runner-ledger-preflight-registry.test.ts",
     "scripts/lib/platform-runner-ledger-preflight-registry.ts",
     "scripts/lib/platform-json-semantics.ts",
   ].toSorted();

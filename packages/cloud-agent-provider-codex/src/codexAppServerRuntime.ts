@@ -1490,6 +1490,7 @@ class CodexAppServerRuntime {
     if (this.turnSettled) return;
     this.turnSettled = true;
     if (this.forceKillTimer) clearTimeout(this.forceKillTimer);
+    this.forceKillTimer = undefined;
     if (this.commandTerminalDrainTimer) clearTimeout(this.commandTerminalDrainTimer);
     this.commandTerminalDrainTimer = undefined;
     this.completedTurnPendingTerminalDrain = undefined;

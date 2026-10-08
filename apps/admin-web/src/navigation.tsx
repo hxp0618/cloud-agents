@@ -165,11 +165,13 @@ export function matchingNavigation(page: Page, query: string, t: Translate) {
 export function ResourceNavigation({
   page,
   counts,
+  disabled = false,
   onNavigate,
   onSearch,
 }: {
   page: Page;
   counts: Partial<Record<Page, number>>;
+  disabled?: boolean;
   onNavigate: (page: Page) => void;
   onSearch: () => void;
 }) {
@@ -185,6 +187,7 @@ export function ResourceNavigation({
           title={t("command.open")}
           aria-label={t("command.open")}
           aria-haspopup="dialog"
+          disabled={disabled}
         >
           <NavigationIcon name="search" />
           <span className="nav-label">{t("command.search")}</span>
@@ -206,6 +209,7 @@ export function ResourceNavigation({
                       data-page={entry.id}
                       className={page === entry.id ? "active" : ""}
                       aria-current={page === entry.id ? "page" : undefined}
+                      disabled={disabled}
                       onClick={() => onNavigate(entry.id)}
                       title={t(entry.label)}
                     >

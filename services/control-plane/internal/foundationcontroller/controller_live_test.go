@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -395,6 +396,11 @@ func newLiveControllerEnvironment(t *testing.T, ctx context.Context) liveControl
 
 func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment liveControllerEnvironment) {
 	t.Helper()
+	var fixtureUnexpired bool
+	if err := environment.owner.QueryRow(ctx, `SELECT expires_at > clock_timestamp()
+		FROM cloud_agents.sandbox_sessions WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'`).Scan(&fixtureUnexpired); err != nil || !fixtureUnexpired {
+		t.Fatalf("live recovery fixture expired before prepare: unexpired=%v err=%v", fixtureUnexpired, err)
+	}
 	subject := digest("foundation-controller")
 	claimed, err := environment.store.ClaimFoundationSandbox(ctx, postgres.FoundationSandboxClaimInput{
 		TargetKind: "docker",
@@ -405,7 +411,7 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		t.Fatalf("prepare claim = %#v / %v", claimed, err)
 	}
 	result := ExecuteEffect(ctx, environment.controller.docker, nil, environment.controller.opensandbox, environment.controller.archives, claimed.Claim)
-	if result.Err != nil || result.RuntimeState != "Running" {
+	if result.Err != nil || result.RuntimeState != "Running" || claimed.Claim.TTLSeconds == nil {
 		t.Fatalf("prepare physical effect = %#v", result)
 	}
 	allowedIP := os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_ALLOWED_IP")
@@ -430,10 +436,11 @@ func prepareLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if !strings.Contains(output, hex.EncodeToString(proofDigest[:])) {
 		t.Fatalf("workspace write response = %s", output)
 	}
-	receipt, _ := json.Marshal(map[string]string{
+	receipt, _ := json.Marshal(map[string]any{
 		"runtimeId": result.RuntimeID, "volumeName": result.VolumeName,
 		"proofDigest": hex.EncodeToString(proofDigest[:]), "operationId": claimed.Claim.OperationID,
 		"specDigest": claimed.Claim.SpecDigest, "expiresAt": claimed.Claim.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		"ttlSeconds":    *claimed.Claim.TTLSeconds,
 		"networkPolicy": "restricted allow plus cross-sandbox/host/metadata deny",
 	})
 	t.Logf("FOUNDATION_LIVE_PREPARE=%s", receipt)
@@ -491,7 +498,7 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 		}
 	}
 	if failure.observedState != "failed" || failure.operationState != "failed" || failure.cleanupPhase != "complete" ||
-		failure.stableError != "opensandbox_runtime_failed" || failure.runtimeID == "" {
+		failure.stableError != "opensandbox_runtime_failed" || failure.runtimeID == "" || failure.volumeName == "" {
 		t.Fatalf("compensated failure = %#v", failure)
 	}
 	failureIdentity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: failure.workspaceID,
@@ -504,34 +511,63 @@ func recoverLiveControllerRestart(t *testing.T, ctx context.Context, environment
 	if count := liveSandboxCount(t, ctx, environment); count != 1 {
 		t.Fatalf("OpenSandbox residue = %d", count)
 	}
-	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
-		t.Fatalf("network usage first checkpoint = %v / %v", worked, err)
-	}
 	var networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration int64
 	var networkCheckpointedAt time.Time
-	if err := environment.owner.QueryRow(ctx, `SELECT network_received_bytes, network_transmitted_bytes,
-		network_measurement_generation, network_checkpointed_at
-		FROM cloud_agents.sandbox_usage_checkpoints
-		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
-		  AND runtime_uid=$1 AND network_state='ready'`, expectedRuntime).Scan(
-		&networkReceivedBytes, &networkTransmittedBytes, &networkMeasurementGeneration, &networkCheckpointedAt,
-	); err != nil || networkReceivedBytes < 1 || networkTransmittedBytes < 1 ||
-		networkMeasurementGeneration != 1 || networkCheckpointedAt.IsZero() {
-		t.Fatalf("network usage first fact = %d/%d/%d/%s err=%v",
-			networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration, networkCheckpointedAt, err)
+	var networkState, networkStableError string
+	// RunOne schedules globally; another pending activity may be chosen first.
+	// Only a still-pending target may continue. Never retry a failed measurement.
+	for attempt := 0; ; attempt++ {
+		if err := environment.owner.QueryRow(ctx, `SELECT COALESCE(network_received_bytes, 0), COALESCE(network_transmitted_bytes, 0),
+			network_measurement_generation, COALESCE(network_checkpointed_at, 'epoch'::timestamptz), network_state, COALESCE(network_stable_error_code, '')
+			FROM cloud_agents.sandbox_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid='sandbox'
+			  AND runtime_uid=$1`, expectedRuntime).Scan(
+			&networkReceivedBytes, &networkTransmittedBytes, &networkMeasurementGeneration, &networkCheckpointedAt, &networkState, &networkStableError,
+		); err != nil {
+			t.Fatalf("network usage first fact: %v", err)
+		}
+		if networkState == "ready" {
+			break
+		}
+		if networkState != "pending" || attempt == 8 {
+			t.Fatalf("network usage first checkpoint state=%s stableError=%s generation=%d attempts=%d", networkState, networkStableError, networkMeasurementGeneration, attempt)
+		}
+		if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+			t.Fatalf("network usage first checkpoint %d = %v / %v", attempt+1, worked, err)
+		}
 	}
-	if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
-		t.Fatalf("workspace usage first checkpoint = %v / %v", worked, err)
+	if networkReceivedBytes < 1 || networkTransmittedBytes < 1 ||
+		networkMeasurementGeneration != 1 || !networkCheckpointedAt.After(time.Unix(0, 0)) || networkStableError != "" {
+		t.Fatalf("network usage first fact = %d/%d/%d/%s state=%s stableError=%s",
+			networkReceivedBytes, networkTransmittedBytes, networkMeasurementGeneration, networkCheckpointedAt, networkState, networkStableError)
 	}
 	var workspaceUsedBytes, workspaceMeasurementGeneration int64
 	var workspaceCheckpointedAt time.Time
-	if err := environment.owner.QueryRow(ctx, `SELECT used_bytes, measurement_generation, checkpointed_at
-		FROM cloud_agents.workspace_volume_usage_checkpoints
-		WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace' AND state='ready'`).Scan(
-		&workspaceUsedBytes, &workspaceMeasurementGeneration, &workspaceCheckpointedAt,
-	); err != nil || workspaceUsedBytes < 1 || workspaceMeasurementGeneration != 1 || workspaceCheckpointedAt.IsZero() {
-		t.Fatalf("workspace usage first fact = %d/%d/%s err=%v",
-			workspaceUsedBytes, workspaceMeasurementGeneration, workspaceCheckpointedAt, err)
+	var workspaceState, workspaceStableError string
+	for attempt := 0; ; attempt++ {
+		if err := environment.owner.QueryRow(ctx, `SELECT COALESCE(used_bytes, 0), measurement_generation,
+			COALESCE(checkpointed_at, 'epoch'::timestamptz), state, COALESCE(stable_error_code, '')
+			FROM cloud_agents.workspace_volume_usage_checkpoints
+			WHERE tenant_id='tenant' AND project_uid='project' AND volume_uid='workspace'`).Scan(
+			&workspaceUsedBytes, &workspaceMeasurementGeneration, &workspaceCheckpointedAt, &workspaceState, &workspaceStableError,
+		); errors.Is(err, pgx.ErrNoRows) {
+			// The workspace claim creates its pending row lazily on first use.
+			workspaceState = "pending"
+		} else if err != nil {
+			t.Fatalf("workspace usage first fact: %v", err)
+		}
+		if workspaceState == "ready" {
+			break
+		}
+		if workspaceState != "pending" || attempt == 8 {
+			t.Fatalf("workspace usage first checkpoint state=%s stableError=%s generation=%d attempts=%d", workspaceState, workspaceStableError, workspaceMeasurementGeneration, attempt)
+		}
+		if worked, err := environment.controller.RunOne(ctx); err != nil || !worked {
+			t.Fatalf("workspace usage first checkpoint %d = %v / %v", attempt+1, worked, err)
+		}
+	}
+	if workspaceUsedBytes < 1 || workspaceMeasurementGeneration != 1 || !workspaceCheckpointedAt.After(time.Unix(0, 0)) || workspaceStableError != "" {
+		t.Fatalf("workspace usage first fact = %d/%d/%s", workspaceUsedBytes, workspaceMeasurementGeneration, workspaceCheckpointedAt)
 	}
 	command, err = environment.owner.Exec(ctx, `UPDATE cloud_agents.workspace_volume_usage_checkpoints
 		SET checkpointed_at=checkpointed_at-interval '2 minutes', observed_at=observed_at-interval '2 minutes'
@@ -709,11 +745,15 @@ func lifecycleLiveController(t *testing.T, ctx context.Context, environment live
 		return
 	}
 	expectedGeneration := int64(3)
+	expectedTTLSeconds, err := strconv.ParseInt(os.Getenv("CLOUD_AGENTS_FOUNDATION_LIVE_EXPECTED_TTL_SECONDS"), 10, 32)
+	if err != nil || expectedTTLSeconds < 60 || expectedTTLSeconds > 86400 {
+		t.Fatal("live rebuild TTL receipt is missing or invalid")
+	}
 	if phase == "rebuild-final" {
 		expectedGeneration = 5
 	}
 	if current.observedState != "running" || current.writerReleased || current.runtimeID == "" ||
-		current.runtimeID == priorRuntime || current.generation != expectedGeneration || current.ttlSeconds != 120 ||
+		current.runtimeID == priorRuntime || current.generation != expectedGeneration || int64(current.ttlSeconds) != expectedTTLSeconds ||
 		current.expiresAt.IsZero() || current.lifecycleTrigger != "manual" {
 		t.Fatalf("rebuild settlement = %#v", current)
 	}
@@ -828,7 +868,7 @@ func readLiveSandbox(t *testing.T, ctx context.Context, owner *pgxpool.Pool, san
 	t.Helper()
 	var row liveSandboxRow
 	err := owner.QueryRow(ctx, `SELECT s.workspace_uid,s.operation_id,s.generation,s.resource_version,s.spec_digest,
-		COALESCE(s.runtime_uid,''),s.observed_state,v.physical_volume_uid,o.state,o.cleanup_phase,
+		COALESCE(s.runtime_uid,''),s.observed_state,COALESCE(v.physical_volume_uid,''),o.state,o.cleanup_phase,
 		COALESCE(o.terminal_error_code,''),e.delivery_attempts,s.writer_released,
 		COALESCE(a.lifecycle_trigger,''),COALESCE(s.ttl_seconds,0),s.expires_at
 		FROM cloud_agents.sandbox_sessions s

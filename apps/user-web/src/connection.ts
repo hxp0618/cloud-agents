@@ -7,7 +7,7 @@ import {
   type Project,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { recordPageToken } from "./pagination";
+import { collectPages } from "./pagination";
 
 export type SavedConnection = Readonly<{
   tenantId: string;
@@ -75,16 +75,10 @@ async function listOrganizations(
   tenantId: string,
   signal: AbortSignal,
 ): Promise<readonly Organization[]> {
-  const organizations: Organization[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  do {
-    const page = await client.listOrganizations(tenantId, requestId(), 200, pageToken, signal);
-    organizations.push(...page.value.organizations);
-    pageToken = page.value.nextPageToken;
-    recordPageToken(seenTokens, pageToken, "organization");
-  } while (pageToken !== undefined);
-  return organizations;
+  return collectPages<Organization>(async (pageToken) => {
+    const { value } = await client.listOrganizations(tenantId, requestId(), 200, pageToken, signal);
+    return { items: value.organizations, nextPageToken: value.nextPageToken };
+  }, "organization");
 }
 
 async function listProjects(
@@ -93,11 +87,8 @@ async function listProjects(
   organizationId: string,
   signal: AbortSignal,
 ): Promise<readonly Project[]> {
-  const projects: Project[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  do {
-    const page = await client.listProjects(
+  return collectPages<Project>(async (pageToken) => {
+    const { value } = await client.listProjects(
       tenantId,
       organizationId,
       requestId(),
@@ -105,11 +96,8 @@ async function listProjects(
       pageToken,
       signal,
     );
-    projects.push(...page.value.projects);
-    pageToken = page.value.nextPageToken;
-    recordPageToken(seenTokens, pageToken, "project");
-  } while (pageToken !== undefined);
-  return projects;
+    return { items: value.projects, nextPageToken: value.nextPageToken };
+  }, "project");
 }
 
 export async function loadConnectionData(

@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -33,6 +34,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -478,6 +480,17 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return errors.New("local OpenSandbox credential directory is invalid")
 		}
+		foundationController, controllerErr := foundationcontroller.New(coordinationService, dockerProber, kubernetesProber, sandboxCredentials, nil)
+		if controllerErr != nil {
+			return errors.New("local foundation controller is unavailable")
+		}
+		foundationContext, cancelFoundation := context.WithCancel(ctx)
+		foundationDone := make(chan struct{})
+		go func() {
+			defer close(foundationDone)
+			foundationController.Run(foundationContext, slog.Default())
+		}()
+		defer func() { cancelFoundation(); <-foundationDone }()
 	}
 	var foundationRuntime *internalmanagedagent.FoundationRuntime
 	if config.providerCredentials != "" {

@@ -33,7 +33,21 @@ Admin Web 的页面布局、视觉风格、组件外观、响应式行为和交�
 - User Web 与 Admin Web 是两个独立构建、独立部署、独立路由和独立鉴权入口。
 - 两者共享 Cloud Agents 品牌，但 Admin Web 使用 Daytona `v0.190.0` 的视觉与布局；不得共享页面导航或
   依赖前端隐藏按钮实现权限隔离。
-- Admin Web 使用专用 Admin API 和管理员 OIDC audience/scope；普通租户 Token 不能调用 Admin API。
+- Admin Web 使用专用 Admin API 与管理员 scope；Control Plane token audience 沿用既有约定，由 `client_id` 绑定 Admin/User 应用用途。普通用户权限 token 不能调用 Admin API。
+
+### 3.1.1 登录、邀请与范围选择（IDENTITY-V1）
+
+Admin Web 与 User Web 使用账号密码或已配置的外部登录，不要求用户填写 Tenant ID、Project ID 或 Bearer Token。每个账号有一个稳定用户 ID，tenant token 固定使用 Identity Service issuer 和 `sub = user-<id>`；密码凭据及按 `(issuer, subject)` 唯一标识的多个外部身份显式链接到同一账号，保留既有 subject key 和 RoleBinding，不按相同邮箱自动合并账号或身份。链接或解除身份必须由已登录用户重新认证。
+
+账号只由管理员邀请创建，不提供自助注册。管理员生成一次性邀请链接；配置 SMTP 时由系统发送，未配置时管理员必须通过已核验邮箱所有权的交付流程提供链接，复制链接本身不构成邮箱验证。新账号使用已验证且与邀请完全匹配的邮箱设置密码，或用满足同一条件的外部登录接受邀请；已有账号必须先登录再接受邀请，邀请不能覆盖其密码或已链接身份。没有现有账号或有效邀请的外部登录一律拒绝且不自动创建账号。
+
+登录后由服务端返回当前账号有权使用的租户和项目：经重新授权后优先恢复上次选择，否则按稳定排序选择首个可用范围；多个租户/项目按名称下拉切换。Admin Web 对 `platform.admin` 列出全部有效租户，对 `tenant.admin` 只列出其管理的租户；User Web 只列出用户具有有效成员关系的租户。每个资源 API 仍检查权限和租户隔离；切换租户必须签发新的单租户 token，取消旧请求并清空旧范围数据。租户选择随每个请求的路径传给 session proxy，不保存在浏览器跨标签页或服务端 session 的全局可变字段，避免一个标签页切换租户改变另一个标签页的请求范围。没有可用租户时显示拒绝访问页，没有可用项目时显示明确空状态，均不回退到手填 ID。
+
+租户管理员可以配置多个允许的邮箱域。空列表允许邀请任意已验证邮箱；非空列表只按规范化后的完整邮箱域大小写无关精确匹配，不接受通配符、字符串尾缀近似或子域自动匹配。后缀只限制邀请和新增成员，不限制已有账号登录，也不授予成员或角色；多个租户可以配置同一域。`platform.admin` 自身成为租户成员或执行平台管理时可豁免，但不能用该豁免替其他账号绕过邀请规则。
+
+Identity Service 是 durable session 的唯一 owner；两个 Web 的 BFF 分别只签发 cookie、代理请求并缓存非权威会话投影。浏览器只保存各自 `HttpOnly`、`Secure`、`SameSite`、`__Host-` cookie；cookie 名称、`client_id`/应用用途和服务端 session 不互通，Control Plane 既有 audience 保持不变，写请求同时验证 Origin 和 CSRF。浏览器不得接触或保存 Identity Provider、Identity Service 或 Control Plane 的 access、refresh、ID token；OAuth/OIDC redirect 的临时授权码和一次性 invitation proof 只可经回调/邀请 URL 一次性交换，完成后立即清除，不得成为持久登录凭据或留在浏览器存储、历史、日志和 Audit。P2 开始前先为两个 Web 提供最小 HTTPS，不能把 Secure cookie 所需 TLS 推迟到 P5 部署打包。会话、邀请和重置有效期统一引用 [SECURITY.md](../../../SECURITY.md)，本文件不另建第二份时限 authority。
+
+Web server 从请求路径取得租户，以服务端 session 向 Identity Service 换取默认 15 分钟、保持当前 RS256 profile 与 Control Plane audience 的单租户 token，再转发给 Control Plane。Control Plane 验证 Identity Service issuer/JWKS 并自动刷新密钥；签名和声明验证后，每个新请求还必须在线按 `jti` 查到 user/session/tenant/client 的权威状态且不使用正向缓存，再检查最新 RoleBinding，状态服务不可用或未知时 fail closed。仅离线验证 JWT 不足以满足撤销要求；撤销事务提交后开始的新请求必须立即拒绝，流式连接在每次受保护动作及不超过 15 秒的 heartbeat 重查并关闭。已经授权并开始的 mutation 不回滚，由既有幂等、Operation 和 Audit 规则收敛。
 
 ### 3.2 用户只消费环境规格
 
@@ -115,6 +129,7 @@ Admin Web 在当前底座阶段始终不能读取或搜索：
 - Artifact 列表、预览和下载；
 - 已发布 `Environment Profile` 的选择；
 - 用户可理解的环境准备、运行、失败和释放状态。
+- 登录、退出、授权租户/项目切换，以及个人密码修改/恢复和外部登录链接管理。
 
 ### 4.2 Admin Web
 
@@ -132,6 +147,7 @@ Admin Web 负责：
 - Worker/Target 升级、Drain、恢复调度和清理；
 - 失败 Operation、稳定错误码和审计记录。
 - 简体中文与英文界面切换。
+- 成员、邀请、邮箱后缀、租户内暂停和对应 Audit；平台管理员另有 provider、平台管理员、全局禁用与管理员重置。
 
 随底座契约与执行器交付，增加 Workspace/Volume/Snapshot 元数据、Sandbox 生命周期、访问 Grant/Port 状态、
 RemoteWorker 注册与能力/身份状态、Region/Pool 容量与调度结果。不得先创建空页面或仅保存不生效的策略后
@@ -177,6 +193,18 @@ Audit Logs 等资源页面，并为部分页面设置 owner/permission gate。Cl
 
 ### 6.1 角色基线
 
+`platform.admin` 是存放在任何单一租户之外的平台级 RoleBinding，称为超级管理员；`tenant.admin` 是现有租户内角色。前者可以发现并管理全部租户的身份配置，后者只管理绑定租户。两者都不绕过选定租户的 RLS，也不因管理员身份获得用户对话、Workspace 文件或 Artifact 内容权限。进入具体租户后，每个请求仍使用该租户上下文和资源权限。
+
+身份管理范围固定为：
+
+| 角色 | 可发现租户 | 身份管理权限 |
+| --- | --- | --- |
+| `platform.admin` | 全部有效租户 | 配置 provider；创建/撤销平台管理员；全局禁用账号；生成管理员重置；在任一租户内按自身权限管理成员 |
+| `tenant.admin` | 具有该角色的租户 | 管理本租户邀请、成员、允许邮箱域和租户内暂停；不能全局禁用多租户账号、重置账号凭据或授予 `platform.admin` |
+| 有效成员 | 具有 active membership 的租户 | 管理自己的密码、恢复流程和已链接登录；不能管理其他账号 |
+
+下面带连字符的既有资源角色继续控制选定租户内的基础设施操作，不替代上述身份管理边界；其中 `platform-admin` 是历史资源角色名，不等于平台级 `platform.admin` RoleBinding：
+
 | 角色 | User Web | Admin Web |
 | --- | --- | --- |
 | `platform-user` | 使用对话、执行和 Artifact；选择已发布 Profile | 无访问权限 |
@@ -190,6 +218,8 @@ Audit Logs 等资源页面，并为部分页面设置 owner/permission gate。Cl
 - 列表、详情和每个写操作分别校验 scope，不能因为能进入 Admin Web 就获得全部权限。
 - 危险操作至少区分 `target.write`、`target.probe`、`lease.operate`、`worker.drain`、
   `release.upgrade`、`cleanup.execute`、`profile.publish`、`quota.write` 和 `audit.read`。
+- 邀请和角色授予不得超出 grantor 自己的 tenant scope 与可授予权限；租户管理员不能通过自定义角色、邀请或批量操作间接提升为平台管理员。
+- 超级管理员的邮箱域豁免、跨租户发现和全局账号运维是分别审计的窄权限，不产生任一租户的用户内容读取权限。
 - 被拒绝时返回稳定的 403 Problem，不泄露资源是否存在或 Secret 信息。
 
 ## 7. 信息架构
@@ -198,11 +228,15 @@ Audit Logs 等资源页面，并为部分页面设置 owner/permission gate。Cl
 
 ```text
 Projects
+├── Tenant / Project selector
 └── Conversations
     ├── Session / Turn / Execution
     ├── Approvals & User Input
     ├── Artifacts
     └── Environment Profile selector
+Account
+├── Password & Recovery
+└── Linked Logins
 ```
 
 基础设施页面从 User Web 删除。环境选择放在“新建 Conversation/Session”流程中，运行后只展示 Profile 名称、
@@ -223,11 +257,17 @@ Operations
 ├── Environment Leases
 ├── Maintenance
 └── Audit
+Identity
+├── Members & Invitations
+├── Allowed Email Domains
+├── Login Providers（platform.admin）
+└── Platform Administrators（platform.admin）
 ```
 
 以上导航是已有兼容骨架。BASE-M1 增加 Workspace/Sandbox 元数据视图，BASE-M2 增加访问/策略状态，
 BASE-M3 增加节点级 RemoteWorker，BASE-M4 增加 Region/Pool，BASE-M5 增加真实 Snapshot/Restore 和用量。
 只在后端契约与行为存在时启用对应导航，不要求等到多 Region 才管理单 Region 的真实资源池。
+登录页与 tenant/project selector 属于两个 Web 的应用入口；Account 属于用户自己的界面，不进入基础设施导航。
 
 ## 8. 页面需求
 
@@ -428,10 +468,13 @@ Expires At、Stable Error Code。
 - 配额和存储网络策略修改；
 - Worker/Lease 升级、终止和清理；
 - 管理员权限变化；
+- 邀请、成员角色、邮箱域、租户内暂停、全局账号禁用/恢复、管理员重置和登录 provider 配置变化；
+- 登录、退出、密码/身份链接变化、锁定与被拒绝的身份操作；
 - 被拒绝的管理员写操作。
 
-Audit 事件包含操作者、动作、资源引用、generation、结果、时间和 request/operation ID；不得包含凭据值、
-Prompt、消息正文、代码或 Artifact 内容。
+Audit 事件包含操作者、动作、资源引用、generation、结果、时间和 request/operation ID；不得包含密码/哈希、
+cookie、邀请/重置 proof、authorization code、access/refresh/ID token、provider secret、Prompt、消息正文、
+代码或 Artifact 内容。
 
 ### 8.11 长期 Workspace 与 Sandbox（BASE-M1/M2）
 
@@ -466,6 +509,17 @@ Prompt、消息正文、代码或 Artifact 内容。
 - 撤销、版本变更和绑定调整必须携带幂等键及 expected resource version，并在 capability durable event 与现有 Operation/Audit 中可追溯；Runtime 重新解析失败时页面显示 fail-closed 原因，不提供盲目重试外部副作用的按钮。
 - Runtime broker、Skill materializer 与 Provider 共享入口在实际注入或 Provider 启动前拒绝 opaque ID 归一化后的 MCP Token/Skill mount 环境变量名碰撞；Admin 只显示对应 opaque binding 与脱敏失败码，不显示环境变量名或 Token。
 - Control Plane 与 Worker 都要求 operator-owned capability descriptor 在首个 JSON 值后立即 EOF；尾随第二个值按无效物料 fail closed，Admin 只显示脱敏失败状态，不回显 descriptor、凭据或签名材料。
+
+### 8.15 身份、成员与账号（IDENTITY-V1 P2/P3）
+
+- 两个 Web 分别提供登录、退出、无可用租户拒绝页、tenant/project selector；Admin Web session 不能进入 User Web，反向亦然。
+- Members & Invitations 显示邮箱、成员状态、租户角色、邀请者、到期/接受状态和安全操作，不显示一次性 proof。角色选择只提供 grantor 在当前租户可授予的集合。
+- Allowed Email Domains 支持同一租户多个规范化完整域、空列表允许任意已验证邮箱，并在保存前解释它只限制新邀请/成员、不授予访问；不提供 wildcard 或“包含子域”选项。
+- 租户管理员只能在当前租户暂停/恢复成员。全局账号禁用、管理员生成重置和平台管理员管理仅对 `platform.admin` 显示并由服务端再次授权；不能通过 UI 将租户暂停表述为全局账号禁用。
+- 用户 Account 页面支持修改/恢复自己的密码及链接/解除密码、OIDC、GitHub、GitLab、Feishu、DingTalk、WeCom 登录。链接/解除要求重新认证，不能按邮箱自动合并；至少保留一种可用登录方式。
+- Login Providers 页面只保存 discovery/client 元数据和 secret reference，不显示 secret value。Feishu/DingTalk/WeCom 分别配置是否信任 provider 返回的已验证邮箱；缺失或不可信邮箱不能接受邀请，已预链接 subject 仍可登录。
+- 上述列表和动作均写入无 secret 的 Audit；邀请 proof 和 authorization code 一次性交换后不得留在持久 URL/历史，且与密码、access/refresh/ID token、cookie、provider secret 一样不出现在列表、错误详情、浏览器存储、日志或 Audit。
+
 ## 9. 关键流程
 
 ### 9.0 底座独立使用（当前主线）
@@ -543,14 +597,17 @@ Cleanup 前必须展示将删除的 Worker、容器/Pod、Workspace volume 和�
 
 | API | 调用方 | 允许的数据 |
 | --- | --- | --- |
+| Identity API | Admin/User Web server、受权 CLI | login/logout、durable session、me/可用租户、tenant-token、邀请、邮箱后缀、登录链接与 provider 配置 |
 | User API | User Web / desktop | Conversation、Session/Turn、Artifact、已发布 Profile 摘要 |
 | Admin API | Admin Web | Target、Worker、Lease 运维元数据、Profile、策略、Operation、Audit |
 | Worker/Supervisor API | Control Plane 与执行组件 | 受 generation/fencing 保护的内部命令与 receipt |
 
+浏览器只调用同站 Web server；Web server 以请求路径中的 tenant/project 代理 Identity/User/Admin API，不能把上游 token 返回浏览器。Identity Service 持久化会话，BFF 缓存不能成为撤销或授权 authority。
+
 底座新增 Workspace/Sandbox 用户管理 API 及受授权的数据接口；Admin API 只取其运维投影。
 RemoteWorker 注册、身份与通道属于独立的内部接入协议，不能复用用户/管理员 bearer 作为节点身份。
 
-Admin Web 不通过枚举租户公开 API 来拼装跨租户运维视图。
+跨租户发现只通过为 `platform.admin` 设计的窄数据库函数和 Identity API；选定租户后的资源请求仍设置并验证单一 tenant context。Admin Web 不通过枚举普通租户 API 拼装跨租户运维视图，Control Plane 不因 `platform.admin` 绕过 RLS 或扩大用户内容投影。
 
 ### 10.2 既有实现承接与底座增量
 
@@ -615,9 +672,10 @@ P0 不引入 Next.js、Ant Design、Tailwind 或新的状态管理框架。先�
 
 - 推荐独立域名，例如 `app.example.com` 与 `admin.example.com`；
 - 两个应用分别构建镜像和发布；
-- Admin Web 反向代理只暴露 Admin API；
-- User Web 反向代理只暴露 User API；
-- CSP、OIDC redirect URI、cookie/audience 和权限分别配置。
+- IDENTITY-V1 P2 开始前两个域名必须具备 HTTPS，确保 `Secure`、`__Host-` cookie 在开发验收与部署中使用同一安全边界；
+- Admin Web BFF 只暴露同站身份入口和 Admin API；
+- User Web BFF 只暴露同站身份入口和 User API；
+- CSP、OIDC redirect URI、cookie、`client_id`/应用用途和权限分别配置；Control Plane audience 沿用既有约定。
 
 ## 12. 视觉与交互规范
 
@@ -685,9 +743,11 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 3. 在 User Web 新增只读 `Environment Profile` selector，替代 Target/Lease 配置表单。
 4. 用户选择 Profile 后由服务端创建/绑定 Lease；浏览器不解析 Target 或 Secret。
 5. 完成 Admin API 权限切换后，普通用户 Token 不能继续调用基础设施写接口。
+6. IDENTITY-V1 P2 直接移除两个 Web 的 tenant/project/token 输入和浏览器 token 持久化，不保留兼容入口；改由登录、授权范围选择和服务端 session proxy 承接。
+7. User Web 既有 project selector 改为服务端返回的授权项目；Admin Web 新增同样的授权 selector，均不接受用户自行输入 opaque ID 作为越权回退。
 
 迁移期间可以短暂保留旧页面用于开发验证，但生产导航和普通用户权限必须先隐藏并拒绝基础设施写操作，
-不能长期维护两套入口。
+不能长期维护两套入口。第 6 项的旧 token/ID 表单在新登录路径通过后直接删除，不作为可选 legacy mode 保留。
 
 ## 14. 联合实施顺序
 
@@ -713,6 +773,7 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 | `ADMIN-WEB-V1` | 原 User/Admin 拆分任务的 M1～M4，即 ADMIN-M1～M4 | 原 Target/Lease/Profile/执行 Worker 管理与真实 Agent E2E 完成；不代表新底座就绪 |
 | `BASE-ADMIN-V1` | 当前主计划的 BASE-M0～M5 | 新 Workspace/Sandbox/RemoteWorker 管理与基础设施联合验收；还须满足 05 的 BASE-READY |
 | `ANYWHERE-RUNTIME-V1` | APP-M1 的 Runtime/SDK 切片 | 本文 §8.13 的相关 Admin 闭环与 [05 的完整验收](05-gates-and-acceptance.md#anywhere-runtime-v1)；不替代完整用户对话 UI 或旧验收 |
+| `IDENTITY-V1` | 内置身份服务 P0～P5 | 本文登录/角色/页面边界与 [05 的完整验收](05-gates-and-acceptance.md#identity-v1)；P0 owner 批准后才可启动 runtime，不关闭既有正式 Gate |
 
 ### ADMIN-WEB-V1
 
@@ -741,10 +802,16 @@ ADMIN-M1～M4 已完成；详细里程碑记录已在开源整理前归档。原
 13. Admin Web 支持 `zh-CN` 与 `en-US` 即时切换、刷新恢复和 locale fallback；两种语言没有缺失 key、未翻译
     的界面文案或布局溢出，并分别通过 light/dark、桌面/移动视觉回归。
 
+### IDENTITY-V1
+
+当前状态为 P0 `Proposed`：本节只冻结 Web/角色/权限需求，等待 owner 对 [ADR-0033](../adr/0033-built-in-identity-service.md) 的明确批准；不得据此启动 runtime、标记 PASS、关闭 Gate 或部署。批准后按 [05 §0.4](05-gates-and-acceptance.md#identity-v1) 依次验收 P1 核心、P2 Web 登录与范围切换、P3 租户管理、P4 外部 provider、P5 CLI/自动化/部署。
+
+P4 顺序固定为标准 OIDC → GitHub/GitLab → Feishu/DingTalk/WeCom。每个 provider 必须覆盖登录、显式链接/解除、未知身份拒绝、邀请接受和无 secret Audit；非标准 provider 的邮箱信任逐 provider 配置，缺失或不可信邮箱不能接受邀请，已预链接 subject 仍可登录。P5 的生产迁移和部署需要与 P0 决策批准分开的明确生产授权，不在本文记录具体生产地址。
+
 
 ## 16. 状态入口
 
-本文只维护 Admin Web 的需求、信息架构、交互与验收设计。实现进度和最终实际结果统一读取 [06](06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../../acceptance/phase-1.md)。
+本文只维护 Admin Web 的需求、信息架构、交互与验收设计。实现进度和最终实际结果统一读取 [06](06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../../acceptance/phase-1.public.md)。
 
 ## 17. 参考
 

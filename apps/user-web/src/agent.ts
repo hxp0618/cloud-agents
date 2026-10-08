@@ -9,7 +9,7 @@ import {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
 import { newRequestId } from "./environment";
-import { recordPageToken } from "./pagination";
+import { collectPages } from "./pagination";
 
 export type AgentClient = Pick<
   Client,
@@ -36,6 +36,12 @@ export type AgentSelection = Readonly<{
   turnId: string;
   executionId: string;
   eventCursor: string;
+}>;
+
+export type AgentSubmissionIdentity = Readonly<{
+  sessionId: string;
+  turnId: string;
+  executionId: string;
 }>;
 
 export type AgentResources = Readonly<{
@@ -113,22 +119,18 @@ async function listSessions(
   projectId: string,
   signal: AbortSignal,
 ): Promise<readonly ManagedAgentSession[]> {
-  const sessions: ManagedAgentSession[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  do {
-    const page = await client.listManagedAgentSessions(
+  const sessions = await collectPages<ManagedAgentSession>(async (pageToken) => {
+    const { value } = await client.listManagedAgentSessions(
       tenantId,
       projectId,
       newRequestId(),
+      undefined,
       200,
       pageToken,
       signal,
     );
-    sessions.push(...page.value.sessions);
-    pageToken = page.value.nextPageToken;
-    recordPageToken(seenTokens, pageToken, "session");
-  } while (pageToken !== undefined);
+    return { items: value.sessions, nextPageToken: value.nextPageToken };
+  }, "session");
   return sessions.toSorted(newestFirst);
 }
 
@@ -143,11 +145,8 @@ export async function loadSessionExecutions(
 ): Promise<
   Readonly<{ executions: readonly ManagedAgentExecution[]; execution?: ManagedAgentExecution }>
 > {
-  const executions: ManagedAgentExecution[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  do {
-    const page = await client.listManagedAgentExecutions(
+  const executions = await collectPages<ManagedAgentExecution>(async (pageToken) => {
+    const { value } = await client.listManagedAgentExecutions(
       tenantId,
       projectId,
       sessionId,
@@ -156,10 +155,8 @@ export async function loadSessionExecutions(
       pageToken,
       signal,
     );
-    executions.push(...page.value.executions);
-    pageToken = page.value.nextPageToken;
-    recordPageToken(seenTokens, pageToken, "execution");
-  } while (pageToken !== undefined);
+    return { items: value.executions, nextPageToken: value.nextPageToken };
+  }, "execution");
   const sorted = executions.toSorted(newestFirst);
   const selected =
     sorted.find(
@@ -260,12 +257,13 @@ export function mergeAgentEvents(
   current: readonly ManagedAgentEvent[],
   incoming: readonly ManagedAgentEvent[],
 ): readonly ManagedAgentEvent[] {
+  if (incoming.length === 0) return current;
   const unique = new Map(current.map((event) => [event.metadata.uid, event]));
   for (const event of incoming)
     if (!unique.has(event.metadata.uid)) unique.set(event.metadata.uid, event);
-  return [...unique.values()].toSorted((left, right) =>
-    compareSequence(left.metadata.sequence, right.metadata.sequence),
-  );
+  return [...unique.values()]
+    .toSorted((left, right) => compareSequence(left.metadata.sequence, right.metadata.sequence))
+    .slice(-32);
 }
 
 export function replaceAgentSession(
@@ -284,6 +282,23 @@ export function replaceAgentExecution(
 
 export function isExecutionActive(execution: ManagedAgentExecution | undefined): boolean {
   return execution?.spec.state === "queued" || execution?.spec.state === "running";
+}
+
+export function isAcceptedAgentSubmission(
+  submission: AgentSubmissionIdentity | undefined,
+  sessionId: string,
+  execution: ManagedAgentExecution | undefined,
+): boolean {
+  return (
+    submission !== undefined &&
+    submission.sessionId !== "" &&
+    submission.turnId !== "" &&
+    submission.executionId !== "" &&
+    submission.sessionId === sessionId &&
+    execution?.metadata.sessionId === submission.sessionId &&
+    execution.metadata.turnId === submission.turnId &&
+    execution.metadata.uid === submission.executionId
+  );
 }
 
 function payloadRecord(value: unknown): Record<string, unknown> | undefined {

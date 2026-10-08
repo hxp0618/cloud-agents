@@ -17,11 +17,13 @@ import { AdminUIError } from "./admin/errors";
 export {
   capabilityBindingRelations,
   listAdminManagedAgentBindings,
+  loadAdminManagedAgentEventPage,
   listAdminMcpServers,
   listAdminSkillBundles,
   loadAdminManagedAgentRuntime,
   type AdminCapabilityBinding,
   type AdminManagedAgentRuntime,
+  type AdminManagedAgentEventPage,
 } from "./admin/capabilities";
 export {
   listAdminTargets,
@@ -60,7 +62,12 @@ export {
   targetPageSizes,
 } from "./admin/filters";
 export type { ClusterHostSummary, WorkerStatusFilter } from "./admin/filters";
-export { newIdempotencyKey, newRequestId } from "./admin/request";
+export {
+  adminMutationKey,
+  newIdempotencyKey,
+  newRequestId,
+  pendingIdempotencyKey,
+} from "./admin/request";
 export {
   keepIfUnchanged,
   replaceLease,

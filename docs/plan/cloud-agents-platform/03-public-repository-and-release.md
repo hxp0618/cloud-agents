@@ -25,7 +25,7 @@ APP-M1 复用当前 Runtime distribution、Provider 包、Worker、契约和生�
 ```text
 cloud-agents/
 ├── go.work                                # 仅本地开发；不进入 consumer 依赖
-├── packages/                              # 现有七个 TS Runtime 包
+├── packages/                              # 现有九个公开 TS Runtime/Provider/Testkit/Distribution 包
 ├── apps/admin-web/                        # 第一阶段必交付管理界面；与基础设施共同验收
 ├── apps/user-web/                         # 既有 Agent 应用；新增应用功能后置
 ├── contracts/
@@ -58,7 +58,7 @@ cloud-agents/
 
 ## 2. Module 与 import 规则
 
-- TS Runtime 七包保持独立 semver；
+- 九个公开 TS Runtime/Provider/Testkit/Distribution 包保持独立 semver；
 - P1 Go toolchain 固定为 `1.26.6`；根 `.mise.toml`、三个 module 的 `toolchain go1.26.6`、generator、CI 与
   release provenance 必须记录同一完整 patch version，不能退化成 `1.26` 或 `latest`；变更 toolchain 需要
   新的决策与 same-bits 证据；原 `1.26.5` 已因 current symbol scan 命中三个 first-fixed-at-`1.26.6` 的标准库
@@ -96,7 +96,7 @@ cloud-agents/
 
 | 制品                   | 内容                                                                                            |
 | ---------------------- | ----------------------------------------------------------------------------------------------- |
-| Runtime release        | 七 tarball、standalone、schema、manifest、checksums、SBOM、provenance                           |
+| Runtime release        | 九 tarball、standalone、schema、manifest、checksums、SBOM、provenance                           |
 | Contract release       | OpenAPI/JSON Schema bundle、Proto descriptor set、golden/negative fixtures、checksums/signature |
 | TS SDK release         | `@cloud-agents/cloud-agent-platform-sdk` packed ESM/CJS/types、validators/client                      |
 | Go SDK release         | generated contracts/client module                                                               |

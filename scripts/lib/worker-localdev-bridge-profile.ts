@@ -13,6 +13,8 @@ export const WORKER_LOCALDEV_BRIDGE_PROFILE_PATH =
   "services/worker/localdev-bridge-profile/v1/profile.json";
 export const WORKER_LOCALDEV_BRIDGE_PROFILE_SCHEMA_PATH =
   "services/worker/localdev-bridge-profile/v1/profile.schema.json";
+const WORKER_LOCALDEV_LAUNCHER_PROFILE_PATH =
+  "services/worker/localdev-launcher-profile/v1/profile.json";
 export const WORKER_LOCALDEV_BRIDGE_GO_PATH =
   "services/worker/localdev_bridge_profile_generated.go";
 export const WORKER_LOCALDEV_BRIDGE_AUTHORITY_ID = "D-057-WORKER-LOCALDEV-BRIDGE-000001";
@@ -78,7 +80,7 @@ const INPUT_PATHS = [
   "services/worker/cmd/cloud-agents-worker/main_test.go",
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/worker-localdev-bridge-profile.ts",
-  "scripts/lib/worker-localdev-bridge-profile.test.ts",
+  "test/scripts/worker-localdev-bridge-profile.test.ts",
   "scripts/generate-worker-localdev-bridge-profile.ts",
 ] as const;
 const ORDERED_INPUT_PATHS = [...INPUT_PATHS].sort();
@@ -228,6 +230,12 @@ const SELECTOR = {
     "/cloudagents.worker.v1alpha1.WorkerExecutionService/ExecuteOperation",
     "/cloudagents.worker.v1alpha1.WorkerExecutionService/GetOperationReceipt",
   ],
+} as const;
+export const WORKER_LOCALDEV_BRIDGE_PARENT_IDENTITY = {
+  authorityId: LINEAGE_FENCE.predecessorAuthority,
+  revision: LINEAGE_FENCE.predecessorRevision,
+  profileId: LINEAGE_FENCE.predecessorProfile,
+  profileDigest: LINEAGE_FENCE.predecessorProfileDigest,
 } as const;
 const STATE_MACHINE = {
   initial: "starting",
@@ -424,6 +432,22 @@ export function serializeWorkerLocalDevBridgeGo(p: WorkerLocalDevBridgeContract)
 function parse(root: string, path: string) {
   return JSON.parse(readFileSync(resolve(root, path), "utf8")) as JsonRecord;
 }
+export function assertWorkerLocalDevBridgeParentLineage(parent: JsonRecord): void {
+  for (const [field, expected] of Object.entries(WORKER_LOCALDEV_BRIDGE_PARENT_IDENTITY)) {
+    if (parent[field] !== expected)
+      throw new Error(`localdev bridge parent ${field} mismatch: expected ${expected}`);
+  }
+}
+function assertWorkerLocalDevBridgeFrozenParentSelectors(): void {
+  if (SELECTOR.parentAuthority !== LINEAGE_FENCE.predecessorAuthority)
+    throw new Error("localdev bridge frozen parent authority selectors disagree");
+  if (SELECTOR.parentRevision !== LINEAGE_FENCE.predecessorRevision)
+    throw new Error("localdev bridge frozen parent revision selectors disagree");
+  if (SELECTOR.parentProfile !== LINEAGE_FENCE.predecessorProfile)
+    throw new Error("localdev bridge frozen parent profile selectors disagree");
+  if (SELECTOR.parentProfileDigest !== LINEAGE_FENCE.predecessorProfileDigest)
+    throw new Error("localdev bridge frozen parent profile digest selectors disagree");
+}
 function assertExact(root: string, path: string, expected: string) {
   const output = resolve(root, path);
   const stat = lstatSync(output);
@@ -459,6 +483,8 @@ function assertDeclared(root: string): void {
 }
 export function assertWorkerLocalDevBridgeCurrent(root: string = DEFAULT_ROOT): void {
   assertDeclared(root);
+  assertWorkerLocalDevBridgeFrozenParentSelectors();
+  assertWorkerLocalDevBridgeParentLineage(parse(root, WORKER_LOCALDEV_LAUNCHER_PROFILE_PATH));
   const s = buildWorkerLocalDevBridgeSource(root),
     p = buildWorkerLocalDevBridgeProfile(root);
   const ss = buildWorkerLocalDevBridgeSourceSchema(root),

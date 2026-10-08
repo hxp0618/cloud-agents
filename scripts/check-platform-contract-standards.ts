@@ -144,9 +144,9 @@ export function main(): void {
       "unittest",
       "discover",
       "-s",
-      "tools/contract-standards",
+      "test/scripts",
       "-p",
-      "test_*.py",
+      "test_contract_standards.py",
     ]);
     process.stdout.write("platform-contract-standards: current non-Gate candidate\n");
   } finally {

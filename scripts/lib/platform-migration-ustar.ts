@@ -14,22 +14,7 @@ export function createDeterministicUstar(entries: ReadonlyArray<UstarEntry>): Ui
     if (seen.has(entry.path))
       throw new MigrationValidationError("USTAR_DUPLICATE_PATH", entry.path);
     seen.add(entry.path);
-    const { name, prefix } = splitUstarPath(entry.path);
-    const header = new Uint8Array(BLOCK);
-    writeAscii(header, 0, 100, name);
-    writeOctal(header, 100, 8, 0o644);
-    writeOctal(header, 108, 8, 0);
-    writeOctal(header, 116, 8, 0);
-    writeOctal(header, 124, 12, entry.data.length);
-    writeOctal(header, 136, 12, 0);
-    header.fill(0x20, 148, 156);
-    header[156] = 0x30;
-    writeAscii(header, 257, 6, "ustar\0");
-    writeAscii(header, 263, 2, "00");
-    writeAscii(header, 345, 155, prefix);
-    const checksum = header.reduce((sum, byte) => sum + byte, 0);
-    writeChecksum(header, checksum);
-    chunks.push(header, entry.data);
+    chunks.push(encodeHeader(entry.path, entry.data.length), entry.data);
     const padding = (BLOCK - (entry.data.length % BLOCK)) % BLOCK;
     if (padding > 0) chunks.push(new Uint8Array(padding));
   }
@@ -98,7 +83,7 @@ export function readDeterministicUstar(bytes: Uint8Array): ReadonlyArray<UstarEn
       throw new MigrationValidationError("USTAR_PADDING", path);
     }
     const data = bytes.slice(dataStart, dataEnd);
-    const canonicalHeader = createDeterministicUstar([{ path, data }]).slice(0, BLOCK);
+    const canonicalHeader = encodeHeader(path, size);
     if (!Buffer.from(canonicalHeader).equals(Buffer.from(header))) {
       throw new MigrationValidationError("USTAR_NON_CANONICAL_HEADER", path);
     }
@@ -116,6 +101,27 @@ export function readDeterministicUstar(bytes: Uint8Array): ReadonlyArray<UstarEn
     throw new MigrationValidationError("USTAR_END_BLOCKS", "exactly two zero blocks required");
   }
   return entries;
+}
+
+function encodeHeader(path: string, size: number): Uint8Array {
+  const { name, prefix } = splitUstarPath(path);
+  const header = new Uint8Array(BLOCK);
+  writeAscii(header, 0, 100, name);
+  writeOctal(header, 100, 8, 0o644);
+  writeOctal(header, 108, 8, 0);
+  writeOctal(header, 116, 8, 0);
+  writeOctal(header, 124, 12, size);
+  writeOctal(header, 136, 12, 0);
+  header.fill(0x20, 148, 156);
+  header[156] = 0x30;
+  writeAscii(header, 257, 6, "ustar\0");
+  writeAscii(header, 263, 2, "00");
+  writeAscii(header, 345, 155, prefix);
+  writeChecksum(
+    header,
+    header.reduce((sum, byte) => sum + byte, 0),
+  );
+  return header;
 }
 
 function validateUstarPath(path: string): void {

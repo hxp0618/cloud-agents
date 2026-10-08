@@ -3,7 +3,6 @@ package managedagent
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"strconv"
 	"strings"
 )
 
@@ -28,11 +27,4 @@ func computeLifecycleStateMachineDigest() string {
 	}
 	digest := sha256.Sum256([]byte(builder.String()))
 	return "sha256:" + hex.EncodeToString(digest[:])
-}
-
-// profileIdentity is used by tests and review tooling without exposing any
-// mutable authority object.
-func profileIdentity() string {
-	profile := ManagedAgentLifecycleProfile()
-	return profile.ID + "@" + profile.StateMachineDigest + "/" + strconv.Itoa(len(lifecycleTransitions))
 }

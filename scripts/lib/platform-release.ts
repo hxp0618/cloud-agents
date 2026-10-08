@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
+import {
+  cloudAgentCandidateDigest,
+  CLOUD_AGENT_PUBLIC_PACKAGES,
+  validatePackedCloudAgentManifest,
+  type CloudAgentPublicPackageName,
+  type PackedCloudAgentPackage,
+} from "./cloud-agent-release.ts";
 import { createDeterministicUstar } from "./platform-migration-ustar.ts";
 import {
   expectedArtifactCount,
@@ -12,6 +19,9 @@ import {
   platformReleaseArtifactFilename,
   PLATFORM_RELEASE_CLI_TARGETS,
   PLATFORM_RELEASE_CONTRACTS,
+  buildRuntimeNotice,
+  CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+  CLOUD_AGENT_RUNTIME_NOTICES_SOURCE_PATH,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_GO_SDK,
   PLATFORM_RELEASE_RUNTIME,
@@ -23,6 +33,13 @@ import {
   type PlatformReleaseManifest,
   type PlatformReleaseTarget,
 } from "./platform-release-verifier.ts";
+import {
+  type WorkerOciSupplyArtifacts,
+  WORKER_OCI_INSTALL_MANIFEST_ARCHIVE_PATH,
+  WORKER_OCI_INSTALL_MANIFEST_FILENAME,
+  WORKER_OCI_NOTICES_ARCHIVE_PATH,
+  WORKER_OCI_NOTICES_FILENAME,
+} from "./worker-oci-supply.ts";
 
 export {
   expectedArtifactCount,
@@ -31,6 +48,9 @@ export {
   platformReleaseArtifactFilename,
   PLATFORM_RELEASE_CLI_TARGETS,
   PLATFORM_RELEASE_CONTRACTS,
+  buildRuntimeNotice,
+  CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+  CLOUD_AGENT_RUNTIME_NOTICES_SOURCE_PATH,
   PLATFORM_RELEASE_GO_COMMANDS,
   PLATFORM_RELEASE_GO_SDK,
   PLATFORM_RELEASE_RUNTIME,
@@ -41,6 +61,8 @@ export {
   type PlatformReleaseArtifact,
   type PlatformReleaseManifest,
   type PlatformReleaseTarget,
+  WORKER_OCI_INSTALL_MANIFEST_FILENAME,
+  WORKER_OCI_NOTICES_FILENAME,
 };
 
 export const PLATFORM_RELEASE_MIGRATION_HEAD = readdirSync(
@@ -57,6 +79,7 @@ export type PlatformReleaseOptions = {
   readonly outputDirectory: string;
   readonly version: string;
   readonly allowDirty: boolean;
+  readonly runtimeCandidateDirectory: string | undefined;
 };
 
 export function parsePlatformReleaseOptions(
@@ -65,6 +88,7 @@ export function parsePlatformReleaseOptions(
 ): PlatformReleaseOptions {
   let outputDirectory: string | undefined;
   let version: string | undefined;
+  let runtimeCandidateDirectory: string | undefined;
   let allowDirty = false;
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
@@ -77,13 +101,19 @@ export function parsePlatformReleaseOptions(
       allowDirty = true;
       continue;
     }
-    if (value === "--output-dir" || value === "--version") {
+    if (value === "--output-dir" || value === "--version" || value === "--runtime-candidate-dir") {
       const candidate = args[index + 1];
       if (!candidate || candidate.startsWith("--")) {
         throw new Error(`${value} requires a value.`);
       }
       if (value === "--output-dir") outputDirectory = candidate;
-      else version = candidate;
+      else if (value === "--version") version = candidate;
+      else {
+        if (runtimeCandidateDirectory !== undefined) {
+          throw new Error("--runtime-candidate-dir was specified more than once.");
+        }
+        runtimeCandidateDirectory = candidate;
+      }
       index += 1;
       continue;
     }
@@ -98,6 +128,103 @@ export function parsePlatformReleaseOptions(
     outputDirectory: resolve(cwd, outputDirectory),
     version,
     allowDirty,
+    runtimeCandidateDirectory:
+      runtimeCandidateDirectory === undefined ? undefined : resolve(cwd, runtimeCandidateDirectory),
+  };
+}
+
+export type RuntimeReleaseCandidateCapture = {
+  readonly candidateDigest: string;
+  readonly manifestSha256: string;
+  readonly runtimeArtifact: PlatformReleaseArtifact;
+  readonly runtimeBytes: Buffer;
+  readonly noticeArtifact: PlatformReleaseArtifact;
+  readonly noticeBytes: Buffer;
+};
+
+export function captureRuntimeReleaseCandidate(
+  directory: string,
+  repositoryRoot: string,
+  sourceCommit: string,
+  sourceDirty: boolean,
+): RuntimeReleaseCandidateCapture {
+  const directoryStat = lstatSync(directory);
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+    throw new Error("Runtime candidate path is not a regular directory.");
+  }
+  const root = realpathSync(directory);
+  const manifestBytes = readRuntimeCandidateFile(join(root, "candidate-manifest.json"));
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestBytes.toString("utf8"));
+  } catch {
+    throw new Error("Runtime candidate manifest is not valid JSON.");
+  }
+  if (
+    !isRecord(manifest) ||
+    manifest.schemaVersion !== 1 ||
+    manifest.kind !== "cloud-agent-portable-runtime-rc-candidate"
+  ) {
+    throw new Error("Runtime candidate manifest identity is invalid.");
+  }
+  if (manifest.sameBitsVerified !== true) {
+    throw new Error("Runtime candidate has not passed same-bits qualification.");
+  }
+  if (manifest.sourceCommit !== sourceCommit) {
+    throw new Error("Runtime candidate source commit does not match the platform source.");
+  }
+  if (manifest.sourceDirty !== sourceDirty) {
+    throw new Error("Runtime candidate sourceDirty does not match the platform source.");
+  }
+
+  const packages = validateRuntimeCandidatePackages(root, manifest.packages);
+  const candidateDigest = cloudAgentCandidateDigest(packages);
+  if (manifest.candidateDigest !== candidateDigest) {
+    throw new Error("Runtime candidate digest does not match its package set.");
+  }
+
+  const standalone = requireRecord(manifest.standaloneRuntime, "Runtime standalone artifact");
+  const runtimeFilename = requireExactString(
+    standalone.filename,
+    PLATFORM_RELEASE_RUNTIME,
+    "Runtime standalone filename",
+  );
+  const runtimeBytes = readRuntimeCandidateFile(join(root, runtimeFilename));
+  validateRuntimeCandidateArtifactBytes(standalone, runtimeBytes, "Runtime standalone artifact");
+  const runtimeArtifact = platformReleaseArtifact(
+    "cloud-agent-runtime",
+    "portable",
+    PLATFORM_RELEASE_RUNTIME,
+    runtimeBytes,
+  );
+
+  const notice = requireRecord(manifest.runtimeNotices, "Runtime notice artifact");
+  requireExactString(notice.name, "cloud-agent-runtime-notices", "Runtime notice name");
+  requireExactString(notice.target, "portable", "Runtime notice target");
+  const noticeFilename = requireExactString(
+    notice.filename,
+    CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+    "Runtime notice filename",
+  );
+  const noticeBytes = readRuntimeCandidateFile(join(root, noticeFilename));
+  validateRuntimeCandidateArtifactBytes(notice, noticeBytes, "Runtime notice artifact");
+  if (!noticeBytes.equals(buildRuntimeNotice(repositoryRoot).bytes)) {
+    throw new Error("Runtime candidate does not match the current Runtime notice authority.");
+  }
+  const noticeArtifact = platformReleaseArtifact(
+    "cloud-agent-runtime-notices",
+    "portable",
+    CLOUD_AGENT_RUNTIME_NOTICES_FILENAME,
+    noticeBytes,
+  );
+
+  return {
+    candidateDigest,
+    manifestSha256: sha256Bytes(manifestBytes),
+    runtimeArtifact,
+    runtimeBytes,
+    noticeArtifact,
+    noticeBytes,
   };
 }
 
@@ -126,9 +253,15 @@ export function buildPlatformMigrationPackage(root: string): Uint8Array {
   );
 }
 
-export function buildPlatformDeploymentPackage(root: string): Uint8Array {
+export function buildPlatformDeploymentPackage(
+  root: string,
+  workerSupply: WorkerOciSupplyArtifacts,
+): Uint8Array {
   const paths = [
     "LICENSE",
+    "NOTICE",
+    "SOURCE_PROVENANCE.md",
+    "services/control-plane/THIRD_PARTY_NOTICES.md",
     "deploy/compose/.env.example",
     "deploy/compose/README.md",
     "deploy/compose/cloud-agents-up.sh",
@@ -145,26 +278,48 @@ export function buildPlatformDeploymentPackage(root: string): Uint8Array {
     "deploy/docker/control-plane.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/user-web.Dockerfile",
-    "deploy/docker/worker.Dockerfile",
+    ...workerSupply.sourceFiles.keys(),
+    "tools/opensandbox-execd-successor/v1/README.md",
+    "tools/opensandbox-execd-successor/v1/source.json",
+    "tools/opensandbox-execd-successor/v1/LICENSE",
+    "tools/opensandbox-execd-successor/v1/Dockerfile",
+    "tools/opensandbox-execd-successor/v1/patches/pty-terminal-exit.patch",
+    "scripts/build-opensandbox-execd-successor.ts",
+    "scripts/lib/opensandbox-execd-successor.ts",
+    "tools/opensandbox-server-successor/v1/README.md",
+    "tools/opensandbox-server-successor/v1/source.json",
+    "tools/opensandbox-server-successor/v1/LICENSE",
+    "tools/opensandbox-server-successor/v1/Dockerfile",
+    "tools/opensandbox-server-successor/v1/patches/isolate-http-client-cookie.patch",
+    "test/scripts/cookie-isolation-regression.py",
+    "scripts/build-opensandbox-server-successor.ts",
     "scripts/prepare-platform-docker-target.sh",
     "scripts/prepare-platform-kubernetes-target.sh",
     "scripts/bootstrap-platform-remote-worker.sh",
     "scripts/lib/platform-release-verifier.ts",
-    "scripts/test-platform-compose-admin-web.mjs",
-    "scripts/test-platform-helm.sh",
-    "scripts/test-platform-agent-interactions.sh",
-    "scripts/test-platform-kubernetes-target.sh",
-    "scripts/test-platform-ssh-target.sh",
+    "test/e2e/test-platform-compose-admin-web.mjs",
+    "test/scripts/test-platform-helm.sh",
+    "test/e2e/test-platform-agent-interactions.sh",
+    "test/e2e/test-platform-kubernetes-target.sh",
+    "test/e2e/test-platform-ssh-target.sh",
     ...readTree(root, "deploy/helm/cloud-agents"),
     "services/control-plane/migrations/bootstrap/database.sql",
     "services/control-plane/migrations/bootstrap/roles.sql",
   ];
-  return createDeterministicUstar(
-    paths.map((path) => ({
+  return createDeterministicUstar([
+    ...paths.map((path) => ({
       path: deploymentPackagePath(root, path),
-      data: deploymentPackageMember(root, path),
+      data: workerSupply.sourceFiles.get(path) ?? deploymentPackageMember(root, path),
     })),
-  );
+    {
+      path: WORKER_OCI_INSTALL_MANIFEST_ARCHIVE_PATH,
+      data: workerSupply.manifestBytes,
+    },
+    {
+      path: WORKER_OCI_NOTICES_ARCHIVE_PATH,
+      data: workerSupply.noticeBytes,
+    },
+  ]);
 }
 
 function deploymentPackagePath(root: string, path: string): string {
@@ -354,4 +509,108 @@ function readTree(root: string, directory: string): string[] {
     if (!entry.isFile()) throw new Error(`release package member is not a file: ${path}`);
     return [path];
   });
+}
+
+function validateRuntimeCandidatePackages(root: string, value: unknown): PackedCloudAgentPackage[] {
+  if (!Array.isArray(value) || value.length !== CLOUD_AGENT_PUBLIC_PACKAGES.length) {
+    throw new Error("Runtime candidate package set is incomplete.");
+  }
+  const expected = new Set<string>(CLOUD_AGENT_PUBLIC_PACKAGES);
+  const names = new Set<string>();
+  const filenames = new Set<string>();
+  const packages = value.map((item): PackedCloudAgentPackage => {
+    const candidate = requireRecord(item, "Runtime candidate package");
+    validatePackedCloudAgentManifest(candidate);
+    const name = candidate.name as CloudAgentPublicPackageName;
+    if (!expected.has(name) || names.has(name)) {
+      throw new Error("Runtime candidate package identity is invalid or duplicated.");
+    }
+    names.add(name);
+    const filename = requireString(candidate.filename, "Runtime candidate package filename");
+    if (
+      filename === "." ||
+      filename === ".." ||
+      filename.includes("/") ||
+      filename.includes("\\") ||
+      !filename.endsWith(".tgz") ||
+      filenames.has(filename)
+    ) {
+      throw new Error("Runtime candidate package filename is invalid or duplicated.");
+    }
+    filenames.add(filename);
+    const sha256 = requireSha256(candidate.sha256, "Runtime candidate package sha256");
+    const bytes = readRuntimeCandidateFile(join(root, filename));
+    if (sha256Bytes(bytes) !== sha256) {
+      throw new Error(`Runtime candidate package ${filename} failed integrity validation.`);
+    }
+    return {
+      name,
+      version: requireString(candidate.version, "Runtime candidate package version"),
+      filename,
+      sha256,
+    };
+  });
+  if (names.size !== expected.size) {
+    throw new Error("Runtime candidate package identities are incomplete.");
+  }
+  return packages;
+}
+
+function validateRuntimeCandidateArtifactBytes(
+  artifact: Record<string, unknown>,
+  bytes: Buffer,
+  label: string,
+): void {
+  const digest = requireSha256(artifact.sha256, `${label} sha256`);
+  if (sha256Bytes(bytes) !== digest) {
+    throw new Error(`${label} failed integrity validation.`);
+  }
+  if (artifact.sizeBytes !== undefined) {
+    if (
+      typeof artifact.sizeBytes !== "number" ||
+      !Number.isSafeInteger(artifact.sizeBytes) ||
+      artifact.sizeBytes <= 0 ||
+      artifact.sizeBytes !== bytes.byteLength
+    ) {
+      throw new Error(`${label} size failed integrity validation.`);
+    }
+  }
+}
+
+function readRuntimeCandidateFile(path: string): Buffer {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(`Runtime candidate input is not a regular file: ${path}`);
+  }
+  return readFileSync(path);
+}
+
+function sha256Bytes(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(`${label} is invalid.`);
+  return value;
+}
+
+function requireExactString(value: unknown, expected: string, label: string): string {
+  const actual = requireString(value, label);
+  if (actual !== expected) throw new Error(`${label} is invalid.`);
+  return actual;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value === "") throw new Error(`${label} is required.`);
+  return value;
+}
+
+function requireSha256(value: unknown, label: string): string {
+  const digest = requireString(value, label);
+  if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) throw new Error(`${label} is invalid.`);
+  return digest;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

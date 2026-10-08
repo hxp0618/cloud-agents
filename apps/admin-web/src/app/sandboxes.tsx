@@ -2,9 +2,7 @@ import { useState } from "react";
 import {
   type AdminSandboxAccessGrant,
   type AdminSandboxSession,
-  type ManagedAgentEvent,
   type ManagedAgentExecution,
-  type ManagedAgentSession,
   type ManagedAgentSideEffectReconciliationRequest,
   type RuntimeProfile,
   type SandboxUsageCorrectionRequest,
@@ -18,6 +16,7 @@ import {
 import { useI18n, type MessageKey } from "../i18n";
 import { phaseLabel, phaseTone, sandboxUsageMetrics } from "./presentation";
 import { ManagedAgentRuntimeSection } from "./managed-agent-runtime";
+import type { AdminClient, AdminManagedAgentRuntime, SavedAdminConnection } from "../admin";
 
 export function SandboxTable({
   sandboxes,
@@ -97,21 +96,24 @@ export function SandboxTable({
 export function SandboxDetail({
   sandbox,
   grants,
-  sessions,
-  executions,
-  events,
+  runtime,
+  client,
+  connection,
   runtimeProfiles,
   disabled,
   onTransition,
   onRevokeGrant,
   onCorrectUsage,
   onReconcileSideEffect,
+  onNextSessions,
+  onNextExecutions,
+  onSelectSession,
 }: Readonly<{
   sandbox: AdminSandboxSession;
   grants: readonly AdminSandboxAccessGrant[];
-  sessions: readonly ManagedAgentSession[];
-  executions: readonly ManagedAgentExecution[];
-  events: readonly ManagedAgentEvent[];
+  runtime: AdminManagedAgentRuntime;
+  client: AdminClient | null;
+  connection: SavedAdminConnection;
   runtimeProfiles: readonly RuntimeProfile[];
   disabled: boolean;
   onTransition: (action: SandboxLifecycleAction) => void;
@@ -123,6 +125,9 @@ export function SandboxDetail({
     execution: ManagedAgentExecution,
     outcome: ManagedAgentSideEffectReconciliationRequest["outcome"],
   ) => void;
+  onNextSessions: () => void;
+  onNextExecutions: () => void;
+  onSelectSession: (sessionId: string) => void;
 }>) {
   const { t, number, dateTime } = useI18n();
   const action = availableSandboxLifecycleAction(sandbox);
@@ -412,12 +417,15 @@ export function SandboxDetail({
       </dl>
       <ManagedAgentRuntimeSection
         sandbox={sandbox}
-        sessions={sessions}
-        executions={executions}
-        events={events}
+        runtime={runtime}
+        client={client}
+        connection={connection}
         runtimeProfiles={runtimeProfiles}
         disabled={disabled}
         onReconcileSideEffect={onReconcileSideEffect}
+        onNextSessions={onNextSessions}
+        onNextExecutions={onNextExecutions}
+        onSelectSession={onSelectSession}
       />
       <section className="action-block" aria-labelledby="sandbox-usage-corrections-title">
         <div className="activity-heading">

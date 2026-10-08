@@ -145,11 +145,6 @@ func (directory *CredentialDirectory) connect(ctx context.Context, endpoint, cre
 	return ssh.NewClient(clientConnection, channels, requests), host, nil
 }
 
-func endpointAddress(endpoint string) (string, error) {
-	_, address, err := endpointHostAddress(endpoint)
-	return address, err
-}
-
 func endpointHostAddress(endpoint string) (string, string, error) {
 	parsed, err := url.ParseRequestURI(endpoint)
 	if err != nil || len(endpoint) > 2048 || parsed.Scheme != "ssh" || parsed.Hostname() == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {

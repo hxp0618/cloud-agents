@@ -1,6 +1,6 @@
 # Evidence 索引
 
-第一阶段的可复现验收证据见 [docs/acceptance/phase-1.md](../../../acceptance/phase-1.md)；当前状态只认 [06](../06-status-tracker.md)。
+第一阶段的可复现公开验收证据见 [docs/acceptance/phase-1.public.md](../../../acceptance/phase-1.public.md)；当前状态只认 [06](../06-status-tracker.md)。
 
 本目录只保留仍被生成锁、closure profile 或 review digest 按路径和字节绑定的冻结记录。文件内容不可修改；其中指向已删除的过程材料的链接保留原样，属于历史事实。完整过程记录已在开源整理前归档，不随公开仓库发布。当前状态只认 [06](../06-status-tracker.md)。
 

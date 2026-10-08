@@ -3,5 +3,5 @@
   "$id": "https://schemas.cloud-agents.dev/managed-agent/v1alpha1/schemas/message-index.schema.json",
   "type": "integer",
   "minimum": 0,
-  "maximum": 63
+  "maximum": 127
 }

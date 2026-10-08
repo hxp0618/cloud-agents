@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "cloud-agents.opensandbox-execd-successor-source.v1",
+  "upstream": {
+    "repository": "https://github.com/alibaba/OpenSandbox.git",
+    "commit": "f31696b429b2b67c197b9336583a78e114d7d36a",
+    "tree": "1969b038103a6911861d0cd052ccca0f6aaada1a",
+    "licensePath": "LICENSE",
+    "licenseSha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a",
+    "licenseCopyPath": "tools/opensandbox-execd-successor/v1/LICENSE"
+  },
+  "patch": {
+    "path": "tools/opensandbox-execd-successor/v1/patches/pty-terminal-exit.patch",
+    "sha256": "396b77da0e1f0f4563ceb7e0dc3c6ca598e1f769817f3a0291fc739d48636b6a"
+  },
+  "toolchain": {
+    "image": "docker.io/library/golang@sha256:8a7adc288b77e9b787cd2695029eb54d10ae80571b21d44fed68d067ad0a9c96",
+    "goVersion": "go1.25.9",
+    "goProxy": "https://goproxy.cn",
+    "goSumDb": "sum.golang.google.cn"
+  },
+  "runtimeBase": {
+    "image": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/execd@sha256:1dc98c7de10b9a73450ac75aa0f200ad7972f2c40f5225f6a8998e166b45d6dd",
+    "sourceStatus": "UNKNOWN_BUILD_SOURCE",
+    "use": "runtime-assets-only"
+  },
+  "build": {
+    "dockerfile": "tools/opensandbox-execd-successor/v1/Dockerfile",
+    "platform": "linux/arm64",
+    "version": "cloud-agents-pty-terminal-exit-successor-v1",
+    "buildTime": "2026-07-09T08:25:32Z",
+    "dockerfileSha256": "1f0141e3bc38f9ced856f047e3e9f99ac3c14f3ffeb9587f3d656464de3eaa4e"
+  }
+}

@@ -23,6 +23,7 @@ type managedAgentSessionStoreFake struct {
 	get      int
 	list     int
 	page     postgres.ManagedAgentSessionPage
+	sandbox  string
 	after    string
 	limit    int
 }
@@ -54,9 +55,10 @@ func (fake *managedAgentSessionStoreFake) GetManagedAgentSession(_ context.Conte
 	return fake.snapshot, fake.err
 }
 
-func (fake *managedAgentSessionStoreFake) ListManagedAgentSessions(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, after string, limit int) (postgres.ManagedAgentSessionPage, error) {
+func (fake *managedAgentSessionStoreFake) ListManagedAgentSessions(_ context.Context, _ string, _ *authn.VerifiedPrincipal, _ string, sandbox, after string, limit int) (postgres.ManagedAgentSessionPage, error) {
 	fake.list++
 	fake.after = after
+	fake.sandbox = sandbox
 	fake.limit = limit
 	return fake.page, fake.err
 }
@@ -103,7 +105,7 @@ func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
 		t.Fatalf("get status=%d calls=%d verification=%#v body=%s", got.Code, store.get, verifier.seen, got.Body.String())
 	}
 
-	list := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageSize=1", nil)
+	list := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?sandboxId=sandbox-alpha&pageSize=1", nil)
 	list.Header.Set("Authorization", "Bearer access-token")
 	list.Header.Set("X-Request-ID", "request-list")
 	listed := httptest.NewRecorder()
@@ -112,20 +114,44 @@ func TestManagedAgentSessionHTTPServerLifecycleRoutes(t *testing.T) {
 	if err := json.Unmarshal(listed.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
-	if listed.Code != http.StatusOK || store.list != 1 || store.limit != 1 || store.after != "" || verifier.seen.RequiredPermission != "projects.get" || len(page.Sessions) != 1 || page.NextPageToken == "" {
+	if listed.Code != http.StatusOK || store.list != 1 || store.sandbox != "sandbox-alpha" || store.limit != 1 || store.after != "" || verifier.seen.RequiredPermission != "projects.get" || len(page.Sessions) != 1 || page.NextPageToken == "" {
 		t.Fatalf("list status=%d calls=%d after=%q limit=%d verification=%#v page=%#v", listed.Code, store.list, store.after, store.limit, verifier.seen, page)
 	}
-	wrongProjectToken, ok := encodeManagedAgentSessionPageToken("tenant-alpha", "project-other", "session-alpha")
+	wrongProjectToken, ok := encodeManagedAgentSessionPageToken("tenant-alpha", "project-other", "sandbox-alpha", "session-alpha")
 	if !ok {
 		t.Fatal("failed to encode wrong-project token")
 	}
-	wrongProject := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageToken="+wrongProjectToken, nil)
+	wrongProject := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?sandboxId=sandbox-alpha&pageToken="+wrongProjectToken, nil)
 	wrongProject.Header.Set("Authorization", "Bearer access-token")
 	wrongProject.Header.Set("X-Request-ID", "request-list-wrong")
 	rejected := httptest.NewRecorder()
 	handler.ServeHTTP(rejected, wrongProject)
 	if rejected.Code != http.StatusBadRequest || store.list != 1 {
 		t.Fatalf("wrong-project token status=%d calls=%d body=%s", rejected.Code, store.list, rejected.Body.String())
+	}
+	crossSandbox := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?sandboxId=sandbox-beta&pageToken="+page.NextPageToken, nil)
+	crossSandbox.Header.Set("Authorization", "Bearer access-token")
+	crossSandbox.Header.Set("X-Request-ID", "request-list-cross-sandbox")
+	crossSandboxResponse := httptest.NewRecorder()
+	handler.ServeHTTP(crossSandboxResponse, crossSandbox)
+	if crossSandboxResponse.Code != http.StatusBadRequest || store.list != 1 {
+		t.Fatalf("cross-sandbox token status=%d calls=%d", crossSandboxResponse.Code, store.list)
+	}
+	unfilteredReplay := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?pageToken="+page.NextPageToken, nil)
+	unfilteredReplay.Header.Set("Authorization", "Bearer access-token")
+	unfilteredReplay.Header.Set("X-Request-ID", "request-list-unfiltered-replay")
+	unfilteredReplayResponse := httptest.NewRecorder()
+	handler.ServeHTTP(unfilteredReplayResponse, unfilteredReplay)
+	if unfilteredReplayResponse.Code != http.StatusBadRequest || store.list != 1 {
+		t.Fatalf("unfiltered replay status=%d calls=%d", unfilteredReplayResponse.Code, store.list)
+	}
+	duplicateSandbox := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions?sandboxId=sandbox-alpha&sandboxId=sandbox-beta", nil)
+	duplicateSandbox.Header.Set("Authorization", "Bearer access-token")
+	duplicateSandbox.Header.Set("X-Request-ID", "request-list-duplicate-sandbox")
+	duplicateSandboxResponse := httptest.NewRecorder()
+	handler.ServeHTTP(duplicateSandboxResponse, duplicateSandbox)
+	if duplicateSandboxResponse.Code != http.StatusBadRequest || store.list != 1 {
+		t.Fatalf("duplicate sandbox status=%d calls=%d", duplicateSandboxResponse.Code, store.list)
 	}
 
 	closeRequest := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha:close", nil)

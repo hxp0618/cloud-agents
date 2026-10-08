@@ -324,7 +324,7 @@ export function ajvOfficialSuiteAuditInputs(root: string): string[] {
     "package.json",
     "bun.lock",
     "scripts/check-platform-ajv-official-suite.ts",
-    "scripts/lib/platform-ajv-official-suite.test.ts",
+    "test/scripts/platform-ajv-official-suite.test.ts",
     "scripts/lib/platform-ajv-official-suite.ts",
     "scripts/lib/platform-json-semantics.ts",
     ...corpusInputs,

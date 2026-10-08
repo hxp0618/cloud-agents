@@ -312,6 +312,36 @@ func TestManagedAgentExecutionUnavailableCapabilityIsAConflict(t *testing.T) {
 	}
 }
 
+func TestVisibleExecutionMessagesUsesOneCompleteTranscript(t *testing.T) {
+	persisted := runtimeprotocol.Message{MessageType: "Progress", Payload: map[string]any{"text": "checkpointed"}}
+	current := runtimeprotocol.Message{MessageType: "Progress", Payload: map[string]any{"text": "current"}}
+	runner := &managedAgentExecutionRunnerFake{messages: []runtimeprotocol.Message{persisted, current}}
+	server := &ManagedAgentExecutionHTTPServer{runner: runner}
+
+	tests := []struct {
+		name   string
+		state  internalmanagedagent.ExecutionState
+		active []runtimeprotocol.Message
+		want   []runtimeprotocol.Message
+	}{
+		{name: "active view owns running transcript", state: internalmanagedagent.ExecutionRunning, active: runner.messages, want: runner.messages},
+		{name: "persisted fallback while active view is unavailable", state: internalmanagedagent.ExecutionRunning, want: []runtimeprotocol.Message{persisted}},
+		{name: "terminal execution ignores stale active view", state: internalmanagedagent.ExecutionSucceeded, active: runner.messages, want: []runtimeprotocol.Message{persisted}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner.messages = test.active
+			got := server.visibleExecutionMessages(internalmanagedagent.ExecutionSnapshot{
+				Scope: internalmanagedagent.Scope{TenantID: "tenant", ProjectID: "project"}, SessionID: "session", TurnID: "turn", ExecutionID: "execution", Generation: 7,
+				State: test.state, Messages: []runtimeprotocol.Message{persisted},
+			})
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("visible messages = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *testing.T) {
 	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 	candidate := runtimeprotocol.Message{
@@ -350,9 +380,9 @@ func TestManagedAgentExecutionHTTPServerDownloadsVisibleArtifactCandidate(t *tes
 	}
 
 	store.execution.State = internalmanagedagent.ExecutionRunning
-	store.execution.Messages = nil
 	progress := terminal
 	progress.MessageType = "Progress"
+	store.execution.Messages = []runtimeprotocol.Message{progress}
 	runner.messages = []runtimeprotocol.Message{progress, candidate}
 	activeRequest := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha/sessions/session-alpha/turns/turn-alpha/executions/execution-alpha/messages/1/artifact", nil)
 	activeRequest.Header.Set("Authorization", "Bearer access-token")
@@ -571,5 +601,11 @@ func TestManagedAgentExecutionPathRejectsCrossTurnLookup(t *testing.T) {
 	}
 	if !HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/turn/executions/execution:interrupt") {
 		t.Fatal("did not accept execution interrupt path")
+	}
+	if !HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/turn/executions/execution/messages/127/artifact") {
+		t.Fatal("did not accept the highest public artifact message index")
+	}
+	if HandlesManagedAgentExecutionPath("/v1/tenants/t/projects/p/sessions/s/turns/turn/executions/execution/messages/128/artifact") {
+		t.Fatal("accepted an artifact message index beyond the public transcript limit")
 	}
 }

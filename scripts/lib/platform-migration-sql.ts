@@ -371,6 +371,7 @@ export function classifyMigrationStatement(
         "000096",
         "000097",
         "000100",
+        "000102",
         ]).has(migrationId)) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -681,6 +682,12 @@ export function classifyMigrationStatement(
           [
             "function:unquoted:cloud_agents/unquoted:checkpoint_managed_agent_execution_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:integer,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:boolean,unquoted:integer)",
             "function:unquoted:cloud_agents/unquoted:settle_managed_agent_execution_v4(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
+        [
+          "000102",
+          [
+            "function:unquoted:cloud_agents/unquoted:request_remote_worker_sandbox_file_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:bytea,unquoted:text)",
           ],
         ],
       ]).get(migrationId);

@@ -68,7 +68,7 @@ trust/context-source adapter requires its own versioned decision and review.
 - obtain an independent fixed-candidate P0/P1/P2 verdict.
 
 Slice C implementation evidence is recorded in
-[`identity-verifier-authz-binder-implementation-20260824.md`](identity-verifier-authz-binder-implementation-20260824.md).
+`identity-verifier-authz-binder-implementation-20260824.md` (历史私有归档).
 Its fixed candidate `d6ae9c789f5be06612764c06a5649f5ebd1557c7` is based on Slice B's independently approved review commit
 `d2e464be0f3e54aa25e55d6cca7d4f744b04bc1c` and is independently
 [approved](identity-verifier-authz-binder-independent-review-20260824.md) by review commit

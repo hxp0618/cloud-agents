@@ -8,6 +8,7 @@ import type {
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import {
   listAdminNetworkPolicyAuditEvents,
+  adminMutationKey,
   newRequestId,
   replaceNetworkPolicy,
   type AdminClient,
@@ -125,7 +126,7 @@ export function NetworkPolicyPanel({
       ...(form.dnsPolicyRef.trim() ? { dnsPolicyRef: form.dnsPolicyRef.trim() } : {}),
       ...(form.proxyPolicyRef.trim() ? { proxyPolicyRef: form.proxyPolicyRef.trim() } : {}),
     };
-    const key = "network-set:" + policyId + ":" + JSON.stringify(body);
+    const key = adminMutationKey(`network-set:${policyId}`, body);
     void run(key, { key: "operation.setNetworkPolicy" }, async (signal) => {
       const result = await client.setAdminNetworkPolicy(
         connection.tenantId,

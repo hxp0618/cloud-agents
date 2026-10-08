@@ -534,7 +534,16 @@ func TestFoundationSandboxAccessGrantPTYPostgres(t *testing.T) {
 		t.Fatalf("Admin final Grant metadata failed: %v", err)
 	}
 	var issued, revokedCount, fileCount, fileFailureCount int
-	if err := owner.QueryRow(ctx, `SELECT count(*) FILTER (WHERE action='issued'), count(*) FILTER (WHERE action='revoked'), count(*) FILTER (WHERE action LIKE 'file_%'), count(*) FILTER (WHERE action LIKE 'file_%' AND outcome='failed') FROM cloud_agents.sandbox_access_grant_activity WHERE tenant_id='tenant' AND project_uid='project'`).Scan(&issued, &revokedCount, &fileCount, &fileFailureCount); err != nil || issued != 2 || revokedCount != 1 || fileCount != 7 || fileFailureCount != 2 {
+	if err := owner.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE activity.action='issued'),
+		       count(*) FILTER (WHERE activity.action='revoked'),
+		       count(*) FILTER (WHERE activity.action LIKE 'file_%'),
+		       count(*) FILTER (WHERE activity.action LIKE 'file_%' AND activity.outcome='failed')
+		FROM cloud_agents.sandbox_access_grant_activity AS activity
+		JOIN cloud_agents.sandbox_access_grants AS grant_row USING (tenant_id, project_uid, grant_uid)
+		WHERE activity.tenant_id='tenant' AND activity.project_uid='project'
+		  AND grant_row.sandbox_uid='sandbox'
+	`).Scan(&issued, &revokedCount, &fileCount, &fileFailureCount); err != nil || issued != 2 || revokedCount != 1 || fileCount != 7 || fileFailureCount != 2 {
 		t.Fatalf("Grant activity issued=%d revoked=%d files=%d failures=%d err=%v", issued, revokedCount, fileCount, fileFailureCount, err)
 	}
 	receipt, _ := json.Marshal(map[string]any{

@@ -1,0 +1,42 @@
+--- a/rsvg/Cargo.toml
++++ b/rsvg/Cargo.toml
+@@ -48,7 +48,7 @@
+ [dependencies]
+ # Keep these in sync with respect to the cairo-rs version:
+ #   src/lib.rs - toplevel example in the docs
+-cairo-rs = { workspace = true, features = ["v1_16", "png", "pdf", "ps", "svg"] }
++cairo-rs = { workspace = true, features = ["v1_16", "png", "svg"] }
+ cast.workspace = true
+ cssparser.workspace = true
+ cssparser-color.workspace = true
+@@ -57,7 +57,7 @@
+ float-cmp.workspace = true
+ gio.workspace = true
+ glib.workspace = true
+-image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
++image = { workspace = true, features = ["jpeg", "png"] }
+ itertools.workspace = true
+ language-tags.workspace = true
+ libc.workspace = true
+--- a/librsvg-c/Cargo.toml
++++ b/librsvg-c/Cargo.toml
+@@ -10,7 +10,7 @@
+ rust-version.workspace = true
+ 
+ [dependencies]
+-cairo-rs = { workspace = true, features = ["v1_16", "png", "pdf", "ps", "svg"] }
++cairo-rs = { workspace = true, features = ["v1_16", "png", "svg"] }
+ cast.workspace = true
+ float-cmp.workspace = true
+ gdk-pixbuf = { workspace = true, optional = true }
+--- a/meson.build
++++ b/meson.build
+@@ -340,7 +340,7 @@
+ endif
+ 
+ default_overrides = []
+-if host_system in ['windows', 'linux']
++if host_system in ['windows']
+   rustc_query_native_static_libs_args = rustc_query_args
+   if target_arg != []
+     rustc_query_native_static_libs_args += target_arg

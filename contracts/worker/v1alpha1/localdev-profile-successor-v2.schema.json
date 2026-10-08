@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/worker/localdev-successor/v2/schema.json",
+  "title": "D-058-WORKER-LOCALDEV-SUCCESSOR-000001",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "authorityId",
+    "revision",
+    "status",
+    "notGateClosure",
+    "predecessorMutation",
+    "generator",
+    "predecessors",
+    "successor",
+    "implementationBoundary",
+    "successorDigest"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-worker-localdev-successor/v2"
+    },
+    "authorityId": {
+      "const": "D-058-WORKER-LOCALDEV-SUCCESSOR-000001"
+    },
+    "revision": {
+      "const": "D-058-WORKER-LOCALDEV-SUCCESSOR-000001.r1"
+    },
+    "status": {
+      "const": "SUCCESSOR_PENDING_REBIND"
+    },
+    "notGateClosure": {
+      "const": true
+    },
+    "predecessorMutation": {
+      "const": "forbidden"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entrypoint",
+        "library",
+        "files"
+      ],
+      "properties": {
+        "entrypoint": {
+          "const": "scripts/generate-worker-localdev-profile-successor.ts"
+        },
+        "library": {
+          "const": "scripts/lib/worker-localdev-profile-successor.ts"
+        },
+        "files": {
+          "type": "array",
+          "const": [
+            {
+              "path": "scripts/generate-worker-localdev-profile-successor.ts",
+              "sha256": "sha256:dc6d994d723bc874b3413333aa8185eb40f8688aa04cc81b6037e114bfce3fab",
+              "sizeBytes": 10208,
+              "mode": "100644"
+            },
+            {
+              "path": "scripts/lib/worker-localdev-profile-successor.ts",
+              "sha256": "sha256:32efc322d9795078403f9414f92f3f2740ab0294a7f0d0efd6fd6747f27f07ac",
+              "sizeBytes": 3680,
+              "mode": "100644"
+            }
+          ]
+        }
+      }
+    },
+    "predecessors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launcher",
+        "bridge"
+      ],
+      "properties": {
+        "launcher": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityId",
+            "revision",
+            "profileId",
+            "commit",
+            "tree",
+            "files",
+            "internalDigests"
+          ],
+          "properties": {
+            "authorityId": {
+              "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001"
+            },
+            "revision": {
+              "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r1"
+            },
+            "profileId": {
+              "const": "cloud-agents/worker-localdev-launcher/v1alpha1"
+            },
+            "commit": {
+              "const": "f46ecdbc163e7c66d2ee87fed245e86f56a4e293"
+            },
+            "tree": {
+              "const": "98db614adb31d036a9e97252b05a688d6d2f11fa"
+            },
+            "files": {
+              "type": "array",
+              "const": [
+                {
+                  "path": "services/worker/localdev-launcher-profile/v1/authority-source.json",
+                  "gitBlob": "f147b95fa2933fed55a160beb3be5abb42d63e80",
+                  "sha256": "sha256:7804edaa4bd0c221ceccde60fbd3424f6c1cbfa2ff111ef44afc8b214784fc65",
+                  "sizeBytes": 8736,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-launcher-profile/v1/authority-source.schema.json",
+                  "gitBlob": "7228642e2b75bd84552d4e1a7696e5c87af4a02b",
+                  "sha256": "sha256:530b925f334df17dae9d6dab4980e1b701d712d8b686747959f3c21390008c9c",
+                  "sizeBytes": 17574,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-launcher-profile/v1/profile.json",
+                  "gitBlob": "3a93cfe468645aee85438a6223c75af308cc4ccd",
+                  "sha256": "sha256:86e32c14799e439223e7ef236cdc04fae22c3fd8ec5c958df8432b77051a80f1",
+                  "sizeBytes": 8968,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-launcher-profile/v1/profile.schema.json",
+                  "gitBlob": "daa8432bfd4394ad2eff74a08372a7010a0a764d",
+                  "sha256": "sha256:066e38cb18fa1de940bb422cc800cd919dce72c97b347c9402f6565fe895f600",
+                  "sizeBytes": 18117,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev_launcher_profile_generated.go",
+                  "gitBlob": "a8e1846c82082a64679b7890a78cb9405b3f99e5",
+                  "sha256": "sha256:bf71b2ba97c3938c69dd4d7deb2c0cdc71d3b0b8db6779117d9d23587e68c695",
+                  "sizeBytes": 3758,
+                  "mode": "100644"
+                }
+              ]
+            },
+            "internalDigests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "inputManifestDigest",
+                "sourceDigest",
+                "profileDigest"
+              ],
+              "properties": {
+                "inputManifestDigest": {
+                  "const": "sha256:ca5849afe9f82446f1e9e1439e3cbd6303f668e292b0f924a99d9fd4d82fc9ea"
+                },
+                "sourceDigest": {
+                  "const": "sha256:9af247b7deffecd2188a19ad1c4859ca8fb7332c15ed6aa980f15eee99663699"
+                },
+                "profileDigest": {
+                  "const": "sha256:dc83b89cad24104093e86e69d14743ca9bbc1b106113c90ca52bfa9bde04b72e"
+                }
+              }
+            }
+          }
+        },
+        "bridge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityId",
+            "revision",
+            "profileId",
+            "commit",
+            "tree",
+            "files",
+            "internalDigests"
+          ],
+          "properties": {
+            "authorityId": {
+              "const": "D-057-WORKER-LOCALDEV-BRIDGE-000001"
+            },
+            "revision": {
+              "const": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r1"
+            },
+            "profileId": {
+              "const": "cloud-agents/worker-supervisor-operation-dispatch/launcher-localdev-v1alpha1"
+            },
+            "commit": {
+              "const": "b485eff2f3fbe91a90e6085666f380aeeb167369"
+            },
+            "tree": {
+              "const": "920e089f79f66d55fd2ab0cf49884b0c70948374"
+            },
+            "files": {
+              "type": "array",
+              "const": [
+                {
+                  "path": "services/worker/localdev-bridge-profile/v1/authority-source.json",
+                  "gitBlob": "9a732bc619323daf37d4a86607319cdbc793e78f",
+                  "sha256": "sha256:ac03587f5aa1a4d7f8552dd6ead66bac2382718455edd9a6c9c69c1980564d18",
+                  "sizeBytes": 9826,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-bridge-profile/v1/authority-source.schema.json",
+                  "gitBlob": "fd35e1fe315ca65350607405b88fb917fa488f74",
+                  "sha256": "sha256:7c765e4c1168797d638f3911f209138d0330ffefcb4397976b197f5723d930a0",
+                  "sizeBytes": 19356,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-bridge-profile/v1/profile.json",
+                  "gitBlob": "9cef59c0162fde878d9b5ff4fe07b067c3453532",
+                  "sha256": "sha256:2700feb5185bfa1d1c38a9fd51386803d9e811f5543df4690fc5e54c3be59087",
+                  "sizeBytes": 10054,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev-bridge-profile/v1/profile.schema.json",
+                  "gitBlob": "b31115c68927be8238b17b6269fd65530d65a109",
+                  "sha256": "sha256:b93cf899b0447d1c97933a6bf6d30d26655660de4950ffceaa3552b574440be4",
+                  "sizeBytes": 19895,
+                  "mode": "100644"
+                },
+                {
+                  "path": "services/worker/localdev_bridge_profile_generated.go",
+                  "gitBlob": "3d15801778e9eb4d21c3fc05641abea26349277d",
+                  "sha256": "sha256:262ee1c3697165c2fe5ffc7d50857a1ae6723405a654b8b36e326cc24da53772",
+                  "sizeBytes": 4967,
+                  "mode": "100644"
+                }
+              ]
+            },
+            "internalDigests": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "inputManifestDigest",
+                "sourceDigest",
+                "profileDigest"
+              ],
+              "properties": {
+                "inputManifestDigest": {
+                  "const": "sha256:f7595f033d853363812a92ecd83b702cd6a62ce7aa69de3e17324360e17124e9"
+                },
+                "sourceDigest": {
+                  "const": "sha256:25386d876955ea706406672bc5186a5680cd76e51cf13570ba69fdee6c4e1eb9"
+                },
+                "profileDigest": {
+                  "const": "sha256:ddb4299c44b39afec63e0346da4401c55c3fcc97bb2d826bfa375accebc8aa86"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "successor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launcher",
+        "bridge",
+        "consumerPaths"
+      ],
+      "properties": {
+        "launcher": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityId",
+            "revision",
+            "profileId",
+            "generatedPaths"
+          ],
+          "properties": {
+            "authorityId": {
+              "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001"
+            },
+            "revision": {
+              "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r2"
+            },
+            "profileId": {
+              "const": "cloud-agents/worker-localdev-launcher/v2alpha1"
+            },
+            "generatedPaths": {
+              "type": "array",
+              "const": [
+                "services/worker/localdev-launcher-profile/v2/authority-source.json",
+                "services/worker/localdev-launcher-profile/v2/authority-source.schema.json",
+                "services/worker/localdev-launcher-profile/v2/profile.json",
+                "services/worker/localdev-launcher-profile/v2/profile.schema.json",
+                "services/worker/localdev_launcher_profile_r2_generated.go"
+              ]
+            }
+          }
+        },
+        "bridge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityId",
+            "revision",
+            "profileId",
+            "parent",
+            "generatedPaths"
+          ],
+          "properties": {
+            "authorityId": {
+              "const": "D-057-WORKER-LOCALDEV-BRIDGE-000001"
+            },
+            "revision": {
+              "const": "D-057-WORKER-LOCALDEV-BRIDGE-000001.r2"
+            },
+            "profileId": {
+              "const": "cloud-agents/worker-supervisor-operation-dispatch/launcher-localdev-v2alpha1"
+            },
+            "parent": {
+              "const": "D-056-WORKER-LOCALDEV-LAUNCHER-000001.r2"
+            },
+            "generatedPaths": {
+              "type": "array",
+              "const": [
+                "services/worker/localdev-bridge-profile/v2/authority-source.json",
+                "services/worker/localdev-bridge-profile/v2/authority-source.schema.json",
+                "services/worker/localdev-bridge-profile/v2/profile.json",
+                "services/worker/localdev-bridge-profile/v2/profile.schema.json",
+                "services/worker/localdev_bridge_profile_r2_generated.go"
+              ]
+            }
+          }
+        },
+        "consumerPaths": {
+          "type": "array",
+          "const": [
+            "services/worker/cmd/cloud-agents-worker/main.go",
+            "services/worker/cmd/cloud-agents-worker/main_test.go",
+            "services/worker/supervisor/local_launcher.go",
+            "services/worker/supervisor/local_launcher_test.go"
+          ]
+        }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimeRebind",
+        "providerSideEffects",
+        "deployment",
+        "publication",
+        "gateStatus"
+      ],
+      "properties": {
+        "runtimeRebind": {
+          "const": "PENDING"
+        },
+        "providerSideEffects": {
+          "const": "FORBIDDEN"
+        },
+        "deployment": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "publication": {
+          "const": "NOT_AUTHORIZED"
+        },
+        "gateStatus": {
+          "const": "ALL_GATES_OPEN"
+        }
+      }
+    },
+    "successorDigest": {
+      "const": "sha256:7c1168ea9d1a52c9e17d72a2ade1e4b16a2b0154b4e11716075085c676fa90ca"
+    }
+  }
+}

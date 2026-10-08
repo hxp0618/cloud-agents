@@ -15,11 +15,19 @@ The Agent workspace supports Profile-backed Codex and Claude Code Session create
 Execution start/get/list, and generation-fenced Cancel/Interrupt. Bounded cursor polling stops while
 the page is hidden or after terminal state, rejects cursor stalls, de-duplicates events, and refreshes
 the authoritative Execution transcript without persisting prompt or message text in browser storage.
+The lifecycle timeline retains only its latest 32 events in memory. Empty polling batches reuse the
+current timeline; older server history remains available through the event API and is not deleted.
 Approval and User Input cards send generation-fenced resolutions without persisting answers. Artifact
 downloads use the validated message index plus the backend-provided filename, media type, and bytes;
 the browser never derives a download path from the candidate payload.
 Choose `Plan / user input` for Turns that need Codex `request_user_input`; retries keep that mode with
-the original Turn and Execution identity.
+the original Turn and Execution identity. Cancelling the browser's HTTP wait does not cancel the
+backend Execution; polling and Refresh release that retry only after Control Plane confirms the exact
+same Session, Turn, and Execution identity. Missing or mismatched authority keeps the retry available.
+
+Session Provider names come from server authority. The console selects only Providers published by
+the active Profile and displays an unrecognized Session Provider verbatim instead of silently
+presenting it as Codex.
 
 For local development, proxy `/v1` to a Control Plane instead of enabling broad CORS:
 

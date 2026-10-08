@@ -320,12 +320,8 @@ func (service *DurableCoordinationService) CheckpointManagedAgentExecution(
 		!internalmanagedagent.ValidRuntimeExecutionClaim(claim) {
 		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
 	}
-	digest, err := internalmanagedagent.RuntimeMessagesDigest(input.Messages, claim.ExecutionID, claim.Generation)
+	encoded, digest, err := internalmanagedagent.EncodeRuntimeMessages(input.Messages, claim.ExecutionID, claim.Generation)
 	if err != nil || input.Protocol != "runtime-message-checkpoint-v1" {
-		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
-	}
-	encoded, err := json.Marshal(input.Messages)
-	if err != nil {
 		return internalmanagedagent.RuntimeExecutionCheckpoint{}, ErrCoordinationInvalidInput
 	}
 	result := internalmanagedagent.RuntimeExecutionCheckpoint{Digest: digest}

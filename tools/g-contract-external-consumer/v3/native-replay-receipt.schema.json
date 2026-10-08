@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/native-replay-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "decisionId",
+    "profileId",
+    "platform",
+    "runId",
+    "status",
+    "sourceBinding",
+    "projectionBinding",
+    "runner",
+    "consumers",
+    "isolation",
+    "notGateClosure",
+    "gateStatus"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": "cloud-agents-g-contract-external-consumer-native-replay-receipt/v3"
+    },
+    "decisionId": { "const": "D-053-EC-3" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "platform": { "enum": ["darwin-arm64", "linux-amd64"] },
+    "runId": { "enum": ["A", "B"] },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "sourceBinding": { "$ref": "#/$defs/file" },
+    "projectionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archivePath",
+        "archiveSha256",
+        "archiveSizeBytes",
+        "memberManifestSha256",
+        "inputManifestSha256",
+        "memberCount"
+      ],
+      "properties": {
+        "archivePath": {
+          "const": "tools/g-contract-external-consumer/v3/evidence/replay/projection.tar"
+        },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" },
+        "inputManifestSha256": { "$ref": "#/$defs/digest" },
+        "memberCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "consumers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typescript", "go"],
+      "properties": {
+        "typescript": { "$ref": "#/$defs/consumer" },
+        "go": { "$ref": "#/$defs/consumer" }
+      }
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptPath",
+        "network",
+        "filesystem",
+        "ambientNodeModules"
+      ],
+      "properties": {
+        "receiptPath": {
+          "type": "string",
+          "pattern": "^tools/g-contract-external-consumer/v3/evidence/replay/(darwin-arm64|linux-amd64)-[ab]\\.json$"
+        },
+        "network": { "const": "LOOPBACK_ONLY" },
+        "filesystem": { "const": "DISPOSABLE_ROOT_ONLY" },
+        "ambientNodeModules": { "const": false }
+      }
+    },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "entrypoint"],
+      "properties": {
+        "path": {
+          "const": "scripts/replay-platform-g-contract-external-consumer-v3.ts"
+        },
+        "entrypoint": {
+          "type": "string",
+          "pattern": "^bun scripts/replay-platform-g-contract-external-consumer-v3\\.ts --native --projection-root <projection-root> --platform <platform> --run-id <run-id> --output-root <output-root>$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredCallCount",
+        "observedCallCount",
+        "outputSha256",
+        "requestContentType",
+        "responseContentType",
+        "url"
+      ],
+      "properties": {
+        "requiredCallCount": { "const": 1 },
+        "observedCallCount": { "const": 1 },
+        "outputSha256": { "$ref": "#/$defs/digest" },
+        "requestContentType": { "const": "application/proto" },
+        "responseContentType": { "const": "application/proto" },
+        "url": {
+          "type": "string",
+          "pattern": "^http://127\\.0\\.0\\.1:<ephemeral-port>/"
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

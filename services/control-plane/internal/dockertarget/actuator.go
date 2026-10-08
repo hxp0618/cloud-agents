@@ -89,6 +89,7 @@ type DeploymentConfig struct {
 }
 
 type containerInspect struct {
+	ID     string `json:"Id"`
 	Name   string `json:"Name"`
 	Config struct {
 		Image  string            `json:"Image"`
@@ -98,7 +99,8 @@ type containerInspect struct {
 		Running bool `json:"Running"`
 	} `json:"State"`
 	HostConfig struct {
-		Runtime string `json:"Runtime"`
+		Runtime     string `json:"Runtime"`
+		NetworkMode string `json:"NetworkMode"`
 	} `json:"HostConfig"`
 	NetworkSettings struct {
 		Ports map[string][]struct {
@@ -194,8 +196,14 @@ func (directory *CredentialDirectory) DeployWorker(ctx context.Context, endpoint
 		cleanup()
 		return DeployResult{}, err
 	}
-	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
+	trustDomain, err := spiffeTrustDomain(config.WorkerSPIFFEID)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, ErrDeploymentConfigInvalid
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: trustDomain}
 	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
+	defer supervisor.CloseIdleConnections()
 	if err != nil || waitForWorker(ctx, supervisor) != nil {
 		cleanup()
 		return DeployResult{}, ErrWorkerUnavailable
@@ -359,8 +367,14 @@ func (directory *CredentialDirectory) DeployWorkerUpgrade(ctx context.Context, e
 		cleanup()
 		return DeployResult{}, err
 	}
-	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: spiffeTrustDomain(config.WorkerSPIFFEID)}
+	trustDomain, err := spiffeTrustDomain(config.WorkerSPIFFEID)
+	if err != nil {
+		cleanup()
+		return DeployResult{}, ErrDeploymentConfigInvalid
+	}
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: config.WorkerSPIFFEID, TrustDomain: trustDomain}
 	supervisor, err := workerclient.NewMTLS(workerclient.MTLSConfig{Endpoint: workerEndpoint, ExpectedWorkerIdentity: identity, ClientCertificate: trust.ClientCertificate, RootCAs: trust.RootCAs, ServerName: config.WorkerServerName, Clock: time.Now})
+	defer supervisor.CloseIdleConnections()
 	if err != nil || waitForWorker(ctx, supervisor) != nil {
 		cleanup()
 		return DeployResult{}, ErrWorkerUnavailable
@@ -483,9 +497,12 @@ func (config DeploymentConfig) Valid() bool {
 		config.WorkerServerName != "" && len(config.WorkerServerName) <= 253 && strings.TrimSpace(config.WorkerServerName) == config.WorkerServerName && !strings.ContainsAny(config.WorkerServerName, "/@") && strings.IndexFunc(config.WorkerServerName, unicode.IsControl) < 0
 }
 
-func spiffeTrustDomain(identity string) string {
-	parsed, _ := url.Parse(identity)
-	return parsed.Host
+func spiffeTrustDomain(identity string) (string, error) {
+	parsed, err := url.Parse(identity)
+	if err != nil {
+		return "", err
+	}
+	return parsed.Host, nil
 }
 
 func DeploymentLabels(request DeployRequest, config DeploymentConfig) map[string]string {

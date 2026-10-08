@@ -154,3 +154,12 @@ func TestSSHRemoteDockerWorkerIsOwnedIdempotentAndCleaned(t *testing.T) {
 		t.Fatalf("secret descriptor field error=%v", err)
 	}
 }
+
+func TestSpiffeTrustDomainRejectsMalformedIdentity(t *testing.T) {
+	if _, err := spiffeTrustDomain("spiffe://cloud-agents.test/%zz"); err == nil {
+		t.Fatal("malformed SPIFFE identity accepted")
+	}
+	if trustDomain, err := spiffeTrustDomain("spiffe://cloud-agents.test/workers/ssh-alpha"); err != nil || trustDomain != "cloud-agents.test" {
+		t.Fatalf("trust domain=%q error=%v", trustDomain, err)
+	}
+}

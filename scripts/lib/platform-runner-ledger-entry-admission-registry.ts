@@ -221,7 +221,7 @@ export function runnerLedgerEntryAdmissionRegistryInputs(_root: string): string[
     "scripts/generate-platform-runner-ledger-entry-admission-registry.ts",
     "scripts/lib/platform-json-semantics.ts",
     "scripts/lib/platform-runner-ledger-consumer-registry.ts",
-    "scripts/lib/platform-runner-ledger-entry-admission-registry.test.ts",
+    "test/scripts/platform-runner-ledger-entry-admission-registry.test.ts",
     "scripts/lib/platform-runner-ledger-entry-admission-registry.ts",
   ].toSorted();
 }

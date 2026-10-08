@@ -677,7 +677,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	remoteWorkerTrustDomain := set.String("remote-worker-trust-domain", "", "RemoteWorker SPIFFE trust domain")
 	admissionLeaseID := set.String("admission-lease-id", "", "authoritative Runtime lease id")
 	admissionGeneration := set.Uint64("admission-generation", 0, "authoritative Runtime fencing generation")
-	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent API requests")
+	maxConcurrentRequests := set.Int("max-concurrent-requests", defaultProductionMaxConcurrentRequests, "maximum concurrent requests per ordinary or execution-start API pool")
 	if err := set.Parse(args); err != nil || set.NArg() != 0 {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}

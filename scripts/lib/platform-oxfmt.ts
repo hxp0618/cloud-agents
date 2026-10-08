@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 export const PLATFORM_OXFMT_LIBRARY_PATH = "scripts/lib/platform-oxfmt.ts";
-export const PLATFORM_OXFMT_TEST_PATH = "scripts/lib/platform-oxfmt.test.ts";
+export const PLATFORM_OXFMT_TEST_PATH = "test/scripts/platform-oxfmt.test.ts";
 
 const OXFMT_IN_PROCESS_DRIVER = String.raw`
 import { format } from "oxfmt";

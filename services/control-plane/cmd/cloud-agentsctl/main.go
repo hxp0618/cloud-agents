@@ -427,7 +427,7 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum sessions to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque session page token")
 		}); err == nil {
-			value, err = client.ListManagedAgentSessions(ctx, options.tenant, options.project, options.requestID, pageSize, pageToken)
+			value, err = client.ListManagedAgentSessions(ctx, options.tenant, options.project, options.requestID, "", pageSize, pageToken)
 		}
 	case "session get":
 		if err = parseActionFlags("session get", actionArgs, nil); err == nil {
@@ -489,8 +489,8 @@ func run(args []string, stdout io.Writer) error {
 		messageIndex := -1
 		if err = parseActionFlags("execution download-artifact", actionArgs, func(set *flag.FlagSet) {
 			set.IntVar(&messageIndex, "message-index", -1, "ArtifactCandidate message index")
-		}); err == nil && (messageIndex < 0 || messageIndex >= 64) {
-			err = errors.New("--message-index must be between 0 and 63")
+		}); err == nil && (messageIndex < 0 || messageIndex >= 128) {
+			err = errors.New("--message-index must be between 0 and 127")
 		} else if err == nil {
 			value, err = client.DownloadManagedAgentArtifact(ctx, options.tenant, options.project, options.session, options.turn, options.execution, options.requestID, messageIndex)
 		}

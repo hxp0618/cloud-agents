@@ -1,0 +1,343 @@
+--- a/build/posix.sh
++++ b/build/posix.sh
+@@ -1,6 +1,12 @@
+ #!/usr/bin/env bash
+-set -e
++set -e -o pipefail
+ 
++# This reviewed successor binds Linux glibc source inputs only.
++case "${PLATFORM:-}" in
++  linux-arm64v8|linux-x64) ;;
++  *) echo "Unsupported successor platform" >&2; exit 2 ;;
++esac
++
+ ## Copyright 2017 Lovell Fuller and others.
+ ## SPDX-License-Identifier: Apache-2.0
+ 
+@@ -104,8 +110,9 @@
+ # We don't want to use any native libraries, so unset PKG_CONFIG_PATH
+ unset PKG_CONFIG_PATH
+ 
+-# Common options for curl
+-CURL="curl --silent --location --retry 3 --retry-max-time 30"
++# Read only digest-bound local inputs; unknown URLs and changed bytes fail closed.
++source "${PACKAGE}/cloud-agents/read-source.sh"
++CURL=read_source
+ 
+ # Download and build dependencies from source
+ 
+@@ -330,19 +337,13 @@
+   -Ddocumentation=false -Dbuild-testsuite=false -Dbuild-examples=false -Dintrospection=disabled -Dfontconfig=enabled
+ meson install -C _build --tag devel
+ 
++# Consume the source prepared from the bound feature patch, lock and security patch.
+ mkdir ${DEPS}/rsvg
+-$CURL https://download.gnome.org/sources/librsvg/$(without_patch $VERSION_RSVG)/librsvg-${VERSION_RSVG}.tar.xz | tar xJC ${DEPS}/rsvg --strip-components=1
++cp -a "${PACKAGE}/cloud-agents/librsvg-source/." "${DEPS}/rsvg/"
+ cd ${DEPS}/rsvg
+-# Disallow GIF and WebP embedded in SVG images
+-sed -i'.bak' "/image = /s/, \"gif\", \"webp\"//" rsvg/Cargo.toml
+-# We build Cairo with `-Dzlib=disabled`, which implicitly disables the PDF/PostScript surface backends
+-sed -i'.bak' "/cairo-rs = /s/, \"pdf\", \"ps\"//" {librsvg-c,rsvg}/Cargo.toml
+-# https://gitlab.gnome.org/GNOME/librsvg/-/merge_requests/1066#note_2356762
+-sed -i'.bak' "/^if host_system in \['windows'/s/, 'linux'//" meson.build
+-# Regenerate the lockfile after making the above changes
+-cargo update --workspace
+-# [PATCH] Ensure embedded image memory limits are enforced
+-$CURL https://github.com/GNOME/librsvg/commit/9106011db93d701728ac2c9da50c9ab2c1bb5dc6.patch | patch -p1
++# Preserve the resolved workspace graph and the lock used by Meson (which passes --locked).
++cargo metadata --locked --format-version 1 --filter-platform "${RUST_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}" > "${TARGET}/librsvg-cargo-metadata.json"
++cp Cargo.lock "${TARGET}/librsvg-Cargo.lock"
+ # Remove the --static flag from the PKG_CONFIG env since Rust does not
+ # parse that correctly.
+ PKG_CONFIG=${PKG_CONFIG/ --static/} meson setup _build --default-library=static --buildtype=plain --strip --prefix=${TARGET} ${MESON} \
+@@ -394,7 +395,7 @@
+   -Djpeg-xl=disabled ${WITHOUT_HIGHWAY:+-Dhighway=disabled} -Dorc=disabled -Dmagick=disabled -Dmatio=disabled -Dnifti=disabled -Dopenexr=disabled \
+   -Dopenjpeg=disabled -Dopenslide=disabled -Dpdfium=disabled -Dpoppler=disabled -Dquantizr=disabled -Draw=disabled -Dspng=disabled \
+   -Dppm=false -Danalyze=false -Dradiance=false \
+-  ${LINUX:+-Dcpp_link_args="$LDFLAGS -Wl,-Bsymbolic-functions -Wl,--version-script=$DEPS/vips/vips.map $EXCLUDE_LIBS"}
++  ${LINUX:+-Dcpp_link_args="$LDFLAGS -Wl,-Bsymbolic-functions -Wl,--version-script=$DEPS/vips/vips.map $EXCLUDE_LIBS -Wl,-Map=${TARGET}/libvips-cpp-${PLATFORM}.map"}
+ meson install -C _build --tag runtime,devel
+ 
+ # Cleanup
+@@ -441,14 +442,16 @@
+ cd ${TARGET}/lib
+ if [ "$LINUX" = true ]; then
+   # Check that we really linked with -z nodelete
+-  readelf -Wd ${VIPS_CPP_DEP} | grep -qF NODELETE || (echo "$VIPS_CPP_DEP was not linked with -z nodelete" && exit 1)
++  readelf -Wd ${VIPS_CPP_DEP} | grep -F NODELETE > /dev/null || (echo "$VIPS_CPP_DEP was not linked with -z nodelete" && exit 1)
+   # Check that we really use the "new" C++11 ABI
+-  readelf -Ws ${VIPS_CPP_DEP} | c++filt | grep -qF "::__cxx11::" || (echo "$VIPS_CPP_DEP mistakenly uses the C++03 ABI" && exit 1)
++  readelf -Ws ${VIPS_CPP_DEP} | c++filt | grep -F "::__cxx11::" > /dev/null || (echo "$VIPS_CPP_DEP mistakenly uses the C++03 ABI" && exit 1)
+ fi
+ copydeps ${VIPS_CPP_DEP} ${TARGET}/lib-filtered
+ 
+ # Create JSON file of version numbers
+ cd ${TARGET}
++# Report direct dependency versions for this prebuilt target.
++# This runtime metadata is not a complete linked-component SBOM.
+ printf "{\n\
+   \"aom\": \"${VERSION_AOM}\",\n\
+   \"archive\": \"${VERSION_ARCHIVE}\",\n\
+@@ -466,11 +469,11 @@
+   \"highway\": \"${VERSION_HIGHWAY}\",\n\
+   \"imagequant\": \"${VERSION_IMAGEQUANT}\",\n\
+   \"lcms\": \"${VERSION_LCMS}\",\n\
++  \"libnsgif\": \"vendored-in-libvips-${VERSION_VIPS}\",\n\
+   \"mozjpeg\": \"${VERSION_MOZJPEG}\",\n\
+   \"pango\": \"${VERSION_PANGO}\",\n\
+   \"pixman\": \"${VERSION_PIXMAN}\",\n\
+   \"png\": \"${VERSION_PNG}\",\n\
+-  \"proxy-libintl\": \"${VERSION_PROXY_LIBINTL}\",\n\
+   \"rsvg\": \"${VERSION_RSVG}\",\n\
+   \"tiff\": \"${VERSION_TIFF}\",\n\
+   \"uhdr\": \"${VERSION_UHDR}\",\n\
+@@ -481,7 +484,11 @@
+ }" >versions.json
+ 
+ # Add third-party notices
+-$CURL -O https://raw.githubusercontent.com/lovell/sharp-libvips/main/THIRD-PARTY-NOTICES.md
++cp "${PACKAGE}/THIRD-PARTY-NOTICES.md" THIRD-PARTY-NOTICES.md
++
++cp -a "${PACKAGE}/cloud-agents/source-provenance" "${TARGET}/source-provenance"
++cp "${TARGET}/libvips-cpp-${PLATFORM}.map" "${TARGET}/source-provenance/"
++cp "${TARGET}/librsvg-cargo-metadata.json" "${TARGET}/source-provenance/"
+ 
+ # Create the tarball
+ ls -al lib
+@@ -491,6 +498,8 @@
+   include \
+   lib \
+   *.json \
++  librsvg-Cargo.lock \
++  source-provenance \
+   THIRD-PARTY-NOTICES.md
+ 
+ # Allow tarballs to be read outside container
+--- a/build.sh
++++ b/build.sh
+@@ -13,24 +13,17 @@
+   echo "Build shared libraries for libvips and its dependencies"
+   echo
+   echo "Possible values for PLATFORM are:"
+-  echo "- win32-ia32"
+-  echo "- win32-x64"
+-  echo "- win32-arm64v8"
+   echo "- linux-x64"
+-  echo "- linuxmusl-x64"
+-  echo "- linux-armv6"
+   echo "- linux-arm64v8"
+-  echo "- linuxmusl-arm64v8"
+-  echo "- linux-ppc64le"
+-  echo "- linux-riscv64"
+-  echo "- linux-s390x"
+-  echo "- darwin-x64"
+-  echo "- darwin-arm64v8"
+-  echo "- dev-wasm32"
+   echo
+   exit 1
+ fi
+ PLATFORM="$1"
++case "$PLATFORM" in
++  linux-arm64v8|linux-x64) ;;
++  *) echo "Unsupported successor platform" >&2; exit 2 ;;
++esac
++source "$PWD/cloud-agents/builder-base.sh"
+ 
+ # macOS
+ # Note: we intentionally don't build these binaries inside a Docker container
+@@ -76,6 +69,12 @@
+   exit 1
+ fi
+ 
++# The digest-bound builder base must already exist locally; this entry never pulls it.
++if ! docker image inspect "$CLOUD_AGENTS_BUILDER_BASE_IMAGE" >/dev/null 2>&1; then
++  echo "Bound builder base is unavailable locally: $CLOUD_AGENTS_BUILDER_BASE_IMAGE" >&2
++  exit 1
++fi
++
+ # WebAssembly
+ if [ "$PLATFORM" == "dev-wasm32" ]; then
+   ./build/wasm.sh
+@@ -95,7 +94,9 @@
+ for flavour in linux-x64 linuxmusl-x64 linux-armv6 linux-arm64v8 linuxmusl-arm64v8 linux-ppc64le linux-riscv64 linux-s390x; do
+   if [ $PLATFORM = "all" ] || [ $PLATFORM = $flavour ]; then
+     echo "Building $flavour..."
+-    docker build --pull -t vips-dev-$flavour platforms/$flavour
+-    docker run --rm -v $PWD:/packaging vips-dev-$flavour sh -c "/packaging/build/posix.sh"
++    docker build --pull=false --network=none --platform "$CLOUD_AGENTS_BUILDER_PLATFORM" \
++      --build-arg "CLOUD_AGENTS_BUILDER_BASE=$CLOUD_AGENTS_BUILDER_BASE_IMAGE" \
++      -t vips-dev-$flavour platforms/$flavour
++    docker run --rm --network=none --platform "$CLOUD_AGENTS_BUILDER_PLATFORM" -v $PWD:/packaging vips-dev-$flavour sh -c "/packaging/build/posix.sh && cp /target/libvips-cpp-${flavour}.map /packaging/"
+   fi
+ done
+--- a/platforms/linux-arm64v8/Dockerfile
++++ b/platforms/linux-arm64v8/Dockerfile
+@@ -1,4 +1,10 @@
+-FROM --platform=linux/arm64/v8 rockylinux/rockylinux:8-ubi-init
++ARG CLOUD_AGENTS_BUILDER_BASE
++FROM ${CLOUD_AGENTS_BUILDER_BASE} AS base
++FROM base AS rpm
++COPY cloud-agents-rpms /tmp/cloud-agents-rpms
++RUN bash /tmp/cloud-agents-rpms/install.sh && rm -rf /tmp/cloud-agents-rpms
++
++FROM rpm AS builder
+ LABEL maintainer="Lovell Fuller <npm@lovell.info>"
+ 
+ ## Copyright 2017 Lovell Fuller and others.
+@@ -8,45 +14,23 @@
+ 
+ # Path settings
+ ENV \
+-  RUSTUP_HOME="/usr/local/rustup" \
+   CARGO_HOME="/usr/local/cargo" \
+   PATH="/usr/local/cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:$PATH"
+ 
+-# Build dependencies
+-RUN \
+-  dnf update -y && \
+-  dnf install -y epel-release && \
+-  dnf config-manager --set-enabled powertools && \
+-  dnf install -y --setopt=tsflags=nodocs \
+-    autoconf \
+-    automake \
+-    bzip2 \
+-    cmake \
+-    curl-devel \
+-    findutils \
+-    gcc-toolset-15-gcc \
+-    gcc-toolset-15-gcc-c++ \
+-    gettext \
+-    git \
+-    gperf \
+-    jq \
+-    make \
+-    openssl-devel \
+-    patch \
+-    pkgconf \
+-    python3.12-pip \
+-    tar \
+-    xz \
+-    && \
+-  curl https://sh.rustup.rs -sSf | sh -s -- -y \
+-    --no-modify-path \
+-    --profile minimal \
+-    --default-host aarch64-unknown-linux-gnu \
+-    --default-toolchain nightly \
+-    && \
+-  cargo install cargo-c --locked && \
+-  pip3.12 install meson ninja
++# Install the digest-bound nightly components without rustup or a network fetch.
++COPY cloud-agents-rust /tmp/cloud-agents-rust
++RUN sh /tmp/cloud-agents-rust/install.sh && rm -rf /tmp/cloud-agents-rust
+ 
++# Compile cargo-c from the digest-bound source and vendor archives offline.
++COPY cloud-agents-cargo-c /tmp/cloud-agents-cargo-c
++RUN sh /tmp/cloud-agents-cargo-c/install.sh && rm -rf /tmp/cloud-agents-cargo-c
++
++# Consume the prepared, hash-bound wheels without an index.
++COPY cloud-agents-python-tools /tmp/cloud-agents-python-tools
++RUN python3.12 -m pip install --no-index --only-binary=:all: --require-hashes \
++      --find-links=/tmp/cloud-agents-python-tools -r /tmp/cloud-agents-python-tools/requirements.txt && \
++    rm -rf /tmp/cloud-agents-python-tools
++
+ # Compiler settings
+ ENV \
+   PKG_CONFIG="aarch64-linux-gnu-pkgconf --static" \
+--- a/platforms/linux-x64/Dockerfile
++++ b/platforms/linux-x64/Dockerfile
+@@ -1,4 +1,10 @@
+-FROM rockylinux/rockylinux:8-ubi-init
++ARG CLOUD_AGENTS_BUILDER_BASE
++FROM ${CLOUD_AGENTS_BUILDER_BASE} AS base
++FROM base AS rpm
++COPY cloud-agents-rpms /tmp/cloud-agents-rpms
++RUN bash /tmp/cloud-agents-rpms/install.sh && rm -rf /tmp/cloud-agents-rpms
++
++FROM rpm AS builder
+ LABEL maintainer="Lovell Fuller <npm@lovell.info>"
+ 
+ ## Copyright 2017 Lovell Fuller and others.
+@@ -8,45 +14,23 @@
+ 
+ # Path settings
+ ENV \
+-  RUSTUP_HOME="/usr/local/rustup" \
+   CARGO_HOME="/usr/local/cargo" \
+   PATH="/usr/local/cargo/bin:/opt/rh/gcc-toolset-15/root/usr/bin:$PATH"
+ 
+-# Build dependencies
+-RUN \
+-  dnf update -y && \
+-  dnf install -y epel-release && \
+-  dnf config-manager --set-enabled powertools && \
+-  dnf install -y --setopt=tsflags=nodocs \
+-    autoconf \
+-    automake \
+-    bzip2 \
+-    cmake \
+-    curl-devel \
+-    findutils \
+-    gcc-toolset-15-gcc \
+-    gcc-toolset-15-gcc-c++ \
+-    gettext \
+-    git \
+-    gperf \
+-    jq \
+-    make \
+-    nasm \
+-    openssl-devel \
+-    patch \
+-    pkgconf \
+-    python3.12-pip \
+-    tar \
+-    xz \
+-    && \
+-  curl https://sh.rustup.rs -sSf | sh -s -- -y \
+-    --no-modify-path \
+-    --profile minimal \
+-    --default-toolchain nightly \
+-    && \
+-  cargo install cargo-c --locked && \
+-  pip3.12 install meson ninja
++# Install the digest-bound nightly components without rustup or a network fetch.
++COPY cloud-agents-rust /tmp/cloud-agents-rust
++RUN sh /tmp/cloud-agents-rust/install.sh && rm -rf /tmp/cloud-agents-rust
+ 
++# Compile cargo-c from the digest-bound source and vendor archives offline.
++COPY cloud-agents-cargo-c /tmp/cloud-agents-cargo-c
++RUN sh /tmp/cloud-agents-cargo-c/install.sh && rm -rf /tmp/cloud-agents-cargo-c
++
++# Consume the prepared, hash-bound wheels without an index.
++COPY cloud-agents-python-tools /tmp/cloud-agents-python-tools
++RUN python3.12 -m pip install --no-index --only-binary=:all: --require-hashes \
++      --find-links=/tmp/cloud-agents-python-tools -r /tmp/cloud-agents-python-tools/requirements.txt && \
++    rm -rf /tmp/cloud-agents-python-tools
++
+ # Compiler settings
+ ENV \
+   PKG_CONFIG="x86_64-linux-gnu-pkgconf --static" \
+--- a/npm/linux-arm64/package.json
++++ b/npm/linux-arm64/package.json
+@@ -19,7 +19,8 @@
+   },
+   "files": [
+     "lib",
+-    "versions.json"
++    "versions.json",
++    "source-provenance"
+   ],
+   "type": "commonjs",
+   "exports": {
+--- a/npm/linux-x64/package.json
++++ b/npm/linux-x64/package.json
+@@ -19,7 +19,8 @@
+   },
+   "files": [
+     "lib",
+-    "versions.json"
++    "versions.json",
++    "source-provenance"
+   ],
+   "type": "commonjs",
+   "exports": {

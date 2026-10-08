@@ -7,6 +7,7 @@ postgres_image=${CLOUD_AGENTS_DEV_POSTGRES_IMAGE:-postgres:17.6-bookworm}
 control_plane_listen=${CLOUD_AGENTS_DEV_CONTROL_PLANE_LISTEN:-127.0.0.1:8080}
 worker_listen=${CLOUD_AGENTS_DEV_WORKER_LISTEN:-127.0.0.1:8091}
 credential_directory=${CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR:-}
+docker_credential_directory=${CLOUD_AGENTS_DEV_DOCKER_CREDENTIALS_DIR:-}
 runtime_max_sessions=${CLOUD_AGENTS_DEV_RUNTIME_MAX_SESSIONS:-4}
 export CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS="${CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS-codex,claudeAgent,pi,deepseek-harness}"
 run_id="${UID:-0}-$$"
@@ -55,7 +56,7 @@ if [[ ! $node_version =~ ^v24\.([0-9]+)\.([0-9]+)$ ]] || ((BASH_REMATCH[1] < 18)
   echo "cloud-agents dev requires Node.js >=24.18.1 <25" >&2
   exit 1
 fi
-export GOTOOLCHAIN=go1.26.6
+export GOTOOLCHAIN=local
 export GOFLAGS=-mod=readonly
 if [[ $(go version) != "go version go1.26.6 "* ]]; then
   echo "cloud-agents dev requires Go 1.26.6" >&2
@@ -67,6 +68,10 @@ if [[ ! -d $workspace_directory || $workspace_directory != /* ]]; then
 fi
 if [[ -n $credential_directory && (! -d $credential_directory || $credential_directory != /*) ]]; then
   echo "CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR must be an absolute directory" >&2
+  exit 1
+fi
+if [[ -n $docker_credential_directory && (! -d $docker_credential_directory || $docker_credential_directory != /*) ]]; then
+  echo "CLOUD_AGENTS_DEV_DOCKER_CREDENTIALS_DIR must be an absolute directory" >&2
   exit 1
 fi
 if [[ ! $runtime_max_sessions =~ ^[1-9][0-9]*$ ]] || ((runtime_max_sessions > 1024)); then
@@ -187,7 +192,13 @@ for attempt in {1..120}; do
   sleep 1
 done
 
-CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY="$credential_directory" \
+control_plane_environment=(
+  CLOUD_AGENTS_PLATFORM_PROVIDER_CREDENTIALS_DIRECTORY="$credential_directory"
+)
+if [[ -n $docker_credential_directory ]]; then
+  control_plane_environment+=(CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY="$docker_credential_directory")
+fi
+env "${control_plane_environment[@]}" \
 "$state_directory/bin/cloud-agents-control-plane" \
   --listen "$control_plane_listen" \
   --database-url "$runtime_database_url" \

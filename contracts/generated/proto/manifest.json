@@ -1,17 +1,18 @@
 {
-  "formatVersion": "cloud-agents-generated-proto-manifest/v1",
+  "formatVersion": "cloud-agents-generated-proto-manifest/v2",
   "status": "GENERATED_NON_GATE_EVIDENCE",
   "notGateClosure": true,
   "authority": "proto3",
   "contract": {
-    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37",
-    "inputManifestSha256": "sha256:f9b1b72b6b0b961e6877d9d4ffda3898665e62fd82d735d9ed6d0bde3c25dbb1",
+    "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "inputManifestSha256": "sha256:a71f5e1f68826725b3aaab18ee6ce0fa4bf77b48edd626a892d37bfe9af1cb03",
     "inputs": [
+      "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
       "contracts/platform-adapter/v1alpha1/README.md",
       "contracts/platform-adapter/v1alpha1/fixtures/descriptor.golden.json",
       "contracts/platform-adapter/v1alpha1/platform_adapter.proto",
       "contracts/proto-generation.profile.json",
+      "contracts/worker/runtime/v1alpha1/runtime.proto",
       "contracts/worker/v1alpha1/README.md",
       "contracts/worker/v1alpha1/fixtures/descriptor.golden.json",
       "contracts/worker/v1alpha1/kernel.proto",
@@ -21,16 +22,15 @@
   },
   "generator": {
     "id": "platform-proto-sdk-generator",
-    "version": "v1",
+    "version": "v2",
     "entrypoint": "scripts/generate-platform-proto-sdks.ts",
-    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:ab5bf2f5142ffb2e4df8bf37da53e9dc73661c8840909c8ca58e13412105c88d",
+    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "sourceManifestSha256": "sha256:217d80923232c3c66e113a0fcc505b56750142d1f22e1c6263bf6f5ffa8f1994",
     "sources": [
       "scripts/generate-platform-proto-sdks.ts",
-      "scripts/lib/platform-oxfmt.test.ts",
       "scripts/lib/platform-oxfmt.ts",
-      "scripts/lib/platform-proto-sdk.test.ts",
-      "scripts/lib/platform-proto-sdk.ts"
+      "scripts/lib/platform-proto-sdk.ts",
+      "scripts/lib/platform-sdk-manifest.ts"
     ],
     "profilePath": "contracts/proto-generation.profile.json",
     "profileSha256": "sha256:41091415a46ee32d6566fcabd35a501526ced36785bdf01672d8379b2b0e1758",
@@ -75,11 +75,31 @@
         "license": "Apache-2.0",
         "options": ["target=ts", "import_extension=js"]
       }
-    ]
+    ],
+    "dependencies": {
+      "mise": {
+        "path": ".mise.toml",
+        "sha256": "sha256:be2bf934f1fde8d46e76b1a8b7a19ce7b4bb88d5ed9719b83e250497943f15af"
+      },
+      "rootPackage": {
+        "path": "package.json",
+        "sha256": "sha256:6404de94545152198633c8c3027b5ba73a9d900f6ffb594782fb3003326401d1"
+      },
+      "bunLock": {
+        "path": "bun.lock",
+        "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+      },
+      "profile": {
+        "path": "contracts/proto-generation.profile.json",
+        "sha256": "sha256:41091415a46ee32d6566fcabd35a501526ced36785bdf01672d8379b2b0e1758"
+      }
+    }
   },
   "descriptor": {
     "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
     "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
+    "workerRuntimePath": "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb",
+    "workerRuntimeSha256": "sha256:7e8b002eb5180e2e2e09730074c4dd440add4ea033e8e64ac7853e04c472a14f",
     "breakingBaseline": "contracts/generated/proto/cloud-agents-v1alpha1-breaking-baseline.binpb",
     "breakingBaselineSha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
     "breakingPolicy": "EXACT_V1ALPHA1_BASELINE_NO_UNREVIEWED_DELTA",
@@ -104,16 +124,24 @@
   },
   "path": "contracts/generated/proto/manifest.json",
   "language": "descriptor-set",
-  "packageIdentity": "cloudagents.worker.v1alpha1+cloudagents.platformadapter.v1alpha1",
+  "packageIdentity": "cloudagents.worker.v1alpha1+cloudagents.platformadapter.v1alpha1+cloudagents.worker.runtime.v1alpha1",
   "runtimeDependencies": [],
-  "outputPaths": ["contracts/generated/proto/cloud-agents-v1alpha1.binpb"],
+  "outputPaths": [
+    "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
+    "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb"
+  ],
   "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-size-v1",
-  "outputTreeSha256": "sha256:852786f01945c71d3c35d8c8e7b3d131277e1b470f9f3c4e5cc9a97f101c9968",
+  "outputTreeSha256": "sha256:945898162caf5bc9682dae4dc890faa75021f15e6f2e249cdb0c53ccfa854b00",
   "outputs": [
     {
       "path": "contracts/generated/proto/cloud-agents-v1alpha1.binpb",
       "sha256": "sha256:cd896a7aaccf70426be94314c5cfa09733a6908c33867c1f8942b4eb6b179218",
       "sizeBytes": 12730
+    },
+    {
+      "path": "contracts/generated/proto/cloud-agents-worker-runtime-v1alpha1.binpb",
+      "sha256": "sha256:7e8b002eb5180e2e2e09730074c4dd440add4ea033e8e64ac7853e04c472a14f",
+      "sizeBytes": 9675
     }
   ]
 }

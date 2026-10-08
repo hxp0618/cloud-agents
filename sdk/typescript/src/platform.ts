@@ -10746,6 +10746,8 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
       "sandboxGeneration",
       "environmentProfileId",
       "environmentProfileVersion",
+      "mcpServerRefs",
+      "skillBundleRefs",
       "state",
     ],
     ["providerKind", "state"],
@@ -10820,6 +10822,24 @@ export function decodeManagedAgentSession(value: unknown): ManagedAgentSession {
           }
         : {}),
       state: enumValue(spec.state, ["active", "closed"] as const, "/spec/state"),
+      ...(spec.mcpServerRefs === undefined
+        ? {}
+        : {
+            mcpServerRefs: managedAgentCapabilityRefs(
+              spec.mcpServerRefs,
+              "/spec/mcpServerRefs",
+              false,
+            ),
+          }),
+      ...(spec.skillBundleRefs === undefined
+        ? {}
+        : {
+            skillBundleRefs: managedAgentCapabilityRefs(
+              spec.skillBundleRefs,
+              "/spec/skillBundleRefs",
+              true,
+            ),
+          }),
     }),
   });
 }
@@ -10845,53 +10865,6 @@ export function decodeManagedAgentSessionPage(value: unknown): ManagedAgentSessi
   };
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
-}
-function decodeManagedAgentSessionWithCapabilities(value: unknown): ManagedAgentSession {
-  const source = record(value),
-    spec = record(source.spec),
-    mcpServerRefs =
-      spec.mcpServerRefs === undefined
-        ? undefined
-        : managedAgentCapabilityRefs(spec.mcpServerRefs, "/spec/mcpServerRefs", false),
-    skillBundleRefs =
-      spec.skillBundleRefs === undefined
-        ? undefined
-        : managedAgentCapabilityRefs(spec.skillBundleRefs, "/spec/skillBundleRefs", true);
-  const stripped = {
-    ...source,
-    spec: Object.fromEntries(
-      Object.entries(spec).filter(([key]) => key !== "mcpServerRefs" && key !== "skillBundleRefs"),
-    ),
-  };
-  const result = decodeManagedAgentSession(stripped);
-  return Object.freeze({
-    ...result,
-    spec: Object.freeze({
-      ...result.spec,
-      ...(mcpServerRefs === undefined ? {} : { mcpServerRefs }),
-      ...(skillBundleRefs === undefined ? {} : { skillBundleRefs }),
-    }),
-  });
-}
-function decodeManagedAgentSessionPageWithCapabilities(value: unknown): ManagedAgentSessionPage {
-  const source = strictRecord(
-    value,
-    ["apiVersion", "kind", "sessions", "nextPageToken"],
-    ["apiVersion", "kind", "sessions"],
-  );
-  const sessions = Array.isArray(source.sessions)
-    ? source.sessions.map(decodeManagedAgentSessionWithCapabilities)
-    : error("INVALID_SESSION_PAGE", "/sessions");
-  const page = {
-    apiVersion: "managed-agent.cloud-agents.dev/v1alpha1" as const,
-    kind: "SessionPage" as const,
-    sessions: Object.freeze(sessions),
-  };
-  return Object.freeze(
-    source.nextPageToken === undefined
-      ? page
-      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
-  );
 }
 function managedAgentCapabilityRefs(
   value: unknown,
@@ -11090,6 +11063,8 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
       "checkpoint",
       "resultDigest",
       "errorCode",
+      "mcpServerRefs",
+      "skillBundleRefs",
     ],
     ["generation", "state", "attemptNumber", "recoveryState"],
     "/spec",
@@ -11114,6 +11089,8 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
       checkpoint?: ManagedAgentExecutionCheckpoint;
       resultDigest?: `sha256:${string}`;
       errorCode?: string;
+      mcpServerRefs?: Exclude<ManagedAgentExecution["spec"]["mcpServerRefs"], undefined>;
+      skillBundleRefs?: Exclude<ManagedAgentExecution["spec"]["skillBundleRefs"], undefined>;
     };
     messages?: readonly ManagedAgentExecutionMessage[];
   } = {
@@ -11226,6 +11203,18 @@ export function decodeManagedAgentExecution(value: unknown): ManagedAgentExecuti
   }
   if (spec.errorCode !== undefined)
     result.spec.errorCode = boundedString(spec.errorCode, 1, 64, "/spec/errorCode");
+  if (spec.mcpServerRefs !== undefined)
+    result.spec.mcpServerRefs = managedAgentCapabilityRefs(
+      spec.mcpServerRefs,
+      "/spec/mcpServerRefs",
+      false,
+    );
+  if (spec.skillBundleRefs !== undefined)
+    result.spec.skillBundleRefs = managedAgentCapabilityRefs(
+      spec.skillBundleRefs,
+      "/spec/skillBundleRefs",
+      true,
+    );
   if (source.messages !== undefined) {
     if (!Array.isArray(source.messages)) error("INVALID_JSON_ARRAY", "/messages");
     result.messages = Object.freeze(
@@ -11258,55 +11247,6 @@ export function decodeManagedAgentExecutionPage(value: unknown): ManagedAgentExe
   };
   if (source.nextPageToken === undefined) return Object.freeze(page);
   return Object.freeze({ ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") });
-}
-function decodeManagedAgentExecutionWithCapabilities(value: unknown): ManagedAgentExecution {
-  const source = record(value),
-    spec = record(source.spec),
-    mcpServerRefs =
-      spec.mcpServerRefs === undefined
-        ? undefined
-        : managedAgentCapabilityRefs(spec.mcpServerRefs, "/spec/mcpServerRefs", false),
-    skillBundleRefs =
-      spec.skillBundleRefs === undefined
-        ? undefined
-        : managedAgentCapabilityRefs(spec.skillBundleRefs, "/spec/skillBundleRefs", true);
-  const stripped = {
-    ...source,
-    spec: Object.fromEntries(
-      Object.entries(spec).filter(([key]) => key !== "mcpServerRefs" && key !== "skillBundleRefs"),
-    ),
-  };
-  const result = decodeManagedAgentExecution(stripped);
-  return Object.freeze({
-    ...result,
-    spec: Object.freeze({
-      ...result.spec,
-      ...(mcpServerRefs === undefined ? {} : { mcpServerRefs }),
-      ...(skillBundleRefs === undefined ? {} : { skillBundleRefs }),
-    }),
-  });
-}
-function decodeManagedAgentExecutionPageWithCapabilities(
-  value: unknown,
-): ManagedAgentExecutionPage {
-  const source = strictRecord(
-    value,
-    ["apiVersion", "kind", "executions", "nextPageToken"],
-    ["apiVersion", "kind", "executions"],
-  );
-  const executions = Array.isArray(source.executions)
-    ? source.executions.map(decodeManagedAgentExecutionWithCapabilities)
-    : error("INVALID_EXECUTION_PAGE", "/executions");
-  const page = {
-    apiVersion: "managed-agent.cloud-agents.dev/v1alpha1" as const,
-    kind: "ExecutionPage" as const,
-    executions: Object.freeze(executions),
-  };
-  return Object.freeze(
-    source.nextPageToken === undefined
-      ? page
-      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
-  );
 }
 function decodeManagedAgentExecutionMessage(
   value: unknown,
@@ -12137,20 +12077,12 @@ export function parseDeploymentTargetSchedulingPreview(
   );
 }
 export function parseManagedAgentSession(text: string): ResponseEnvelope<ManagedAgentSession> {
-  return parseResponse(
-    text,
-    managedAgentSessionResponseShape,
-    decodeManagedAgentSessionWithCapabilities,
-  );
+  return parseResponse(text, managedAgentSessionResponseShape, decodeManagedAgentSession);
 }
 export function parseManagedAgentSessionPage(
   text: string,
 ): ResponseEnvelope<ManagedAgentSessionPage> {
-  return parseResponse(
-    text,
-    managedAgentSessionPageResponseShape,
-    decodeManagedAgentSessionPageWithCapabilities,
-  );
+  return parseResponse(text, managedAgentSessionPageResponseShape, decodeManagedAgentSessionPage);
 }
 export function parseManagedAgentTurn(text: string): ResponseEnvelope<ManagedAgentTurn> {
   return parseResponse(text, managedAgentTurnResponseShape, decodeManagedAgentTurn);
@@ -12159,11 +12091,7 @@ export function parseManagedAgentTurnPage(text: string): ResponseEnvelope<Manage
   return parseResponse(text, managedAgentTurnPageResponseShape, decodeManagedAgentTurnPage);
 }
 export function parseManagedAgentExecution(text: string): ResponseEnvelope<ManagedAgentExecution> {
-  return parseResponse(
-    text,
-    managedAgentExecutionResponseShape,
-    decodeManagedAgentExecutionWithCapabilities,
-  );
+  return parseResponse(text, managedAgentExecutionResponseShape, decodeManagedAgentExecution);
 }
 export function parseManagedAgentExecutionPage(
   text: string,
@@ -12171,7 +12099,7 @@ export function parseManagedAgentExecutionPage(
   return parseResponse(
     text,
     managedAgentExecutionPageResponseShape,
-    decodeManagedAgentExecutionPageWithCapabilities,
+    decodeManagedAgentExecutionPage,
   );
 }
 export function parseManagedAgentEventPage(text: string): ResponseEnvelope<ManagedAgentEventPage> {
@@ -12548,15 +12476,18 @@ export class Client {
     tenantId: string,
     projectId: string,
     requestId: string,
+    sandboxId?: string,
     pageSize?: number,
     pageToken?: string,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope<ManagedAgentSessionPage>> {
     validatePath(tenantId, requestId);
     identifier(projectId, "/projectId");
+    if (sandboxId !== undefined && sandboxId !== "") identifier(sandboxId, "/sandboxId");
     if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
     if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
     const query = new URLSearchParams();
+    if (sandboxId !== undefined && sandboxId !== "") query.set("sandboxId", sandboxId);
     if (pageSize !== undefined) query.set("pageSize", String(pageSize));
     if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
     const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -12570,7 +12501,13 @@ export class Client {
     );
     if (response.status !== 200) throw await this.problem("managedAgentListSessions", response);
     const result = parseManagedAgentSessionPage(response.body);
-    if (result.value.sessions.some(({ metadata }) => metadata.projectId !== projectId))
+    if (
+      result.value.sessions.some(
+        ({ metadata, spec }) =>
+          metadata.projectId !== projectId ||
+          (sandboxId !== undefined && sandboxId !== "" && spec.sandboxId !== sandboxId),
+      )
+    )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/sessions");
     return result;
   }
@@ -12578,15 +12515,18 @@ export class Client {
     tenantId: string,
     projectId: string,
     requestId: string,
+    sandboxId?: string,
     pageSize?: number,
     pageToken?: string,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope<ManagedAgentSessionPage>> {
     validatePath(tenantId, requestId);
     identifier(projectId, "/projectId");
+    if (sandboxId !== undefined && sandboxId !== "") identifier(sandboxId, "/sandboxId");
     if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
     if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
     const query = new URLSearchParams();
+    if (sandboxId !== undefined && sandboxId !== "") query.set("sandboxId", sandboxId);
     if (pageSize !== undefined) query.set("pageSize", String(pageSize));
     if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
     const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -12601,7 +12541,13 @@ export class Client {
     if (response.status !== 200)
       throw await this.problem("adminListManagedAgentSessions", response);
     const result = parseManagedAgentSessionPage(response.body);
-    if (result.value.sessions.some(({ metadata }) => metadata.projectId !== projectId))
+    if (
+      result.value.sessions.some(
+        ({ metadata, spec }) =>
+          metadata.projectId !== projectId ||
+          (sandboxId !== undefined && sandboxId !== "" && spec.sandboxId !== sandboxId),
+      )
+    )
       error("PATH_BODY_AUTHORITY_MISMATCH", "/sessions");
     return result;
   }
@@ -12842,7 +12788,7 @@ export class Client {
     signal?: AbortSignal,
   ): Promise<ManagedAgentArtifactResult> {
     validateExecutionPath(tenantId, projectId, requestId, sessionId, turnId, executionId);
-    integer(messageIndex, 0, 63, "/messageIndex");
+    integer(messageIndex, 0, 127, "/messageIndex");
     const response = await this.call(
       {
         method: "GET",
@@ -13079,7 +13025,14 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("managedAgentListEvents", response);
-    return parseManagedAgentEventPage(response.body);
+    const result = parseManagedAgentEventPage(response.body);
+    if (
+      result.value.events.some(
+        ({ metadata }) => metadata.projectId !== projectId || metadata.sessionId !== sessionId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
   }
   async listAdminManagedAgentEvents(
     tenantId: string,
@@ -13106,7 +13059,14 @@ export class Client {
       signal,
     );
     if (response.status !== 200) throw await this.problem("adminListManagedAgentEvents", response);
-    return parseManagedAgentEventPage(response.body);
+    const result = parseManagedAgentEventPage(response.body);
+    if (
+      result.value.events.some(
+        ({ metadata }) => metadata.projectId !== projectId || metadata.sessionId !== sessionId,
+      )
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/events");
+    return result;
   }
   async createMembership(
     tenantId: string,

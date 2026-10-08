@@ -834,8 +834,9 @@ export function validateCheckedInMigrationBundle(root: string): GeneratedMigrati
   if (!Buffer.from(replay).equals(Buffer.from(expected.runtimeTar))) {
     throw new MigrationValidationError("USTAR_SAME_BITS", "producer/consumer mismatch");
   }
-  const bootstrapReplay = createDeterministicUstar(readDeterministicUstar(expected.bootstrapTar));
-  validateBootstrapTarClosure(expected.manifest, readDeterministicUstar(expected.bootstrapTar));
+  const parsedBootstrapTar = readDeterministicUstar(expected.bootstrapTar);
+  const bootstrapReplay = createDeterministicUstar(parsedBootstrapTar);
+  validateBootstrapTarClosure(expected.manifest, parsedBootstrapTar);
   if (!Buffer.from(bootstrapReplay).equals(Buffer.from(expected.bootstrapTar))) {
     throw new MigrationValidationError("USTAR_SAME_BITS", "bootstrap producer/consumer mismatch");
   }

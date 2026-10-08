@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "cloud-agents.opensandbox-server-successor-source.v2",
+  "base": {
+    "image": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:8f8762af7565ed9c6f9dbcf009dd56727aa1fef8ce58a17f2b007b88cfe542bb",
+    "buildSourceStatus": "UNKNOWN_BUILD_SOURCE",
+    "sourcePath": "/app/opensandbox_server/api/proxy.py",
+    "sourceSha256": "1bf00453fb39778322242ae7bfcb0b7dc0ac391ceab5eeca2f85a4f7a2056b05",
+    "platforms": [
+      {
+        "platform": "linux/amd64",
+        "image": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:7c8da0ab2be8b972d77af3b3a1a67a71ee002cc3dd31ae7551b0dada4a2b6457",
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      {
+        "platform": "linux/arm64",
+        "image": "sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server@sha256:7887892c646287b0a49618197b9dd6af462318616a880ad5ccb716385c16ef29",
+        "os": "linux",
+        "architecture": "arm64"
+      }
+    ]
+  },
+  "upstreamFileMatch": {
+    "repository": "https://github.com/alibaba/OpenSandbox.git",
+    "commit": "f31696b429b2b67c197b9336583a78e114d7d36a",
+    "tree": "1969b038103a6911861d0cd052ccca0f6aaada1a",
+    "path": "server/opensandbox_server/api/proxy.py",
+    "sha256": "1bf00453fb39778322242ae7bfcb0b7dc0ac391ceab5eeca2f85a4f7a2056b05",
+    "scope": "EXACT_FILE_MATCH_ONLY"
+  },
+  "patch": {
+    "path": "tools/opensandbox-server-successor/v1/patches/isolate-http-client-cookie.patch",
+    "sha256": "1a068a76c651d18f8ecc7aa96d9b783fc84af451af233c3e0db3ad9721b8bc5d",
+    "patchedSourceSha256": "9aca8a31f47505cc10cebfc94445cab90cb767325d7f6d7098ff5a4cbc32e9c2"
+  },
+  "regression": {
+    "path": "test/scripts/cookie-isolation-regression.py",
+    "sha256": "271313c88608ad155a8a137d9fe7373e1d61b7331bab0f280bb505af607503d2"
+  },
+  "license": {
+    "path": "tools/opensandbox-server-successor/v1/LICENSE",
+    "sha256": "50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a"
+  },
+  "build": {
+    "dockerfile": "tools/opensandbox-server-successor/v1/Dockerfile",
+    "dockerfileSha256": "6fd13a46697a2b2fe6f404053bf410052f3033022e3ece13708ca97aa90b092b"
+  }
+}

@@ -531,3 +531,243 @@ func TestExchangeSandboxPTYRetriesBeforeWritingInput(t *testing.T) {
 		t.Fatal("input was not delivered after safe attach retry")
 	}
 }
+
+func TestExchangeSandboxPTYRecoversAuthoritativeExitAfterClose(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		closeFirst func(*websocket.Conn)
+		exitFrame  string
+	}{
+		{name: "normal-exit-zero", closeFirst: func(connection *websocket.Conn) {
+			_ = connection.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		}, exitFrame: `{"type":"exit","exit_code":0}`},
+		{name: "abrupt-formatted-exit-seven", closeFirst: func(connection *websocket.Conn) {
+			_ = connection.UnderlyingConn().Close()
+		}, exitFrame: "{\n  \"type\": \"exit\",\n  \"exit_code\": 7\n}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace",
+				Sandbox: "sandbox", Operation: "operation", Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+			replay := append([]byte{3, 0, 0, 0, 0, 0, 0, 0, 0}, []byte("done\n")...)
+			var connections, observations atomic.Int32
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/v1/sandboxes/runtime-alpha":
+					_ = json.NewEncoder(writer).Encode(map[string]any{"id": "runtime-alpha", "metadata": identity.Labels(), "status": map[string]string{"state": "Running"}})
+				case "/v1/sandboxes/runtime-alpha/endpoints/44772":
+					_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/runtime-alpha/proxy/44772", "headers": map[string]string{}})
+				case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha":
+					observations.Add(1)
+					_ = json.NewEncoder(writer).Encode(map[string]any{"session_id": "session-alpha", "running": false, "output_offset": 5})
+				case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha/ws":
+					connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+					if err != nil {
+						return
+					}
+					defer connection.Close()
+					if connections.Add(1) == 1 {
+						_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+						test.closeFirst(connection)
+						return
+					}
+					if request.URL.Query().Get("since") != "0" || request.URL.Query().Get("takeover") != "1" {
+						_ = connection.WriteJSON(map[string]string{"type": "invalid-request"})
+						return
+					}
+					_ = connection.WriteMessage(websocket.BinaryMessage, replay)
+					_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+					_ = connection.WriteMessage(websocket.TextMessage, []byte(test.exitFrame))
+					_ = connection.WriteControl(websocket.CloseMessage,
+						websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
+
+			client, err := opensandbox.New(server.URL, "test-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			since, takeover, pty := int64(0), true, false
+			frames, offset, running, err := exchangeSandboxPTY(context.Background(), client,
+				opensandbox.PTYInput{Identity: identity, RuntimeID: "runtime-alpha"},
+				platform.RemoteWorkerSandboxPTYCommand{SessionID: "session-alpha", Since: &since, Takeover: &takeover, PTY: &pty})
+			if err != nil || running || offset != 5 || len(frames) != 2 || connections.Load() != 2 || observations.Load() != 1 {
+				t.Fatalf("frames=%v offset=%d running=%v connections=%d observations=%d err=%v",
+					frames, offset, running, connections.Load(), observations.Load(), err)
+			}
+			binary, binaryErr := base64.RawURLEncoding.Strict().DecodeString(frames[0].PayloadBase64URL)
+			control, controlErr := base64.RawURLEncoding.Strict().DecodeString(frames[1].PayloadBase64URL)
+			if binaryErr != nil || controlErr != nil || frames[0].MessageType != "binary" || !bytes.Equal(binary, replay) ||
+				frames[1].MessageType != "text" || string(control) != test.exitFrame {
+				t.Fatalf("binary=%v control=%q binaryErr=%v controlErr=%v", binary, control, binaryErr, controlErr)
+			}
+		})
+	}
+}
+
+func TestExchangeSandboxPTYRejectsMissingInvalidOrDuplicateRecoveredExit(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		frames      []string
+		abruptFirst bool
+		connections int32
+	}{
+		{name: "missing-after-normal-close", connections: 4},
+		{name: "missing-after-abrupt-close", abruptFirst: true, connections: 4},
+		{name: "missing-code", frames: []string{`{"type":"exit"}`}, connections: 2},
+		{name: "out-of-range", frames: []string{`{"type":"exit","exit_code":256}`}, connections: 2},
+		{name: "duplicate", frames: []string{`{"type":"exit","exit_code":7}`, `{"type":"exit","exit_code":7}`}, connections: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace",
+				Sandbox: "sandbox", Operation: "operation", Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+			var connections atomic.Int32
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/v1/sandboxes/runtime-alpha":
+					_ = json.NewEncoder(writer).Encode(map[string]any{"id": "runtime-alpha", "metadata": identity.Labels(), "status": map[string]string{"state": "Running"}})
+				case "/v1/sandboxes/runtime-alpha/endpoints/44772":
+					_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/runtime-alpha/proxy/44772", "headers": map[string]string{}})
+				case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha":
+					_ = json.NewEncoder(writer).Encode(map[string]any{"session_id": "session-alpha", "running": false, "output_offset": 0})
+				case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha/ws":
+					connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+					if err != nil {
+						return
+					}
+					defer connection.Close()
+					_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+					if connections.Add(1) == 1 {
+						if test.abruptFirst {
+							_ = connection.UnderlyingConn().Close()
+							return
+						}
+						_ = connection.WriteControl(websocket.CloseMessage,
+							websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+						return
+					}
+					for _, frame := range test.frames {
+						_ = connection.WriteMessage(websocket.TextMessage, []byte(frame))
+					}
+					_ = connection.WriteControl(websocket.CloseMessage,
+						websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
+
+			client, err := opensandbox.New(server.URL, "test-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			since, takeover, pty := int64(0), true, false
+			frames, offset, running, err := exchangeSandboxPTY(context.Background(), client,
+				opensandbox.PTYInput{Identity: identity, RuntimeID: "runtime-alpha"},
+				platform.RemoteWorkerSandboxPTYCommand{SessionID: "session-alpha", Since: &since, Takeover: &takeover, PTY: &pty})
+			if !errors.Is(err, opensandbox.ErrUnavailable) || frames != nil || offset != 0 || running || connections.Load() != test.connections {
+				t.Fatalf("frames=%v offset=%d running=%v connections=%d err=%v", frames, offset, running, connections.Load(), err)
+			}
+		})
+	}
+}
+
+func TestExchangeSandboxPTYReattachesWhenObservationHasMoreOutput(t *testing.T) {
+	identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace",
+		Sandbox: "sandbox", Operation: "operation", Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+	replay := append([]byte{3, 0, 0, 0, 0, 0, 0, 0, 0}, []byte("more\n")...)
+	var connections atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/runtime-alpha":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "runtime-alpha", "metadata": identity.Labels(), "status": map[string]string{"state": "Running"}})
+		case "/v1/sandboxes/runtime-alpha/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/runtime-alpha/proxy/44772", "headers": map[string]string{}})
+		case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"session_id": "session-alpha", "running": true, "output_offset": 5})
+		case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha/ws":
+			connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+			if err != nil {
+				return
+			}
+			defer connection.Close()
+			if connections.Add(1) == 1 {
+				_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+				_ = connection.UnderlyingConn().Close()
+				return
+			}
+			_ = connection.WriteMessage(websocket.BinaryMessage, replay)
+			_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+			_, _, _ = connection.ReadMessage()
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensandbox.New(server.URL, "test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	since, takeover, pty := int64(0), true, false
+	frames, offset, running, err := exchangeSandboxPTY(context.Background(), client,
+		opensandbox.PTYInput{Identity: identity, RuntimeID: "runtime-alpha"},
+		platform.RemoteWorkerSandboxPTYCommand{SessionID: "session-alpha", Since: &since, Takeover: &takeover, PTY: &pty})
+	if err != nil || !running || offset != 5 || len(frames) != 1 || connections.Load() != 2 {
+		t.Fatalf("frames=%v offset=%d running=%v connections=%d err=%v", frames, offset, running, connections.Load(), err)
+	}
+}
+
+func TestExchangeSandboxPTYRejectsExitBeforeObservedOutputTail(t *testing.T) {
+	identity := opensandbox.Identity{Tenant: "tenant", Project: "project", Workspace: "workspace",
+		Sandbox: "sandbox", Operation: "operation", Generation: 1, SpecDigest: "sha256:" + strings.Repeat("a", 64)}
+	replay := append([]byte{3, 0, 0, 0, 0, 0, 0, 0, 0}, []byte("short")...)
+	var connections atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/runtime-alpha":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "runtime-alpha", "metadata": identity.Labels(), "status": map[string]string{"state": "Running"}})
+		case "/v1/sandboxes/runtime-alpha/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"endpoint": server.URL + "/v1/sandboxes/runtime-alpha/proxy/44772", "headers": map[string]string{}})
+		case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"session_id": "session-alpha", "running": false, "output_offset": 100})
+		case "/v1/sandboxes/runtime-alpha/proxy/44772/pty/session-alpha/ws":
+			connection, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+			if err != nil {
+				return
+			}
+			defer connection.Close()
+			_ = connection.WriteJSON(map[string]string{"type": "connected", "session_id": "session-alpha", "mode": "pipe"})
+			if connections.Add(1) == 1 {
+				_ = connection.UnderlyingConn().Close()
+				return
+			}
+			_ = connection.WriteMessage(websocket.BinaryMessage, replay)
+			_ = connection.WriteMessage(websocket.TextMessage, []byte(`{"type":"exit","exit_code":7}`))
+			_ = connection.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensandbox.New(server.URL, "test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	since, takeover, pty := int64(0), true, false
+	frames, offset, running, err := exchangeSandboxPTY(context.Background(), client,
+		opensandbox.PTYInput{Identity: identity, RuntimeID: "runtime-alpha"},
+		platform.RemoteWorkerSandboxPTYCommand{SessionID: "session-alpha", Since: &since, Takeover: &takeover, PTY: &pty})
+	if !errors.Is(err, opensandbox.ErrUnavailable) || frames != nil || offset != 0 || running || connections.Load() != 2 {
+		t.Fatalf("frames=%v offset=%d running=%v connections=%d err=%v", frames, offset, running, connections.Load(), err)
+	}
+}

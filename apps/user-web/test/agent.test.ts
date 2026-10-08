@@ -1,0 +1,433 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  ClientError,
+  type ManagedAgentEvent,
+  type ManagedAgentExecution,
+  type ManagedAgentSession,
+} from "@cloud-agents/cloud-agent-platform-sdk/platform";
+
+import {
+  AgentEventStreamError,
+  agentArtifacts,
+  agentErrorMessage,
+  agentInteractions,
+  executionMessageText,
+  isAcceptedAgentSubmission,
+  isAgentPollingFatal,
+  isExecutionActive,
+  loadAgentResources,
+  mergeAgentEvents,
+  readAgentEventBatch,
+  readAgentSelection,
+  replaceAgentExecution,
+  replaceAgentSession,
+  writeAgentSelection,
+  type AgentClient,
+} from "../src/agent";
+
+function storage(initial: string | null = null) {
+  let value = initial;
+  return {
+    getItem: vi.fn(() => value),
+    setItem: vi.fn((_key: string, next: string) => {
+      value = next;
+    }),
+    value: () => value,
+  };
+}
+
+function session(uid: string, updatedAt: string): ManagedAgentSession {
+  return { metadata: { uid, updatedAt }, spec: { state: "active" } } as ManagedAgentSession;
+}
+
+function execution(uid: string, turnId: string, updatedAt: string): ManagedAgentExecution {
+  return {
+    metadata: { uid, turnId, updatedAt, sessionId: "session-alpha" },
+    spec: { generation: 1, state: "running" },
+  } as ManagedAgentExecution;
+}
+
+function event(uid: string, sequence: string): ManagedAgentEvent {
+  return { metadata: { uid, sequence } } as ManagedAgentEvent;
+}
+
+function messageAt(value: ManagedAgentExecution, index: number) {
+  const message = value.messages?.[index];
+  if (message === undefined) throw new Error(`missing test message ${index}`);
+  return message;
+}
+
+describe("Agent server authority", () => {
+  it("loads paginated Sessions and Executions, then hydrates the saved Execution", async () => {
+    const selected = execution("execution-selected", "turn-selected", "2026-09-02T02:00:00Z");
+    const client = {
+      listManagedAgentSessions: vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: {
+            sessions: [session("session-old", "2026-09-02T00:00:00Z")],
+            nextPageToken: "sessions-next",
+          },
+        })
+        .mockResolvedValueOnce({
+          value: { sessions: [session("session-selected", "2026-09-02T01:00:00Z")] },
+        }),
+      listManagedAgentExecutions: vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: {
+            executions: [execution("execution-old", "turn-old", "2026-09-02T00:00:00Z")],
+            nextPageToken: "executions-next",
+          },
+        })
+        .mockResolvedValueOnce({ value: { executions: [selected] } }),
+      getManagedAgentExecution: vi.fn().mockResolvedValue({
+        value: { ...selected, messages: [{ messageType: "Progress" }] },
+      }),
+    } as unknown as AgentClient;
+
+    const resources = await loadAgentResources(
+      client,
+      "tenant-local",
+      "project-alpha",
+      "session-selected",
+      "turn-selected",
+      "execution-selected",
+      new AbortController().signal,
+    );
+
+    expect(resources.sessions.map(({ metadata }) => metadata.uid)).toEqual([
+      "session-selected",
+      "session-old",
+    ]);
+    expect(resources.session?.metadata.uid).toBe("session-selected");
+    expect(resources.execution?.metadata.uid).toBe("execution-selected");
+    expect(resources.execution?.messages).toHaveLength(1);
+    expect(client.listManagedAgentSessions).toHaveBeenCalledTimes(2);
+    expect(client.listManagedAgentExecutions).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers only the exact pending identity and retains missing or mismatched retries", () => {
+    const pending = {
+      sessionId: "session-alpha",
+      turnId: "turn-alpha",
+      executionId: "execution-alpha",
+    };
+    const accepted = execution("execution-alpha", "turn-alpha", "2026-09-02T02:00:00Z");
+    expect(isAcceptedAgentSubmission(pending, "session-alpha", accepted)).toBe(true);
+    expect(isAcceptedAgentSubmission(undefined, "session-alpha", accepted)).toBe(false);
+    expect(isAcceptedAgentSubmission(pending, "session-alpha", undefined)).toBe(false);
+    expect(isAcceptedAgentSubmission(pending, "session-other", accepted)).toBe(false);
+    for (const field of ["sessionId", "turnId", "uid"] as const) {
+      for (const value of ["", "different"]) {
+        expect(
+          isAcceptedAgentSubmission(pending, "session-alpha", {
+            ...accepted,
+            metadata: { ...accepted.metadata, [field]: value },
+          }),
+        ).toBe(false);
+      }
+    }
+    expect(
+      isAcceptedAgentSubmission({ sessionId: "", turnId: "", executionId: "" }, "", {
+        ...accepted,
+        metadata: { ...accepted.metadata, sessionId: "", turnId: "", uid: "" },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("Agent event polling", () => {
+  it("keeps only the latest 32 unique events across polling batches", () => {
+    let current: readonly ManagedAgentEvent[] = [];
+    for (let offset = 0; offset < 512; offset += 64) {
+      const incoming = Object.freeze(
+        Array.from({ length: 64 }, (_, index) => {
+          const sequence = String(offset + 64 - index);
+          return event(`event-${sequence}`, sequence);
+        }),
+      );
+      current = mergeAgentEvents(current, [...incoming, incoming[0]!]);
+      expect(current.map(({ metadata }) => metadata.sequence)).toEqual(
+        Array.from({ length: 32 }, (_, index) => String(offset + 33 + index)),
+      );
+      expect(incoming[0]?.metadata.sequence).toBe(String(offset + 64));
+    }
+  });
+
+  it("reuses the current timeline when polling returns no events", () => {
+    const current = Object.freeze([event("event-1", "1")]);
+    expect(mergeAgentEvents(current, [])).toBe(current);
+  });
+
+  it("advances through bounded continuation pages and de-duplicates repeated events", async () => {
+    const duplicate = event("event-1", "1");
+    const client = {
+      listManagedAgentEvents: vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: { events: [duplicate], nextCursor: "cursor-1", hasMore: true },
+        })
+        .mockResolvedValueOnce({
+          value: {
+            events: [duplicate, event("event-2", "2")],
+            nextCursor: "cursor-2",
+            hasMore: false,
+          },
+        }),
+    } as unknown as AgentClient;
+
+    const batch = await readAgentEventBatch(
+      client,
+      "tenant-local",
+      "project-alpha",
+      "session-alpha",
+      "",
+      new AbortController().signal,
+    );
+
+    expect(batch.nextCursor).toBe("cursor-2");
+    expect(batch.hasMore).toBe(false);
+    expect(mergeAgentEvents([], batch.events).map(({ metadata }) => metadata.uid)).toEqual([
+      "event-1",
+      "event-2",
+    ]);
+  });
+
+  it("stops when an event page does not advance its cursor", async () => {
+    const client = {
+      listManagedAgentEvents: vi.fn().mockResolvedValue({
+        value: { events: [event("event-1", "1")], nextCursor: "cursor-same", hasMore: false },
+      }),
+    } as unknown as AgentClient;
+
+    await expect(
+      readAgentEventBatch(
+        client,
+        "tenant-local",
+        "project-alpha",
+        "session-alpha",
+        "cursor-same",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("cursor did not advance");
+  });
+
+  it("stops when a continuation page moves back to an earlier cursor", async () => {
+    const client = {
+      listManagedAgentEvents: vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: { events: [event("event-2", "2")], nextCursor: "cursor-2", hasMore: true },
+        })
+        .mockResolvedValueOnce({
+          value: { events: [event("event-3", "3")], nextCursor: "cursor-1", hasMore: false },
+        }),
+    } as unknown as AgentClient;
+
+    await expect(
+      readAgentEventBatch(
+        client,
+        "tenant-local",
+        "project-alpha",
+        "session-alpha",
+        "cursor-1",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("repeated a cursor");
+  });
+
+  it("propagates AbortSignal cancellation", async () => {
+    const controller = new AbortController();
+    const client = {
+      listManagedAgentEvents: vi.fn(
+        (...args: unknown[]) =>
+          new Promise((_resolve, reject) => {
+            const signal = args.at(-1) as AbortSignal;
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      ),
+    } as unknown as AgentClient;
+    const pending = readAgentEventBatch(
+      client,
+      "tenant-local",
+      "project-alpha",
+      "session-alpha",
+      "",
+      controller.signal,
+    );
+    controller.abort(new DOMException("cancelled", "AbortError"));
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("Agent resource reconciliation", () => {
+  it("replaces by UID, puts the fresh resource first, and preserves the input list", () => {
+    const oldSession = session("session-old", "2026-09-02T00:00:00Z");
+    const otherSession = session("session-other", "2026-09-02T01:00:00Z");
+    const refreshedSession = session("session-old", "2026-09-02T02:00:00Z");
+    const sessions = Object.freeze([oldSession, otherSession]);
+    expect(replaceAgentSession(sessions, refreshedSession)).toEqual([
+      refreshedSession,
+      otherSession,
+    ]);
+    expect(sessions).toEqual([oldSession, otherSession]);
+    expect(replaceAgentSession([], refreshedSession)).toEqual([refreshedSession]);
+
+    const oldExecution = execution("execution-old", "turn-old", "2026-09-02T00:00:00Z");
+    const otherExecution = execution("execution-other", "turn-other", "2026-09-02T01:00:00Z");
+    const refreshedExecution = execution("execution-old", "turn-old", "2026-09-02T02:00:00Z");
+    const executions = Object.freeze([oldExecution, otherExecution]);
+    expect(replaceAgentExecution(executions, refreshedExecution)).toEqual([
+      refreshedExecution,
+      otherExecution,
+    ]);
+    expect(executions).toEqual([oldExecution, otherExecution]);
+  });
+});
+
+describe("Agent recovery and errors", () => {
+  it("restores only project-bound identifiers and event cursor", () => {
+    const target = storage();
+    writeAgentSelection(target, {
+      tenantId: "tenant-local",
+      projectId: "project-alpha",
+      sessionId: "session-alpha",
+      turnId: "turn-alpha",
+      executionId: "execution-alpha",
+      eventCursor: "opaque-cursor",
+    });
+
+    expect(readAgentSelection(target, "tenant-local", "project-alpha").eventCursor).toBe(
+      "opaque-cursor",
+    );
+    expect(readAgentSelection(target, "tenant-local", "project-other").sessionId).toBe("");
+    expect(target.value()).not.toContain("Bearer");
+  });
+
+  it("distinguishes authentication and authorization failures", () => {
+    expect(agentErrorMessage(new ClientError("events", 401))).toContain("expired");
+    expect(agentErrorMessage(new ClientError("events", 403))).toContain("cannot run Agents");
+  });
+
+  it("retries transient polling failures but stops on authority and cursor failures", () => {
+    expect(isAgentPollingFatal(new ClientError("events", 401))).toBe(true);
+    expect(isAgentPollingFatal(new ClientError("events", 403))).toBe(true);
+    expect(isAgentPollingFatal(new ClientError("events", 404))).toBe(false);
+    expect(isAgentPollingFatal(new ClientError("events", 503))).toBe(false);
+    expect(isAgentPollingFatal(new AgentEventStreamError("cursor stalled"))).toBe(true);
+    expect(isAgentPollingFatal(new Error("network disconnected"))).toBe(false);
+  });
+
+  it("polls only queued and running Executions", () => {
+    expect(
+      isExecutionActive(execution("execution-running", "turn-1", "2026-09-02T00:00:00Z")),
+    ).toBe(true);
+    expect(
+      isExecutionActive({
+        ...execution("execution-done", "turn-2", "2026-09-02T00:00:00Z"),
+        spec: { generation: 1, state: "succeeded" },
+      } as ManagedAgentExecution),
+    ).toBe(false);
+  });
+});
+
+describe("Agent interaction and Artifact payloads", () => {
+  it("keeps only current-generation interactions and de-duplicates request IDs", () => {
+    const value = {
+      ...execution("execution-alpha", "turn-alpha", "2026-09-02T00:00:00Z"),
+      messages: [
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: {
+            requestId: "approval-1",
+            interactionType: "approval",
+            summary: "Run tests",
+            command: "bun test",
+          },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: { requestId: "approval-1", interactionType: "approval" },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 0,
+          messageType: "InteractionRequest",
+          payload: { requestId: "stale", interactionType: "approval" },
+        },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "InteractionRequest",
+          payload: {
+            requestId: "input-1",
+            interactionType: "user-input",
+            questions: [
+              {
+                id: "scope",
+                header: "Scope",
+                question: "Choose files",
+                options: [{ label: "Focused", description: "Only changed files" }],
+                multiSelect: false,
+              },
+            ],
+          },
+        },
+      ],
+    } as unknown as ManagedAgentExecution;
+
+    const interactions = agentInteractions(value);
+    expect(interactions.map(({ requestId }) => requestId)).toEqual(["approval-1", "input-1"]);
+    expect(interactions[0]).toMatchObject({ summary: "Run tests", details: ["command: bun test"] });
+    expect(interactions[1]).toMatchObject({
+      kind: "user-input",
+      questions: [{ id: "scope", options: [{ label: "Focused" }] }],
+    });
+    expect(executionMessageText(messageAt(value, 3))).toBe("Agent requested user input.");
+  });
+
+  it("retains the backend message index used by the Artifact download API", () => {
+    const value = {
+      ...execution("execution-alpha", "turn-alpha", "2026-09-02T00:00:00Z"),
+      messages: [
+        { executionId: "execution-alpha", generation: 1, messageType: "Progress" },
+        {
+          executionId: "execution-alpha",
+          generation: 1,
+          messageType: "ArtifactCandidate",
+          payload: {
+            artifact: {
+              path: "provider-output/result.diff",
+              kind: "diff",
+              sourceRoot: "runtime-output",
+              contentType: "text/x-diff",
+              reportedSize: 42,
+            },
+          },
+        },
+      ],
+    } as unknown as ManagedAgentExecution;
+
+    expect(agentArtifacts(value)).toEqual([
+      {
+        executionId: "execution-alpha",
+        generation: 1,
+        messageIndex: 1,
+        path: "provider-output/result.diff",
+        kind: "diff",
+        sourceRoot: "runtime-output",
+        contentType: "text/x-diff",
+        reportedSize: 42,
+      },
+    ]);
+    expect(executionMessageText(messageAt(value, 1))).toBe(
+      "Artifact ready: provider-output/result.diff",
+    );
+  });
+});

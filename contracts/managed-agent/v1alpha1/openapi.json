@@ -344,6 +344,7 @@
           { "$ref": "#/components/parameters/TenantId" },
           { "$ref": "#/components/parameters/ProjectId" },
           { "$ref": "#/components/parameters/RequestId" },
+          { "$ref": "#/components/parameters/SandboxIdFilter" },
           { "$ref": "#/components/parameters/ProjectPageSize" },
           { "$ref": "#/components/parameters/ProjectPageToken" }
         ],
@@ -1454,6 +1455,15 @@
         "required": false,
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/page-token.schema.json"
+        }
+      },
+      "SandboxIdFilter": {
+        "name": "sandboxId",
+        "in": "query",
+        "required": false,
+        "description": "Return only Sessions bound to this Sandbox. Continuation tokens are bound to the exact filter scope.",
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
       },
       "SessionId": {

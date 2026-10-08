@@ -1,0 +1,15 @@
+{
+  "name": "cloud-agents-worker-tools",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "npm@11.16.0",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1",
+    "@openai/codex": "0.154.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk-linux-arm64": "0.3.207",
+    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.207"
+  }
+}

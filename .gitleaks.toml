@@ -1,0 +1,42 @@
+# Keep Gitleaks' default detectors active; the paths below are explicit synthetic fixtures only.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Redacted synthetic fixture and generated profile paths"
+paths = [
+  # Historical synthetic target-probe evidence contains sha256 actor IDs; keep the
+  # generic detector active for all other history and current source paths.
+  "^docs/plan/cloud-agents-platform/evidence/admin-three-target-probe-refresh-20260905\\.json$",
+  "^docs/plan/cloud-agents-platform/evidence/admin-three-target-probes-20260905\\.json$",
+  "^contracts/common/v1alpha1/fixtures/golden/idempotency\\.json$",
+  "^contracts/generated/platform/v1alpha1/identity-verifier-registry-v1\\.json$",
+  "^contracts/platform-adapter/v1alpha1/fixtures/golden\\.json$",
+  "^contracts/worker/v1alpha1/fixtures/golden\\.json$",
+  "^contracts/worker/v1alpha1/fixtures/negative\\.json$",
+  "^(?:scripts/lib|test/scripts)/platform-durable-project-create-identifiers\\.test\\.ts$",
+  "^(?:scripts|test/e2e)/test-foundation-intents\\.mjs$",
+  "^services/control-plane/cmd/cloud-agentsctl/main_test\\.go$",
+  "^services/control-plane/internal/authn/profile_generated\\.go$",
+  "^services/control-plane/internal/managedagent/durable_runtime_execution_test\\.go$",
+  "^services/control-plane/internal/managedagent/lifecycle_test\\.go$",
+  "^services/control-plane/internal/server/capability_http_test\\.go$",
+  "^services/control-plane/internal/server/deployment_target_http_test\\.go$",
+  "^services/control-plane/internal/server/localdev_project_claim_http_test\\.go$",
+  "^services/control-plane/internal/server/localdev_project_create_http_test\\.go$",
+  "^services/control-plane/internal/server/managed_agent_create_project_test\\.go$",
+  "^services/control-plane/internal/server/managed_agent_execution_http_test\\.go$",
+  "^services/control-plane/internal/server/managed_agent_session_http_test\\.go$",
+  "^services/control-plane/internal/server/managed_agent_turn_http_test\\.go$",
+  "^services/control-plane/internal/server/project_http_test\\.go$",
+  "^services/control-plane/internal/store/postgres/durable_coordination_test\\.go$",
+  "^services/control-plane/internal/store/postgres/managed_agent_execution_test\\.go$",
+  "^services/control-plane/internal/store/postgres/managed_agent_session_test\\.go$",
+  "^services/control-plane/internal/store/postgres/managed_agent_turn_test\\.go$",
+  "^services/worker/operation_admission_test\\.go$",
+  "^tools/platform-identity-verifier/v1/fixtures/golden/identity-verifier-registry-source-v1\\.json$",
+  "^tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-caller-selected-algorithm\\.json$",
+  "^tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-http-authority\\.json$",
+  "^tools/platform-identity-verifier/v1/fixtures/negative/identity-verifier-multiple-audiences\\.json$",
+  "^tools/platform-identity-verifier/v1/schemas/identity-verifier-registry-source-v1\\.schema\\.json$",
+]

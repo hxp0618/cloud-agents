@@ -300,11 +300,12 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 }
 
 func (server *ManagedAgentExecutionHTTPServer) visibleExecutionMessages(execution internalmanagedagent.ExecutionSnapshot) []runtimeprotocol.Message {
-	messages := append([]runtimeprotocol.Message(nil), execution.Messages...)
 	if execution.State == internalmanagedagent.ExecutionRunning {
-		messages = append(messages, server.runner.ActiveMessages(runtimeExecutionReference(execution.Scope.TenantID, execution.Scope.ProjectID, execution.SessionID, execution.TurnID, execution.ExecutionID, execution.Generation))...)
+		if active := server.runner.ActiveMessages(runtimeExecutionReference(execution.Scope.TenantID, execution.Scope.ProjectID, execution.SessionID, execution.TurnID, execution.ExecutionID, execution.Generation)); len(active) > 0 {
+			return append([]runtimeprotocol.Message(nil), active...)
+		}
 	}
-	return messages
+	return append([]runtimeprotocol.Message(nil), execution.Messages...)
 }
 
 func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
@@ -644,7 +645,7 @@ func managedAgentArtifactPath(value string) (tenantID, projectID, sessionID, tur
 		}
 	}
 	parsed, err := strconv.Atoi(parts[10])
-	if err != nil || parsed < 0 || parsed >= 64 || strconv.Itoa(parsed) != parts[10] {
+	if err != nil || parsed < 0 || parsed >= 128 || strconv.Itoa(parsed) != parts[10] {
 		return "", "", "", "", "", 0, false
 	}
 	return parts[0], parts[2], parts[4], parts[6], parts[8], parsed, true

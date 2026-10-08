@@ -1,12 +1,11 @@
 {
-  "formatVersion": "cloud-agents-generated-sdk-manifest/v1",
+  "formatVersion": "cloud-agents-generated-sdk-manifest/v2",
   "profile": "cloud-agents-common-identity/v1alpha1",
   "status": "GENERATED_NON_GATE_EVIDENCE",
   "notGateClosure": true,
   "contract": {
-    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37",
-    "inputManifestSha256": "sha256:2253e5baab41fb44d276214b0007b58ed92b5736ef29ab0481628038e8912cbf",
+    "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "inputManifestSha256": "sha256:cfb4ec811bc54b27868db68101adade4af64dc856ec6322ea6c78d14ec92173b",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-nfc.json",
@@ -29,18 +28,31 @@
   },
   "generator": {
     "id": "platform-common-identity-sdk-generator",
-    "version": "v1",
+    "version": "v2",
     "entrypoint": "scripts/generate-platform-identity-sdks.ts",
-    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:80f78cf57dc661499bd443542d672afd87c3682cbd8c2b2f30cba707e076fc1b",
+    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "sourceManifestSha256": "sha256:3b2dc99d9fdacf78ff1e258bd92d47b86702fb7f17677bf1b5b3e800b4e7adef",
     "sources": [
       "scripts/generate-platform-identity-sdks.ts",
-      "scripts/lib/platform-identity-sdk.test.ts",
       "scripts/lib/platform-identity-sdk.ts",
+      "scripts/lib/platform-sdk-manifest.ts",
       "scripts/templates/platform-identity-sdk-go.tmpl",
       "scripts/templates/platform-identity-sdk-typescript.tmpl"
     ],
-    "configDigest": "sha256:28e47b77b878187f02f6acc3f875baa85aa13321c65b56c4d71136b3f96f9d75"
+    "dependencies": {
+      "mise": {
+        "path": ".mise.toml",
+        "sha256": "sha256:be2bf934f1fde8d46e76b1a8b7a19ce7b4bb88d5ed9719b83e250497943f15af"
+      },
+      "rootPackage": {
+        "path": "package.json",
+        "sha256": "sha256:6404de94545152198633c8c3027b5ba73a9d900f6ffb594782fb3003326401d1"
+      },
+      "bunLock": {
+        "path": "bun.lock",
+        "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+      }
+    }
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -51,15 +63,30 @@
     "publication": "NOT_AUTHORIZED"
   },
   "language": "typescript",
-  "packageIdentity": "@synara/cloud-agent-platform-sdk",
+  "packageIdentity": "@cloud-agents/cloud-agent-platform-sdk",
+  "packagePrivate": true,
   "runtimeDependencies": [],
-  "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:2813d9584d9fc3a5f680f666ad1ff8bc47c05e9187cf75b2011673ca07b10f02",
+  "dependencyFiles": {
+    "package": {
+      "path": "sdk/typescript/package.json",
+      "sha256": "sha256:0efdd00a627ef9830cf99ba19c23c3c5104e2bc804bb82d9a7c30a623fde5179"
+    },
+    "bunLock": {
+      "path": "bun.lock",
+      "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+    },
+    "notice": {
+      "path": "sdk/typescript/THIRD_PARTY_NOTICES.md",
+      "sha256": "sha256:6adc822035361a6eb61c6b1fd2646159b971eabaf2e85c121860ce7b0d32c432"
+    }
+  },
+  "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-size-v1",
+  "outputTreeSha256": "sha256:528c0b96158e38988322b877fabc041ed0505aca80195b090ad8c662da455321",
   "outputs": [
     {
       "path": "sdk/typescript/src/index.ts",
-      "sha256": "sha256:6875abac7be07405f6b139d35889ceac41f0cff6e8e8084cfcb5aa8e2efc6ddf",
-      "sizeBytes": 12982
+      "sha256": "sha256:e1aeed9679dea8ca56d20513e9826682eccf533d35bd8d1fbfbf1e8dd4f04c1a",
+      "sizeBytes": 12689
     }
   ]
 }

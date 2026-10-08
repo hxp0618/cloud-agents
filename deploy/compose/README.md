@@ -78,6 +78,13 @@ docker compose --env-file .env \
   up --build
 ```
 
+The Worker build reads `CLOUD_AGENTS_DEBIAN_MIRROR` and
+`CLOUD_AGENTS_DEBIAN_SECURITY_MIRROR` from the env file. Both default to the
+official Debian Bookworm mirrors; set them to an approved reachable mirror
+when the deployment network cannot reach the defaults. These values affect
+only the image build and must not contain credentials or host-local proxy
+addresses.
+
 Copy `runtime.env.example` for the non-secret Provider Host settings. Keep
 credentials outside the archives in the referenced directory, using the
 Runtime's existing anonymous-FD envelopes. Files are tenant-bound:
@@ -321,7 +328,7 @@ Lease, validates the target and Lease generations before deletion, and never
 deletes target Secrets or named credential volumes.
 
 Run the real Kubernetes target acceptance with
-`sh scripts/test-platform-kubernetes-target.sh`.
+`sh test/e2e/test-platform-kubernetes-target.sh`.
 It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_ADMIN_TOKEN_FILE`,
 `CLOUD_AGENTS_USER_TOKEN_FILE`, `CLOUD_AGENTS_TENANT`, `CLOUD_AGENTS_PROJECT`,
 `CLOUD_AGENTS_TARGET_ID`,
@@ -343,7 +350,7 @@ verify idempotency, runs orphan cleanup, and retains non-secret JSON/JSONL
 results.
 
 Run the real SSH target acceptance with
-`sh scripts/test-platform-ssh-target.sh`. It uses the same Control Plane inputs
+`sh test/e2e/test-platform-ssh-target.sh`. It uses the same Control Plane inputs
 plus `CLOUD_AGENTS_PROVIDER_VOLUME_REF`, `CLOUD_AGENTS_SSH_HOST`,
 `CLOUD_AGENTS_SSH_USER`, `CLOUD_AGENTS_SSH_IDENTITY_FILE`, and
 `CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE`; set `CLOUD_AGENTS_SSH_PORT` when it is not
@@ -363,7 +370,7 @@ real Claude Code Turn against its independently registered Docker target, pass
 an absolute deployment-owned credential directory as the second argument:
 
 ```sh
-./scripts/test-platform-compose.sh RELEASE_DIRECTORY /absolute/provider-credentials
+./test/e2e/test-platform-compose.sh RELEASE_DIRECTORY /absolute/provider-credentials
 ```
 
 That directory must contain the two inputs selected by the smoke,

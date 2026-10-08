@@ -132,6 +132,11 @@ func TestTransportAndPaginationFailClosed(t *testing.T) {
 			t.Fatal(endpoint, err)
 		}
 	}
+	first, _ := New("https://example.com", "key-one")
+	second, _ := New("https://example.org", "key-two")
+	if first.http.Transport != second.http.Transport || first.http.Transport.(*http.Transport).Proxy != nil {
+		t.Fatal("per-command clients must share one proxy-free pooled transport")
+	}
 	for _, body := range []string{`{"items":[]}`, `{"items":[],"pagination":{"page":1}}`, strings.Repeat("x", (1<<20)+1)} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
 		client, _ := New(server.URL, "key")
@@ -369,6 +374,64 @@ func TestNetworkPolicyCreateAndVerification(t *testing.T) {
 	if err := client.VerifyNetworkPolicy(context.Background(), id, "physical-1", policy); !errors.Is(err, ErrPolicyUnenforced) {
 		t.Fatalf("partial enforcement error = %v", err)
 	}
+}
+
+func TestVerifyNetworkPolicyRetriesTransientPolicyReadiness(t *testing.T) {
+	id := identity()
+	policy := &NetworkPolicy{DefaultAction: "deny", Egress: []NetworkRule{{Action: "allow", Target: "api.openai.com"}}}
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/sandboxes/physical-1":
+			item := sandbox{ID: "physical-1", Metadata: id.Labels()}
+			item.Status.State = "Running"
+			_ = json.NewEncoder(writer).Encode(item)
+		case "/v1/sandboxes/physical-1/endpoints/44772":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/44772",
+				"headers":  map[string]string{},
+			})
+		case "/v1/sandboxes/physical-1/endpoints/18080":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"endpoint": server.URL + "/v1/sandboxes/physical-1/proxy/18080",
+				"headers":  map[string]string{},
+			})
+		case "/v1/sandboxes/physical-1/proxy/44772/ping":
+			_, _ = writer.Write([]byte("pong"))
+		case "/v1/sandboxes/physical-1/proxy/18080/policy":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"status": "ok", "enforcementMode": "dns+nft", "policy": policy,
+			})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "private-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := client.http.Transport
+	transientErrors := 2
+	client.http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/v1/sandboxes/physical-1/proxy/18080/policy" && transientErrors > 0 {
+			transientErrors--
+			return nil, errors.New("connection refused")
+		}
+		return transport.RoundTrip(request)
+	})
+	if err := client.VerifyNetworkPolicy(context.Background(), id, "physical-1", policy); err != nil {
+		t.Fatal(err)
+	}
+	if transientErrors != 0 {
+		t.Fatalf("transient policy errors = %d, want all retries consumed", transientErrors)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }
 
 func TestWaitReadyRequiresExecdHealth(t *testing.T) {

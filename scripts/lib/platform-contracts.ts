@@ -459,7 +459,7 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
   };
 }
 
-function validateP1A1HttpIdempotencyBinding(
+export function validateP1A1HttpIdempotencyBinding(
   openApiFiles: ReadonlyArray<string>,
   schemaFiles: ReadonlyArray<string>,
 ): void {
@@ -508,11 +508,11 @@ function validateP1A1HttpIdempotencyBinding(
       }
     }
   }
+  const targetBindings = bindings.filter((binding) => binding.operationId === operationId);
   if (
-    bindings.length !== 1 ||
-    bindings[0]?.operationId !== operationId ||
-    bindings[0]?.method !== "post" ||
-    bindings[0]?.path !== "/v1/tenants/{tenantId}/projects"
+    targetBindings.length !== 1 ||
+    targetBindings[0]?.method !== "post" ||
+    targetBindings[0]?.path !== "/v1/tenants/{tenantId}/projects"
   ) {
     throw new Error(
       `P1-A1 must bind exactly one idempotent HTTP mutation: post /v1/tenants/{tenantId}/projects (${operationId}).`,
@@ -762,6 +762,7 @@ export function validateOpenApiDocument(
     const schemaObject = requiredRecord(schema, `${file}${pointer}/schema`);
     const keys = Object.keys(schemaObject);
     if (keys.length !== 1 || keys[0] !== "$ref") {
+      if (isInlineScalarSchema(schemaObject) && isOpenApiTransportSchema(pointer)) return;
       throw new Error(`${file}${pointer}/schema must contain only an external $ref.`);
     }
     const reference = requiredString(schemaObject.$ref, `${file}${pointer}/schema/$ref`);
@@ -770,6 +771,57 @@ export function validateOpenApiDocument(
     }
   });
   return operationIds.size - operationCountBefore;
+}
+
+function isInlineScalarSchema(schema: JsonRecord): boolean {
+  if (
+    [
+      "additionalProperties",
+      "allOf",
+      "anyOf",
+      "$defs",
+      "$ref",
+      "contains",
+      "contentSchema",
+      "dependentSchemas",
+      "else",
+      "if",
+      "items",
+      "maxContains",
+      "oneOf",
+      "prefixItems",
+      "patternProperties",
+      "properties",
+      "propertyNames",
+      "then",
+      "unevaluatedItems",
+      "unevaluatedProperties",
+    ].some((key) => Object.hasOwn(schema, key))
+  ) {
+    return false;
+  }
+  const excluded = schema.not;
+  if (
+    excluded !== undefined &&
+    (!isRecord(excluded) ||
+      Object.keys(excluded).length !== 1 ||
+      !Object.hasOwn(excluded, "const") ||
+      !isScalarValue(excluded.const))
+  ) {
+    return false;
+  }
+  if (typeof schema.type === "string") {
+    return ["boolean", "integer", "number", "string"].includes(schema.type);
+  }
+  return Object.hasOwn(schema, "const") && isScalarValue(schema.const);
+}
+
+function isScalarValue(value: unknown): boolean {
+  return value === null || ["boolean", "number", "string"].includes(typeof value);
+}
+
+function isOpenApiTransportSchema(pointer: string): boolean {
+  return pointer.includes("/parameters/") || pointer.includes("/headers/");
 }
 
 function collectOpenApiParameters(
@@ -881,7 +933,7 @@ export function validateProtoSource(source: string, file: string): void {
   if (!/^\s*syntax\s*=\s*"proto3"\s*;/mu.test(uncommented)) {
     throw new Error(`${file} must declare proto3 syntax.`);
   }
-  if (!/^\s*package\s+cloudagents\.[a-z]+\.v1alpha1\s*;/mu.test(uncommented)) {
+  if (!/^\s*package\s+cloudagents(?:\.[a-z][a-z0-9_]*)+\.v1alpha1\s*;/mu.test(uncommented)) {
     throw new Error(`${file} must declare a Cloud Agents v1alpha1 package.`);
   }
   if (
@@ -1042,7 +1094,7 @@ function parseProtoContractSource(rawSource: string, relativeFile: string): Prot
   const source = stripProtoComments(rawSource, relativeFile);
   const packageName = requiredRegexCapture(
     source,
-    /\bpackage\s+(cloudagents\.[a-z]+\.v1alpha1)\s*;/u,
+    /\bpackage\s+(cloudagents(?:\.[a-z][a-z0-9_]*)+\.v1alpha1)\s*;/u,
     `${relativeFile} package`,
   );
   const imports = [...source.matchAll(/\bimport\s+(?:(?:public|weak)\s+)?"([^"]+)"\s*;/gu)].map(

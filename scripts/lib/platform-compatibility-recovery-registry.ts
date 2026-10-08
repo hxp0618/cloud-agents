@@ -36,7 +36,7 @@ const V2_SCHEMA_MIGRATION_PATH =
   "services/control-plane/migrations/000010_expand_compatibility_recovery_kernel.sql";
 const GENERATOR_PATH = "scripts/generate-platform-compatibility-recovery-registry.ts";
 const LIBRARY_PATH = "scripts/lib/platform-compatibility-recovery-registry.ts";
-const TEST_PATH = "scripts/lib/platform-compatibility-recovery-registry.test.ts";
+const TEST_PATH = "test/scripts/platform-compatibility-recovery-registry.test.ts";
 const JSON_SEMANTICS_PATH = "scripts/lib/platform-json-semantics.ts";
 const SOURCE_SCHEMA_ID =
   "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/compatibility-recovery-registry-source-v1.schema.json";

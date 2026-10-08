@@ -16,7 +16,7 @@
 
 ## 按需材料
 
-- [phase-1 验收](../../acceptance/phase-1.md)：第一阶段能力到代码、测试和检查命令的对应表。
+- [phase-1 验收](../../acceptance/phase-1.public.md)：第一阶段能力到代码、测试和检查命令的对应表。
 - [evidence 索引](evidence/README.md)：冻结 Gate 记录。
 - [templates 索引](templates/README.md)：Gate 记录模板，不保存实际结果。
 - [总入口](../README.md)、[ADR 索引](../adr/README.md)、[references 索引](../references/README.md)。

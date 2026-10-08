@@ -2,12 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  DeepSeekHarness,
-  type DeepSeekHarnessOptions,
-  type HarnessNotification,
-  type RunResult,
-} from "@deepseek-ai/dsh-sdk-client";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   ManagedCapabilityCallResultUnknownError,
@@ -39,6 +33,36 @@ import {
   type RuntimeCapabilityManifest,
 } from "@cloud-agents/cloud-agent-provider-api/internal";
 
+type HarnessNotification = Readonly<{
+  method: string;
+  params: Record<string, unknown>;
+}>;
+
+type DeepSeekHarnessOptions = Readonly<{
+  dshBin?: string;
+  profile?: string;
+  patches?: string[];
+  dshHome?: string;
+  processCwd?: string;
+  env?: NodeJS.ProcessEnv;
+  initializeTimeoutMs?: number;
+  requestTimeoutMs?: number;
+  shutdownTimeoutMs?: number;
+  disposeEofGraceMs?: number;
+  disposeGraceMs?: number;
+  cwd?: string;
+  provider?: string;
+  model?: string;
+  maxTokens?: number;
+}>;
+
+type RunResult = Readonly<{
+  sessionId: string;
+  finalResponse: string;
+  events: ReadonlyArray<unknown>;
+  notifications: ReadonlyArray<HarnessNotification>;
+}>;
+
 export const DEEPSEEK_HARNESS_PROVIDER_KIND = "deepseek-harness" as const;
 const DEEPSEEK_HARNESS_VERSION = "0.1.2-rc.1";
 const DEEPSEEK_HARNESS_ROUTE = "cloud-agents-openai";
@@ -48,7 +72,16 @@ const CREDENTIAL_STRING_OPTIONS = {
   singleLineMessage: false,
 } as const;
 
-type Harness = Pick<DeepSeekHarness, "close" | "run">;
+type Harness = Readonly<{
+  close(): Promise<void>;
+  run(
+    input: string,
+    options?: Readonly<{
+      sessionId?: string;
+      onNotification?: (notification: HarnessNotification) => void;
+    }>,
+  ): Promise<RunResult>;
+}>;
 type DeepSeekHarnessRunOptions = ProviderRunOptions & {
   readonly harnessFactory?: (options: DeepSeekHarnessOptions) => Harness;
 };
@@ -118,20 +151,7 @@ export function startDeepSeekHarnessProviderRun(
       "deepseek-harness Provider resume requires a valid cursor and authoritative history.",
     );
   const sessionId = `session-${randomUUID().replaceAll("-", "")}`;
-  const harness = (
-    options.harnessFactory ?? ((harnessOptions) => new DeepSeekHarness(harnessOptions))
-  )({
-    profile: "sdk",
-    patches: [patchPath, ...(capabilityPatchPath ? [capabilityPatchPath] : [])],
-    dshHome,
-    processCwd: effectiveInput.workspaceDirectory,
-    cwd: effectiveInput.workspaceDirectory,
-    env: environment,
-    ...(dshBin ? { dshBin } : {}),
-    provider: DEEPSEEK_HARNESS_ROUTE,
-    model,
-    initializeTimeoutMs: 30_000,
-  });
+  let harness: Harness | undefined;
   let interrupted = false;
   let turnFailure: Error | undefined;
   let reportResultUnknown!: (error: ManagedCapabilityCallResultUnknownError) => void;
@@ -146,8 +166,31 @@ export function startDeepSeekHarnessProviderRun(
 
   const result = (async (): Promise<Extract<RunnerMessage, { type: "result" }>> => {
     try {
+      const createHarness = options.harnessFactory
+        ? async (harnessOptions: DeepSeekHarnessOptions) => options.harnessFactory!(harnessOptions)
+        : async (harnessOptions: DeepSeekHarnessOptions) => {
+            const { DeepSeekHarness } = await import("@deepseek-ai/dsh-sdk-client");
+            return new DeepSeekHarness(harnessOptions as never) as unknown as Harness;
+          };
+      const activeHarness = await createHarness({
+        profile: "sdk",
+        patches: [patchPath, ...(capabilityPatchPath ? [capabilityPatchPath] : [])],
+        dshHome,
+        processCwd: effectiveInput.workspaceDirectory,
+        cwd: effectiveInput.workspaceDirectory,
+        env: environment,
+        ...(dshBin ? { dshBin } : {}),
+        provider: DEEPSEEK_HARNESS_ROUTE,
+        model,
+        initializeTimeoutMs: 30_000,
+      });
+      harness = activeHarness;
+      if (interrupted) {
+        await activeHarness.close();
+        throw new ProviderInterruptedError();
+      }
       const run = await Promise.race([
-        harness.run(prompt, {
+        activeHarness.run(prompt, {
           sessionId,
           onNotification(notification) {
             if (turnFailure) return;
@@ -163,7 +206,7 @@ export function startDeepSeekHarnessProviderRun(
             );
             if (failure) {
               turnFailure = failure;
-              void harness.close();
+              void activeHarness.close().catch(() => undefined);
               if (failure instanceof ManagedCapabilityCallResultUnknownError)
                 reportResultUnknown(failure);
             }
@@ -193,7 +236,7 @@ export function startDeepSeekHarnessProviderRun(
       if (interrupted) throw new ProviderInterruptedError();
       throw new Error(redact(error instanceof Error ? error.message : String(error)));
     } finally {
-      await harness.close().catch(() => undefined);
+      await harness?.close().catch(() => undefined);
     }
   })();
 
@@ -201,11 +244,11 @@ export function startDeepSeekHarnessProviderRun(
     result,
     interrupt() {
       interrupted = true;
-      void harness.close();
+      void harness?.close().catch(() => undefined);
     },
     forceStop() {
       interrupted = true;
-      void harness.close();
+      void harness?.close().catch(() => undefined);
     },
     getResumeCursor: () => sessionId,
   };

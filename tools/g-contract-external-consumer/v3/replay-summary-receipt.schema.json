@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/replay-summary-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "decisionId", "profileId", "status", "sourceBinding", "projection", "platformRuns", "equality", "runner", "notGateClosure", "gateStatus"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-replay-summary-receipt/v3" },
+    "decisionId": { "const": "D-053-EC-3" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "sourceBinding": { "$ref": "#/$defs/file" },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archiveSha256", "memberManifestSha256", "inputManifestSha256"],
+      "properties": { "archiveSha256": { "$ref": "#/$defs/digest" }, "memberManifestSha256": { "$ref": "#/$defs/digest" }, "inputManifestSha256": { "$ref": "#/$defs/digest" } }
+    },
+    "platformRuns": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "$ref": "#/$defs/darwinA" },
+        { "$ref": "#/$defs/darwinB" },
+        { "$ref": "#/$defs/linuxA" },
+        { "$ref": "#/$defs/linuxB" }
+      ],
+      "items": false
+    },
+    "equality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive", "memberManifest", "inputManifest", "consumerOutputs"],
+      "properties": { "archive": { "const": "ALL_FOUR_RUNS_EQUAL" }, "memberManifest": { "const": "ALL_FOUR_RUNS_EQUAL" }, "inputManifest": { "const": "ALL_FOUR_RUNS_EQUAL" }, "consumerOutputs": { "const": "A_EQUALS_B_PER_PLATFORM_AND_CROSS_PLATFORM" } }
+    },
+    "runner": { "$ref": "#/$defs/runner" },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "file": { "type": "object", "additionalProperties": false, "required": ["path", "sha256", "sizeBytes"], "properties": { "path": { "const": "tools/g-contract-external-consumer/v3/source.json" }, "sha256": { "$ref": "#/$defs/digest" }, "sizeBytes": { "type": "integer", "minimum": 1 } } },
+    "runner": { "type": "object", "additionalProperties": false, "required": ["path", "entrypoint"], "properties": { "path": { "const": "scripts/replay-platform-g-contract-external-consumer-v3.ts" }, "entrypoint": { "const": "bun scripts/replay-platform-g-contract-external-consumer-v3.ts --summary --projection-root <projection-root> --darwin-a-root <darwin-a-root> --darwin-b-root <darwin-b-root> --linux-a-root <linux-a-root> --linux-b-root <linux-b-root> --output-root <output-root>" } } },
+    "run": { "type": "object", "additionalProperties": false, "required": ["platform", "runId", "receiptPath", "receiptSha256", "status"], "properties": { "platform": { "enum": ["darwin-arm64", "linux-amd64"] }, "runId": { "enum": ["A", "B"] }, "receiptPath": { "type": "string", "pattern": "^tools/g-contract-external-consumer/v3/evidence/replay/(darwin-arm64|linux-amd64)-[ab]\\.json$" }, "receiptSha256": { "$ref": "#/$defs/digest" }, "status": { "const": "CURRENT" } } },
+    "darwinA": { "allOf": [{ "$ref": "#/$defs/run" }, { "properties": { "platform": { "const": "darwin-arm64" }, "runId": { "const": "A" }, "receiptPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-a.json" } } }] },
+    "darwinB": { "allOf": [{ "$ref": "#/$defs/run" }, { "properties": { "platform": { "const": "darwin-arm64" }, "runId": { "const": "B" }, "receiptPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-b.json" } } }] },
+    "linuxA": { "allOf": [{ "$ref": "#/$defs/run" }, { "properties": { "platform": { "const": "linux-amd64" }, "runId": { "const": "A" }, "receiptPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-a.json" } } }] },
+    "linuxB": { "allOf": [{ "$ref": "#/$defs/run" }, { "properties": { "platform": { "const": "linux-amd64" }, "runId": { "const": "B" }, "receiptPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-b.json" } } }] }
+  }
+}

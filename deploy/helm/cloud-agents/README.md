@@ -20,7 +20,7 @@ PostgreSQL data and deployment-owned Secrets:
 
 ```sh
 CLOUD_AGENTS_HELM_CONTEXT=orbstack \
-  sh scripts/test-platform-helm.sh /path/to/release-n /path/to/release-n-1
+  sh test/scripts/test-platform-helm.sh /path/to/release-n /path/to/release-n-1
 ```
 
 The script accepts one release directory for the ordinary install smoke. The

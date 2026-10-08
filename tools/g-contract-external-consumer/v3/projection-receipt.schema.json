@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/projection-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "decisionId", "profileId", "status", "sourceBinding", "contractSuccessorBinding", "candidateBinding", "projection", "runner", "notGateClosure", "gateStatus"],
+  "properties": {
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-projection-receipt/v3" },
+    "decisionId": { "const": "D-053-EC-3" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "status": { "enum": ["CURRENT", "INVALID"] },
+    "sourceBinding": { "$ref": "#/$defs/file" },
+    "contractSuccessorBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "outputCount", "outputManifestSha256"],
+      "properties": {
+        "path": { "const": "contracts/generation.lock.successor-v3.json" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "outputCount": { "const": 47 },
+        "outputManifestSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "candidateBinding": { "$ref": "#/$defs/candidate" },
+    "projection": { "$ref": "#/$defs/projection" },
+    "runner": { "$ref": "#/$defs/runner" },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestPath", "manifestSha256", "rootIdentity", "candidateFileCount", "candidateEntryCount", "manifestAlgorithm"],
+      "properties": {
+        "manifestPath": { "type": "string", "minLength": 1 },
+        "manifestSha256": { "$ref": "#/$defs/digest" },
+        "rootIdentity": { "$ref": "#/$defs/digest" },
+        "candidateFileCount": { "type": "integer", "minimum": 1 },
+        "candidateEntryCount": { "type": "integer", "minimum": 1 },
+        "manifestAlgorithm": { "const": "utf8-bytewise-sorted-path-kind-mode-size-sha256-nul-v1" }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archivePath", "archiveSha256", "archiveSizeBytes", "memberManifestPath", "memberManifestSha256", "memberCount", "memberManifestAlgorithm", "inputManifestAlgorithm", "inputManifest", "pathOrdering", "archiveFormat", "compression", "tar"],
+      "properties": {
+        "archivePath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/projection.tar" },
+        "archiveSha256": { "$ref": "#/$defs/digest" },
+        "archiveSizeBytes": { "type": "integer", "minimum": 1 },
+        "memberManifestPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/projection.member-manifest.json" },
+        "memberManifestSha256": { "$ref": "#/$defs/digest" },
+        "memberCount": { "type": "integer", "minimum": 1 },
+        "memberManifestAlgorithm": { "const": "utf8-bytewise-sorted-path-type-mode-size-sha256-linktarget-nul-v1" },
+        "inputManifestAlgorithm": { "const": "utf8-bytewise-sorted-path-mode-size-sha256-nul-v1" },
+        "inputManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "memberCount"],
+          "properties": {
+            "sha256": { "$ref": "#/$defs/digest" },
+            "memberCount": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "pathOrdering": { "const": "UTF8_BYTE_LEXICOGRAPHIC" },
+        "archiveFormat": { "const": "ustar" },
+        "compression": { "const": "none" },
+        "tar": { "const": { "mtimeEpochSeconds": 0, "uid": 0, "gid": 0, "uname": "", "gname": "", "paxHeaders": "forbidden", "duplicateEntries": "forbidden" } }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "entrypoint"],
+      "properties": {
+        "path": { "const": "scripts/replay-platform-g-contract-external-consumer-v3.ts" },
+        "entrypoint": { "const": "bun scripts/replay-platform-g-contract-external-consumer-v3.ts --projection --candidate-root <candidate-root> --candidate-manifest <candidate-manifest> --output-root <output-root>" }
+      }
+    }
+  }
+}

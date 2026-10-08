@@ -329,9 +329,11 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 	}
 	assertFoundationPublicRedaction(t, ctx, httpServer.URL, userToken)
 
+	// This fixture also serves the live Controller suite after RemoteWorker
+	// acceptance. Its lifetime must cover that setup; TTL expiry is tested separately.
 	sandboxRequest := platform.SandboxSessionCreateRequest{
 		WorkspaceID: "workspace", WorkspaceName: "workspace", SandboxID: "sandbox",
-		RuntimeProfileID: "profile", RuntimeProfileVersion: 1, TTLSeconds: 120,
+		RuntimeProfileID: "profile", RuntimeProfileVersion: 1, TTLSeconds: 3600,
 	}
 	sandbox, err := user.CreateSandbox(ctx, "tenant", "project", "request-sandbox", "sandbox-create-key", sandboxRequest)
 	if err != nil || sandbox.Value.ObservedState != "pending" || sandbox.Value.OperationID == "" || sandbox.Value.ExpiresAt == "" {
@@ -360,7 +362,7 @@ func TestFoundationRuntimeProfilePostgres(t *testing.T) {
 		if failureImage != "" && item.Metadata.UID == "sandbox-terminal" {
 			expectedPolicy = "network-deny"
 		}
-		if item.Spec.TTLSeconds != 120 || item.Spec.ExpiresAt == "" || item.Spec.NetworkPolicyRef != expectedPolicy || item.Spec.NetworkPolicyEnforcement != "pending" {
+		if item.Spec.TTLSeconds != sandboxRequest.TTLSeconds || item.Spec.ExpiresAt == "" || item.Spec.NetworkPolicyRef != expectedPolicy || item.Spec.NetworkPolicyEnforcement != "pending" {
 			t.Fatalf("Admin sandbox TTL projection=%+v", item.Spec)
 		}
 	}
@@ -474,16 +476,37 @@ func TestFoundationSandboxLifecyclePostgres(t *testing.T) {
 		current.Value.Spec.Usage.CheckpointedAt == "" {
 		t.Fatalf("Admin sandbox usage projection = %+v", current.Value.Spec.Usage)
 	}
+	var volumeGeneration int64
+	var volumeUsedBytes string
+	if err := owner.QueryRow(ctx, `SELECT usage.measurement_generation, usage.used_bytes::text
+		FROM cloud_agents.workspace_volume_usage_checkpoints usage
+		JOIN cloud_agents.workspace_volumes volume USING (tenant_id,project_uid,volume_uid)
+		JOIN cloud_agents.sandbox_sessions sandbox USING (tenant_id,project_uid,workspace_uid)
+		WHERE sandbox.tenant_id='tenant' AND sandbox.project_uid='project' AND sandbox.sandbox_uid=$1
+		  AND usage.state='ready'`, sandboxID).Scan(&volumeGeneration, &volumeUsedBytes); err != nil || volumeGeneration < 1 {
+		t.Fatalf("authoritative workspace usage generation=%d err=%v", volumeGeneration, err)
+	}
 	if current.Value.Spec.WorkspaceVolumeUsage == nil || current.Value.Spec.WorkspaceVolumeUsage.Source != "docker-system-df-v1" ||
-		current.Value.Spec.WorkspaceVolumeUsage.State != "ready" || current.Value.Spec.WorkspaceVolumeUsage.MeasurementGeneration != 1 ||
-		current.Value.Spec.WorkspaceVolumeUsage.UsedBytes == "" || current.Value.Spec.WorkspaceVolumeUsage.CheckpointedAt == "" ||
+		current.Value.Spec.WorkspaceVolumeUsage.State != "ready" || current.Value.Spec.WorkspaceVolumeUsage.MeasurementGeneration != volumeGeneration ||
+		current.Value.Spec.WorkspaceVolumeUsage.UsedBytes != volumeUsedBytes || current.Value.Spec.WorkspaceVolumeUsage.CheckpointedAt == "" ||
 		current.Value.Spec.WorkspaceVolumeUsage.ObservedAt == "" || current.Value.Spec.WorkspaceVolumeUsage.StableErrorCode != "" {
 		t.Fatalf("Admin workspace volume usage projection = %+v", current.Value.Spec.WorkspaceVolumeUsage)
 	}
+	var networkGeneration, networkMeasurement int64
+	var networkReceived, networkTransmitted string
+	if err := owner.QueryRow(ctx, `SELECT sandbox_generation, network_measurement_generation,
+		network_received_bytes::text, network_transmitted_bytes::text
+		FROM cloud_agents.sandbox_usage_checkpoints
+		WHERE tenant_id='tenant' AND project_uid='project' AND sandbox_uid=$1 AND network_measurement_generation > 0
+		ORDER BY sandbox_generation DESC, network_observed_at DESC LIMIT 1`, sandboxID).Scan(
+		&networkGeneration, &networkMeasurement, &networkReceived, &networkTransmitted,
+	); err != nil || networkGeneration < 1 || networkMeasurement < 1 {
+		t.Fatalf("authoritative network usage generation=%d measurement=%d err=%v", networkGeneration, networkMeasurement, err)
+	}
 	if current.Value.Spec.NetworkUsage == nil || current.Value.Spec.NetworkUsage.Source != "docker-container-stats-v1" ||
-		current.Value.Spec.NetworkUsage.State != "ready" || current.Value.Spec.NetworkUsage.LatestRuntimeGeneration != 1 ||
-		current.Value.Spec.NetworkUsage.MeasurementGeneration < 2 || current.Value.Spec.NetworkUsage.ReceivedBytes == "" ||
-		current.Value.Spec.NetworkUsage.TransmittedBytes == "" || current.Value.Spec.NetworkUsage.CheckpointedAt == "" ||
+		current.Value.Spec.NetworkUsage.State != "ready" || current.Value.Spec.NetworkUsage.LatestRuntimeGeneration != networkGeneration ||
+		current.Value.Spec.NetworkUsage.MeasurementGeneration != networkMeasurement || current.Value.Spec.NetworkUsage.ReceivedBytes != networkReceived ||
+		current.Value.Spec.NetworkUsage.TransmittedBytes != networkTransmitted || current.Value.Spec.NetworkUsage.CheckpointedAt == "" ||
 		current.Value.Spec.NetworkUsage.ObservedAt == "" || current.Value.Spec.NetworkUsage.StableErrorCode != "" {
 		t.Fatalf("Admin network usage projection = %+v", current.Value.Spec.NetworkUsage)
 	}

@@ -9,7 +9,7 @@ import {
   type CloudAgentCapabilityMap as ProviderCapabilityMap,
   type CloudAgentProviderCapabilityCatalogEntry as ProviderCapabilityCatalogEntry,
 } from "@cloud-agents/cloud-agent-protocol";
-import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./environment";
+import { CLOUD_AGENT_ENVIRONMENT } from "./environment";
 
 const HOST_BUILD_VERSION = "0.1.0-rc.1";
 
@@ -186,8 +186,7 @@ function experimentalProviderAllowlist(
   environment: Readonly<Record<string, string | undefined>>,
 ): ReadonlySet<ProviderHostProviderKind> {
   const providers = new Set<ProviderHostProviderKind>();
-  const configured =
-    readCloudAgentEnvironment(environment, CLOUD_AGENT_ENVIRONMENT.experimentalProviders) ?? "";
+  const configured = environment[CLOUD_AGENT_ENVIRONMENT.experimentalProviders] ?? "";
   for (const token of configured.split(",")) {
     const normalized = token.trim().toLowerCase();
     const match = PROVIDER_CAPABILITY_CATALOG.providers.find(

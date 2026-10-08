@@ -93,6 +93,39 @@ func TestConcurrentRequestLimitRejectsExcessAndKeepsProbesAvailable(t *testing.T
 	<-firstDone
 }
 
+func TestConcurrentRequestLimitIsolatesExecutionStarts(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	handler := ConcurrentRequestLimitHandler(1, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && request.URL.Path == "/v1/tenants/tenant/projects/project/sessions/session/executions" {
+			close(entered)
+			<-release
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant/projects/project/sessions/session/executions", nil))
+		close(done)
+	}()
+	<-entered
+
+	ordinary := httptest.NewRecorder()
+	handler.ServeHTTP(ordinary, httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant/projects/project/sessions/session", nil))
+	if ordinary.Code != http.StatusNoContent {
+		t.Fatalf("ordinary request status = %d, want %d", ordinary.Code, http.StatusNoContent)
+	}
+
+	overload := httptest.NewRecorder()
+	handler.ServeHTTP(overload, httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant/projects/project/sessions/session/executions", nil))
+	if overload.Code != http.StatusTooManyRequests {
+		t.Fatalf("execution overload status = %d, want %d", overload.Code, http.StatusTooManyRequests)
+	}
+
+	close(release)
+	<-done
+}
+
 func TestWritePublicProblemChallengesUnauthorizedRequests(t *testing.T) {
 	response := httptest.NewRecorder()
 	writePublicProblem(response, http.StatusUnauthorized, "authentication_failed")

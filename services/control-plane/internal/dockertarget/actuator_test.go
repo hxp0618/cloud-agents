@@ -128,6 +128,18 @@ func TestDeployedWorkerEndpointAcceptsDualStackBindingOnOnePort(t *testing.T) {
 	if _, err := deployedWorkerEndpoint("https://docker.example.test:2376", inspect); err != ErrDeploymentFailed {
 		t.Fatalf("conflicting dual-stack binding error=%v", err)
 	}
+	if _, err := deployedWorkerEndpoint("https://[", inspect); err != ErrDeploymentFailed {
+		t.Fatalf("malformed endpoint error=%v", err)
+	}
+}
+
+func TestSpiffeTrustDomainRejectsMalformedIdentity(t *testing.T) {
+	if _, err := spiffeTrustDomain("spiffe://cloud-agents.test/%zz"); err == nil {
+		t.Fatal("malformed SPIFFE identity accepted")
+	}
+	if trustDomain, err := spiffeTrustDomain("spiffe://cloud-agents.test/workers/docker-alpha"); err != nil || trustDomain != "cloud-agents.test" {
+		t.Fatalf("trust domain=%q error=%v", trustDomain, err)
+	}
 }
 
 func TestEnsureWorkerContainerReconcilesConcurrentCreate(t *testing.T) {

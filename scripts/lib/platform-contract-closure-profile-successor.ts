@@ -638,7 +638,7 @@ export function createContractClosureProfile<
       paths.sourceSchema,
       paths.outputSchema,
       `scripts/lib/platform-contract-closure-profile-${spec.version}.ts`,
-      `scripts/lib/platform-contract-closure-profile-${spec.version}.test.ts`,
+      `test/scripts/platform-contract-closure-profile-${spec.version}.test.ts`,
       FUTURE_SUPPLY_V2_PROFILE_PATH,
       FUTURE_SUPPLY_V2_REVIEW_PATH,
       "tools/contract-review-binding/v1/review-tuple.json",

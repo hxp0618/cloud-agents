@@ -32,4 +32,20 @@ Command failures are isolated to their request. A rejected Provider event
 stream is a process-fatal transport failure so the host cannot continue with
 an untrusted or incomplete event sequence.
 
+The stdio Runtime applies one bounded cleanup budget to closing a Provider
+Session and draining its event stream. This boundary applies to explicit stop,
+Session replacement, late creation, and Runtime shutdown. A rejected or timed
+out cleanup is fatal: the Runtime does not admit a replacement Session or
+report a clean shutdown after Provider resources failed to converge.
+
+Managed MCP calls are authorized by the materialized capability grant and
+proxied only to its allowed upstream host. The broker bounds request and
+response sizes, applies one deadline to the complete upstream exchange, and
+cancels unfinished upstream work when the broker closes.
+
 `createCloudAgentStdioClient({ command, extendEnvironment: false, environment })` fully replaces the child environment and cannot re-inherit ambient trust. The compatibility default is `true`. `subscribe(listener)` preserves the original unsubscribe API and now treats a returned promise as an ordered receipt barrier before the next frame and terminal resolution.
+
+The client treats stdout EOF as a fatal transport closure even if the child
+process remains alive. It first consumes every complete queued frame and waits
+for subscriber receipt acknowledgements, then rejects unfinished commands and
+reaps the child process.

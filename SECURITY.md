@@ -1,6 +1,12 @@
 # Security
 
-Do not report vulnerabilities in public issues. Use GitHub private vulnerability reporting when it is enabled, or contact the repository owner through an authenticated private channel.
+Do not report vulnerabilities in public issues. Use [GitHub private vulnerability reporting](https://github.com/hxp0618/cloud-agents/security/advisories/new), which is enabled for this repository, or contact the repository owner through an authenticated private channel.
+
+## Security contact and response
+
+Security DRI: [@hxp0618](https://github.com/hxp0618), the repository owner. Security reports are acknowledged and triaged within 3 business days when the private reporting service is available. The triage records the affected release-candidate or deployment digest, severity, affected versions, exploitability, and the smallest redacted reproduction.
+
+When coordinated disclosure is needed, the DRI keeps the report private, agrees an embargo date with the reporter, and publishes a GitHub security advisory with the fixed version or digest when the fix is available. Affected candidate manifests are revoked or superseded, a minimum accepted version is stated, and credential or signing material is rotated when the report requires it. If no embargo is needed, the advisory and fix are published after validation.
 
 Never attach credentials, captured traffic, private source, account data, or unredacted runtime logs to a report. Include the affected release-candidate digest and the smallest redacted reproduction possible.
 
@@ -8,6 +14,40 @@ The [foundation security acceptance](docs/plan/cloud-agents-platform/05-gates-an
 
 Persistent Workspace/Volume deletion is distinct from Sandbox/Lease cleanup. Preserve the Admin Cleanup resource-name and generation confirmation; it is a product interaction requirement, not confirmation for every development action.
 
-The Agent runtime treats the host environment as a trust boundary. New integrations should use `extendEnvironment: false`, anonymous credential descriptors, and the `CLOUD_AGENT_*` names. Portable and legacy aliases with different values are rejected. The CI secret scan covers the current tracked worktree and every reachable Git revision; only explicit synthetic test paths in `.secret-scan-allowlist.json` are excluded.
+## Proposed IDENTITY-V1 security rules
+
+These rules accompany the [built-in identity service decision](docs/plan/adr/0033-built-in-identity-service.md). They are a P0 policy proposal, not implemented or tested behavior. Runtime work remains gated on the owner approving the complete P0 documentation set.
+
+### Browser sessions and tenant tokens
+
+- Admin Web and User Web use different `__Host-` cookies and session records. Cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and have no `Domain`. Each record is bound to its application purpose; the issued token keeps the existing Control Plane resource audience and binds the Admin/User purpose in `client_id`. Either application rejects the other application's session. Production deployments use distinct HTTPS host origins because cookies are not isolated by port.
+- The browser receives no bearer or tenant access token. A cookie contains only a cryptographically random opaque session identifier; the identity store owns the durable session record and retains only the identifier's hash. Sessions expire after 30 minutes idle or 12 hours absolute, rotate after login and reauthentication, and are revoked on logout. Revocation, account disablement, and credential reset reject new request admission after the revocation commit; already admitted mutations are not retroactively undone. The web server owns cookie issuance, the session proxy, and only a derived tenant-token cache.
+- The web server exchanges an active session for a tenant-bound token and renews the proposed 15-minute token before expiry. The identity service records `jti` to user, session, tenant, and client. On every authorized request the Control Plane checks that record and current user, session, tenant membership, and role bindings without positive caching, and fails closed when validation is unavailable. A stream checks before admission, at heartbeats no more than 15 seconds apart, and before each new authorized action; failure or revocation closes it.
+- Every state-changing browser request must present an exact allowed `Origin`; a missing, opaque, or mismatched origin is rejected. The session cookie's SameSite policy is defense in depth. If a form or client also uses a CSRF value, it is unpredictable, session-bound, checked server-side, and conveys no authentication authority. An OAuth authorization response is the only cross-site exception and must validate the exact redirect URI plus single-use `state`, PKCE verifier/challenge, and OIDC `nonce` before changing session state.
+
+### Passwords, recovery, and abuse controls
+
+- Passwords use Argon2id with a unique random salt and at least 19 MiB memory, two iterations, and one lane; deployments should use measured stronger parameters while keeping interactive login within their latency budget. Password and recovery plaintext is never stored or logged. The policy permits long passphrases and sets a generous bounded input length so hashing cannot be used for resource exhaustion.
+- Login is rate-limited and temporarily locked by both account and source IP with bounded windows and backoff. Responses and observable timing do not reveal whether an account exists. A forwarded client IP is trusted only from explicitly configured reverse proxies; otherwise the socket peer is used.
+- Invitations and password-reset links contain independent, high-entropy, one-time values. Only their hashes are stored; invitations expire after 24 hours and reset links after 30 minutes. Both have an attempt limit, atomic consume operation, and replay rejection. Expiry, replacement, account disablement, or successful use revokes the value.
+- An invitation may create the named account only after its verified email matches the invitation. Link possession proves email control only when an administrator has verified the delivery channel and ownership; omitting SMTP does not waive verified-email matching. An existing account accepts while authenticated, and a link never resets, replaces, or merges that account. Login, invitation acceptance, and recovery never merge accounts merely because email addresses match. Linking or unlinking a login method requires a current session plus reauthentication of the affected identity, and the last usable login method cannot be removed.
+
+### Tenant and provider trust boundaries
+
+- A tenant administrator may invite members, assign tenant-scoped roles, and suspend that tenant's membership. Only a platform administrator may disable an account globally or issue an administrator-generated credential-reset link; one tenant administrator cannot disrupt the same person's access to another tenant.
+- Email suffixes restrict admission and grant no membership or role. A verified email's complete domain is matched case-insensitively and exactly, without wildcard or textual suffix matching, when an invitation is issued, accepted, and converted into membership. A policy change does not silently remove existing members; an administrator must suspend them explicitly. A platform administrator's suffix exemption applies only to that administrator's own access and cannot exempt another account.
+- OIDC discovery, authorization, token, user-info, JWKS, and redirect endpoints are exact configured trust boundaries and use validated HTTPS endpoints. OAuth client secrets and other provider credentials are secret references, never plain configuration values. Provider claims do not automatically become verified email, identity links, membership, or roles. Any non-standard provider email trust is explicit per provider configuration and constrained to the configured tenant or enterprise account.
+- The identity issuer and JWKS URL are pinned configuration fetched over validated TLS; token headers and claims cannot select a URL or trust root. Refresh is automatic but bounded, preserves immutable `kid`-to-key lineage, and fails closed after the last trusted snapshot expires or refresh validation fails. Signing-key freshness and lineage are separate from live session, `jti`, user, membership, and role revocation checks.
+
+### Audit and later controls
+
+- Authentication, session, invitation, reset, identity-link, membership, suffix-policy, provider, and authorization decisions emit audit records with time, action, actor, target, tenant, decision, reason code, and correlation ID. Audit data excludes passwords, cookies, raw tokens, authorization codes, provider secrets, private keys, and invitation/reset values or URLs. Security tables may contain one-way hashes needed to validate opaque values, and encrypted backups may contain security records; neither is audit output, and backup keys remain separate.
+- Multi-factor authentication with TOTP or WebAuthn and user-visible active-session revocation are later work and are not implied by IDENTITY-V1.
+
+The Agent runtime treats the host environment as a trust boundary. New integrations should use `extendEnvironment: false`, anonymous credential descriptors, and the `CLOUD_AGENT_*` names. Portable and legacy aliases with different values are rejected. `bun run secret:scan` scans tracked and non-ignored untracked worktree entries plus `HEAD` by default; CI sets `CLOUD_AGENT_SECRET_SCAN_BASE` and scans the revisions in that base-to-head range. The scheduled security workflow sets `CLOUD_AGENT_SECRET_SCAN_ALL_HISTORY=1`; that mode uses the same case-insensitive candidate semantics as the final Git grep to select commits that introduce or remove matching lines, then scans those refs-reachable revision trees. The scanner reports redacted findings and stable coverage counts before success or failure. Only explicit synthetic test paths in `.secret-scan-allowlist.json` are excluded.
+
+The repository scanner covers worktree text and refs-reachable commit-tree text. Its coverage record distinguishes tracked, untracked, enumerated, text, allowlisted, binary, and deleted worktree entries, and reports reachable, pickaxe-candidate, and scanned revision-tree counts for all-history mode. Ignored files, commit and tag messages, direct tree refs, unreachable objects, and content classified as binary are outside this scan. Use a dedicated object or credential-store audit when those scopes are required.
+
+The gitleaks current-tree scan uses `.gitleaks.toml`, whose entries are explicit synthetic fixture or generated-profile paths. Local ignored credential files are not repository evidence and must never be committed.
 
 GitHub release-candidate artifacts are not npm releases and carry no GA security-support promise. A real authenticated provider test remains required before production use of Agent-enabled features. A foundation-only deployment instead requires its no-Agent lifecycle/access/isolation/recovery acceptance; neither test path grants production deployment or publication approval.

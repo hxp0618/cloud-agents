@@ -19,3 +19,6 @@ environments.
 The public package contains only `dist`, package metadata, notices, and this
 README. Internal generation manifests and their per-file provenance are not
 consumer artifacts.
+
+Tests are organized under [`test`](./test) by public capability. See the shared
+[SDK development rules](../README.md).

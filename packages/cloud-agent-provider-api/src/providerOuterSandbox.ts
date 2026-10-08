@@ -1,4 +1,4 @@
-import { CLOUD_AGENT_ENVIRONMENT, readCloudAgentEnvironment } from "./environment";
+import { CLOUD_AGENT_ENVIRONMENT } from "./environment";
 
 export const PROVIDER_OUTER_SANDBOX_PROFILE_ENV =
   CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile;
@@ -15,10 +15,7 @@ export type ProviderOuterSandboxProfile = (typeof PROVIDER_OUTER_SANDBOX_PROFILE
 export function requireProviderOuterSandboxProfile(
   environment: NodeJS.ProcessEnv,
 ): ProviderOuterSandboxProfile {
-  const value = readCloudAgentEnvironment(
-    environment,
-    CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile,
-  )?.trim();
+  const value = environment[CLOUD_AGENT_ENVIRONMENT.providerOuterSandboxProfile]?.trim();
   if (PROVIDER_OUTER_SANDBOX_PROFILES.includes(value as ProviderOuterSandboxProfile)) {
     return value as ProviderOuterSandboxProfile;
   }

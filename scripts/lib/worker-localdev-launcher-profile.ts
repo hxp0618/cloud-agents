@@ -74,7 +74,7 @@ const INPUT_PATHS = [
   "services/worker/cmd/cloud-agents-worker/main_test.go",
   "scripts/lib/platform-json-semantics.ts",
   "scripts/lib/worker-localdev-launcher-profile.ts",
-  "scripts/lib/worker-localdev-launcher-profile.test.ts",
+  "test/scripts/worker-localdev-launcher-profile.test.ts",
   "scripts/generate-worker-localdev-launcher-profile.ts",
 ] as const;
 const ORDERED_INPUT_PATHS = [...INPUT_PATHS].sort();

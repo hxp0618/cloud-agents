@@ -15,10 +15,9 @@
   "files": [
     "dist",
     "src",
-    "!src/**/*.test.ts",
-    "!src/**/*.spec.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -57,7 +56,7 @@
   "scripts": {
     "build": "tsdown src/index.ts --format esm,cjs --dts --clean --no-fail-on-warn",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run test"
   },
   "dependencies": {
     "@deepseek-ai/node-addon-landlock-run": "0.1.1"

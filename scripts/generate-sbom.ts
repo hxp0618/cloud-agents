@@ -1,19 +1,16 @@
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { CLOUD_AGENT_PUBLIC_PACKAGES } from "./lib/cloud-agent-release.ts";
 
 type JsonRecord = Record<string, unknown>;
 
 const root = resolve(import.meta.dirname, "..");
 const outputDirectory = parseOutputDirectory(process.argv.slice(2));
-const packagePaths = [
-  "packages/cloud-agent-protocol/package.json",
-  "packages/cloud-agent-provider-api/package.json",
-  "packages/cloud-agent-runtime/package.json",
-  "packages/cloud-agent-provider-codex/package.json",
-  "packages/cloud-agent-provider-claude/package.json",
-  "packages/cloud-agent-testkit/package.json",
-  "packages/cloud-agent-distribution/package.json",
-];
+const packagePaths = CLOUD_AGENT_PUBLIC_PACKAGES.map(
+  (name) => `packages/${name.slice("@cloud-agents/".length)}/package.json`,
+);
 const manifests = packagePaths.map((path) => ({ path, manifest: readJson(join(root, path)) }));
 const packages = manifests.map(({ path, manifest }, index) => ({
   SPDXID: `SPDXRef-Package-${index + 1}`,
@@ -78,14 +75,17 @@ const relationships = manifests.flatMap(({ manifest }, index) => {
     })),
   );
 });
+const inventoryDigest = createHash("sha256")
+  .update(JSON.stringify({ packages, relationships }))
+  .digest("hex");
 const document = {
   spdxVersion: "SPDX-2.3",
   dataLicense: "CC0-1.0",
   SPDXID: "SPDXRef-DOCUMENT",
   name: "cloud-agents-portable-runtime-rc",
-  documentNamespace: `https://github.com/hxp0618/cloud-agents/sbom/${Date.now()}`,
+  documentNamespace: `https://github.com/hxp0618/cloud-agents/sbom/${inventoryDigest}`,
   creationInfo: {
-    created: new Date().toISOString(),
+    created: reproducibleCreationTimestamp(root),
     creators: ["Tool: cloud-agents/scripts/generate-sbom.ts"],
   },
   packages,
@@ -117,4 +117,29 @@ function recordValue(value: unknown): JsonRecord {
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is missing.`);
   return value;
+}
+
+function reproducibleCreationTimestamp(root: string): string {
+  const configured = process.env.SOURCE_DATE_EPOCH;
+  const epoch = configured ?? gitCommitTimestamp(root) ?? "0";
+  if (!/^\d+$/u.test(epoch)) {
+    throw new Error("SOURCE_DATE_EPOCH must be a non-negative integer number of seconds.");
+  }
+  const seconds = Number(epoch);
+  if (!Number.isSafeInteger(seconds)) {
+    throw new Error("SOURCE_DATE_EPOCH must be a safe integer number of seconds.");
+  }
+  return new Date(seconds * 1000).toISOString();
+}
+
+function gitCommitTimestamp(root: string): string | undefined {
+  try {
+    const timestamp = execFileSync("git", ["show", "-s", "--format=%ct", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    return timestamp || undefined;
+  } catch {
+    return undefined;
+  }
 }

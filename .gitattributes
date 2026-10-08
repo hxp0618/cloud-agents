@@ -1,2 +1,9 @@
 # Preserve the fixed upstream JSON Schema Test Suite bytes, including four upstream trailing spaces.
 tools/contract-standards/vendor/json-schema-test-suite/** -whitespace
+
+# Preserve unified-diff prefixes in the reviewed OpenSandbox successor patch.
+tools/opensandbox-execd-successor/v1/patches/*.patch -whitespace
+tools/opensandbox-server-successor/v1/patches/*.patch -whitespace
+
+# Preserve exact upstream supplemental license and notice bytes.
+deploy/docker/worker-oci-supplemental-licenses/** -text -whitespace

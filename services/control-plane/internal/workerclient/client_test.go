@@ -60,11 +60,12 @@ func (fake *workerWireFake) Negotiate(ctx context.Context, request *connect.Requ
 	fake.negotiations++
 	fake.active = fmt.Sprintf("negotiation-%d", fake.negotiations)
 	negotiationID := fake.active
+	negotiationNow := fake.now
 	fake.mu.Unlock()
 	descriptor := workerDescriptor(fake.capabilities)
 	return connect.NewResponse(&workerv1alpha1.NegotiationResponse{
 		SelectedVersion: request.Msg.GetSupportedVersions()[0], AcceptedCapabilities: required, Server: descriptor,
-		AuthenticatedServerIdentity: proto.Clone(fake.identity).(*workerv1alpha1.WorkloadIdentity), NegotiationId: negotiationID, ExpiresAt: timestamppb.New(fake.now.Add(time.Minute)),
+		AuthenticatedServerIdentity: proto.Clone(fake.identity).(*workerv1alpha1.WorkloadIdentity), NegotiationId: negotiationID, ExpiresAt: timestamppb.New(negotiationNow.Add(time.Minute)),
 	}), nil
 }
 
@@ -166,6 +167,9 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	fake.mu.Lock()
 	fake.active = ""
 	fake.mu.Unlock()
+	if err := supervisor.CheckRuntimeHealthStrict(context.Background()); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("strict health after Worker restart error = %v", err)
+	}
 	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
 		t.Fatalf("health after Worker restart = %v", err)
 	}
@@ -270,6 +274,60 @@ func TestSupervisorUsesGeneratedWorkerWire(t *testing.T) {
 	supervisor.mu.Unlock()
 	if _, err := supervisor.OpenRuntimeSession(context.Background(), "tenant-alpha", "execution-3", "codex", 7, &workerv1alpha1.FencingProof{LeaseId: "lease-1", Generation: 7, Token: []byte("token")}); connect.CodeOf(err) != connect.CodeDeadlineExceeded {
 		t.Fatalf("blocked Runtime negotiation error = %v", err)
+	}
+}
+
+func TestStrictRuntimeHealthFailsClosedAtBindingExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)
+	identity := &workerv1alpha1.WorkloadIdentity{SpiffeId: "spiffe://cloud-agents.test/worker", TrustDomain: "cloud-agents.test"}
+	fake := &workerWireFake{identity: identity, capabilities: []workerv1alpha1.Capability{
+		workerv1alpha1.Capability_CAPABILITY_NEGOTIATION,
+		workerv1alpha1.Capability_CAPABILITY_HEALTH,
+	}, now: now}
+	mux := http.NewServeMux()
+	workerPath, workerHandler := workerv1alpha1connect.NewWorkerExecutionServiceHandler(fake)
+	runtimePath, runtimeHandler := workerruntimev1alpha1connect.NewWorkerRuntimeServiceHandler(fake)
+	mux.Handle(workerPath, workerHandler)
+	mux.Handle(runtimePath, runtimeHandler)
+	server := httptest.NewUnstartedServer(mux)
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	clock := now
+	supervisor, err := New(Config{
+		Client:                 workerv1alpha1connect.NewWorkerExecutionServiceClient(server.Client(), server.URL),
+		RuntimeClient:          workerruntimev1alpha1connect.NewWorkerRuntimeServiceClient(server.Client(), server.URL),
+		ExpectedWorkerIdentity: identity,
+		Clock:                  func() time.Time { return clock },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	clock = now.Add(2 * time.Minute)
+	if err := supervisor.CheckRuntimeHealthStrict(context.Background()); connect.CodeOf(err) != connect.CodeDeadlineExceeded {
+		t.Fatalf("expired strict health error = %v", err)
+	}
+	fake.mu.Lock()
+	negotiations := fake.negotiations
+	fake.mu.Unlock()
+	if negotiations != 1 {
+		t.Fatalf("strict health renegotiated expired binding: negotiations=%d", negotiations)
+	}
+	fake.mu.Lock()
+	fake.now = clock
+	fake.mu.Unlock()
+	if err := supervisor.CheckRuntimeHealth(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	negotiations = fake.negotiations
+	fake.mu.Unlock()
+	if negotiations != 2 {
+		t.Fatalf("renewable health did not renegotiate after expiry: negotiations=%d", negotiations)
 	}
 }
 

@@ -13,7 +13,7 @@ imports only `golang.org/x/text/unicode/norm`. The existing dependency review fi
 checksums, upstream source identity, vulnerability remediation, BSD-3-Clause license, and additional PATENTS grant:
 
 - [`x/text v0.39.0 remediation review`](./x-text-v0.39.0.md)
-- [`pgx/x-text implementation closure`](./pgx-v5.10.0-x-text-v0.39.0-implemented-closure.md)
+- `pgx-v5.10.0-x-text-v0.39.0-implemented-closure.md` (历史私有归档)
 
 Those records reviewed the Control Plane distribution boundary, not this new SDK distribution boundary. Therefore
 they are reused only as same-bits dependency identity evidence. They do not independently approve the SDK package,

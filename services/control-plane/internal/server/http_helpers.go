@@ -25,11 +25,19 @@ func JSONContentTypeHandler(next http.Handler) http.Handler {
 }
 
 func ConcurrentRequestLimitHandler(limit int, next http.Handler) http.Handler {
-	slots := make(chan struct{}, limit)
+	ordinarySlots := make(chan struct{}, limit)
+	executionSlots := make(chan struct{}, limit)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/healthz" || request.URL.Path == "/readyz" {
 			next.ServeHTTP(writer, request)
 			return
+		}
+		slots := ordinarySlots
+		if request.Method == http.MethodPost {
+			_, _, _, _, _, action, ok := managedAgentExecutionPath(request.URL.Path)
+			if ok && action == "execute" {
+				slots = executionSlots
+			}
 		}
 		select {
 		case slots <- struct{}{}:

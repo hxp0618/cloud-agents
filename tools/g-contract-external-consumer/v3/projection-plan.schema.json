@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/projection-plan.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "formatVersion", "decisionId", "profileId", "status", "blockerCode", "candidateBoundary", "sourceBinding", "successorBinding", "exclusionPaths", "receiptPath", "writeMode", "syntheticReceipts", "notGateClosure", "gateStatus"],
+  "properties": {
+    "$schema": { "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/projection-plan.schema.json" },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-projection-plan/v3" },
+    "decisionId": { "const": "D-053-EC-3" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "status": { "const": "BLOCKED" },
+    "blockerCode": { "const": "FROZEN_CLEAN_CANDIDATE_REQUIRED" },
+    "candidateBoundary": { "const": "EXTERNAL_CLEAN_CANDIDATE" },
+    "sourceBinding": { "$ref": "#/$defs/file" },
+    "successorBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes", "outputCount", "outputManifestSha256"],
+      "properties": {
+        "path": { "const": "contracts/generation.lock.successor-v3.json" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "outputCount": { "const": 47 },
+        "outputManifestSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "exclusionPaths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "receiptPath": { "const": "tools/g-contract-external-consumer/v3/evidence/replay/projection.json" },
+    "writeMode": { "const": "READ_ONLY" },
+    "syntheticReceipts": { "const": "FORBIDDEN" },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

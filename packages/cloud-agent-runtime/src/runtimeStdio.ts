@@ -15,10 +15,7 @@ import type {
   CloudAgentHostServices,
   CloudAgentProviderSession,
 } from "@cloud-agents/cloud-agent-provider-api";
-import {
-  CLOUD_AGENT_ENVIRONMENT,
-  readCloudAgentEnvironment,
-} from "@cloud-agents/cloud-agent-provider-api";
+import { CLOUD_AGENT_ENVIRONMENT } from "@cloud-agents/cloud-agent-provider-api";
 import {
   managedSkillRootDirectory,
   readCapabilityManifest,
@@ -44,7 +41,7 @@ export interface CloudAgentRuntimeStdioOptions {
   readonly diagnostics?: Writable;
   readonly allowedProviders?: ReadonlyArray<string>;
   readonly environment?: Readonly<Record<string, string | undefined>>;
-  /** @internal Bounded shutdown tuning used by conformance tests. */
+  /** @internal Bounded Provider Session cleanup tuning used by conformance tests. */
   readonly shutdownCleanupTimeoutMs?: number;
 }
 
@@ -53,6 +50,7 @@ type ActiveSession = {
   readonly generation: number;
   readonly session: CloudAgentProviderSession;
   readonly eventPump: Promise<void>;
+  cleanup?: Promise<void>;
 };
 
 const FATAL_UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
@@ -132,6 +130,8 @@ export async function runCloudAgentRuntimeStdio(
   const shutdownCleanupTasks = new Set<Promise<void>>();
   const lifecycleBarriers = new Map<string, Promise<void>>();
   const shutdown = new AbortController();
+  const shutdownCleanupTimeoutMs =
+    options.shutdownCleanupTimeoutMs ?? DEFAULT_SHUTDOWN_CLEANUP_TIMEOUT_MS;
   let credentialConsumed = false;
   let fatalLatched = false;
   let fatalCause: unknown;
@@ -173,19 +173,34 @@ export async function runCloudAgentRuntimeStdio(
     // Close first: an active execute may only settle after its Provider is
     // interrupted. Waiting for command tasks before close would deadlock the
     // fatal-input and incomplete-EOF paths.
-    await Promise.allSettled(
-      activeSessions.map(([, { session }]) => session.close("stdio closed")),
+    const activeCleanup = await Promise.allSettled(
+      activeSessions.map(([, active]) =>
+        closeActiveSessionWithin(active, "stdio closed", shutdownCleanupTimeoutMs),
+      ),
     );
-    await Promise.allSettled(commandTasks);
-    await drainRegisteredSessions(sessions);
-    const cleanupSettled = await settleTasksWithin(
-      shutdownCleanupTasks,
-      options.shutdownCleanupTimeoutMs ?? DEFAULT_SHUTDOWN_CLEANUP_TIMEOUT_MS,
-    );
-    if (!cleanupSettled) {
-      diagnostics.write(
-        `cloud-agent-runtime: Provider Session cleanup timed out with ${shutdownCleanupTasks.size} task(s) still pending.\n`,
+    for (const result of activeCleanup) {
+      if (result.status === "rejected") latchFatal(result.reason);
+    }
+    const commandsSettled = await settleTasksWithin(commandTasks, shutdownCleanupTimeoutMs);
+    if (!commandsSettled) {
+      latchFatal(
+        new RuntimeSessionCleanupFailure(
+          `Provider Session command cleanup timed out after ${shutdownCleanupTimeoutMs}ms.`,
+        ),
       );
+    }
+    try {
+      await drainRegisteredSessions(sessions, shutdownCleanupTimeoutMs);
+    } catch (cause) {
+      latchFatal(cause);
+    }
+    const cleanupSettled = await settleTasksWithin(shutdownCleanupTasks, shutdownCleanupTimeoutMs);
+    if (!cleanupSettled) {
+      const cause = new RuntimeSessionCleanupFailure(
+        `Provider Session cleanup timed out after ${shutdownCleanupTimeoutMs}ms with ${shutdownCleanupTasks.size} task(s) still pending.`,
+      );
+      diagnostics.write(`cloud-agent-runtime: ${cause.message}\n`);
+      latchFatal(cause);
     }
     try {
       await writer.flush();
@@ -298,6 +313,7 @@ export async function runCloudAgentRuntimeStdio(
         const session = await sessionCreationBeforeShutdown(
           creation,
           shutdown.signal,
+          shutdownCleanupTimeoutMs,
           trackShutdownCleanup,
         );
         const eventPump = pumpSessionEvents(session, writer.enqueue);
@@ -324,6 +340,7 @@ export async function runCloudAgentRuntimeStdio(
         await closeRegisteredSession(command.executionId, active, "stopped");
       }
     } catch (cause) {
+      if (cause instanceof RuntimeSessionCleanupFailure) throw cause;
       if (active !== undefined) {
         await closeRegisteredSession(command.executionId, active, "command failed");
       }
@@ -337,16 +354,18 @@ export async function runCloudAgentRuntimeStdio(
     reason: string,
   ): Promise<void> {
     if (sessions.get(executionId) !== active) return;
-    sessions.delete(executionId);
-    await Promise.allSettled([active.session.close(reason)]);
-    await Promise.allSettled([active.eventPump]);
+    await closeActiveSessionWithin(active, reason, shutdownCleanupTimeoutMs);
+    if (sessions.get(executionId) === active) sessions.delete(executionId);
   }
 
   function trackShutdownCleanup(task: Promise<void>): void {
     shutdownCleanupTasks.add(task);
     task.then(
       () => shutdownCleanupTasks.delete(task),
-      () => shutdownCleanupTasks.delete(task),
+      (cause) => {
+        shutdownCleanupTasks.delete(task);
+        latchFatal(cause);
+      },
     );
   }
 }
@@ -546,20 +565,29 @@ function hostServices(
   };
 }
 
-async function drainRegisteredSessions(sessions: Map<string, ActiveSession>): Promise<void> {
+async function drainRegisteredSessions(
+  sessions: Map<string, ActiveSession>,
+  timeoutMs: number,
+): Promise<void> {
   while (sessions.size > 0) {
     const snapshot = [...sessions.entries()];
     for (const [executionId, active] of snapshot) {
       if (sessions.get(executionId) === active) sessions.delete(executionId);
     }
-    await Promise.allSettled(snapshot.map(([, { session }]) => session.close("stdio closed")));
-    await Promise.allSettled(snapshot.map(([, { eventPump }]) => eventPump));
+    const results = await Promise.allSettled(
+      snapshot.map(([, active]) => closeActiveSessionWithin(active, "stdio closed", timeoutMs)),
+    );
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) throw failure.reason;
   }
 }
 
 function sessionCreationBeforeShutdown(
   creation: Promise<CloudAgentProviderSession>,
   signal: AbortSignal,
+  cleanupTimeoutMs: number,
   trackShutdownCleanup: (task: Promise<void>) => void,
 ): Promise<CloudAgentProviderSession> {
   return new Promise((resolve, reject) => {
@@ -568,7 +596,12 @@ function sessionCreationBeforeShutdown(
       if (settled) return;
       settled = true;
       signal.removeEventListener("abort", onAbort);
-      trackShutdownCleanup(creation.then(closeLateSession, () => undefined).catch(() => undefined));
+      trackShutdownCleanup(
+        creation.then(
+          (session) => closeSessionWithin(session, undefined, "stdio closing", cleanupTimeoutMs),
+          () => undefined,
+        ),
+      );
       reject(runtimeFailure("cancelled", "Runtime closed while creating the Provider Session."));
     };
     signal.addEventListener("abort", onAbort, { once: true });
@@ -597,8 +630,49 @@ function sessionCreationBeforeShutdown(
   });
 }
 
-async function closeLateSession(session: CloudAgentProviderSession): Promise<void> {
-  await session.close("stdio closing");
+function closeActiveSessionWithin(
+  active: ActiveSession,
+  reason: string,
+  timeoutMs: number,
+): Promise<void> {
+  active.cleanup ??= closeSessionWithin(active.session, active.eventPump, reason, timeoutMs);
+  return active.cleanup;
+}
+
+async function closeSessionWithin(
+  session: CloudAgentProviderSession,
+  eventPump: Promise<void> | undefined,
+  reason: string,
+  timeoutMs: number,
+): Promise<void> {
+  const closeTask = Promise.resolve().then(() => session.close(reason));
+  const cleanup = Promise.allSettled(eventPump ? [closeTask, eventPump] : [closeTask]);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let results: ReadonlyArray<PromiseSettledResult<void>>;
+  try {
+    results = await Promise.race([
+      cleanup,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new RuntimeSessionCleanupFailure(
+                `Provider Session cleanup timed out after ${timeoutMs}ms.`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failure) {
+    throw new RuntimeSessionCleanupFailure(errorText(failure.reason), failure.reason);
+  }
 }
 
 async function settleTasksWithin(
@@ -629,10 +703,7 @@ async function pumpSessionEvents(
 function readCredentialFd(
   environment: Readonly<Record<string, string | undefined>>,
 ): number | undefined {
-  const value = readCloudAgentEnvironment(
-    environment,
-    CLOUD_AGENT_ENVIRONMENT.providerCredentialFd,
-  )?.trim();
+  const value = environment[CLOUD_AGENT_ENVIRONMENT.providerCredentialFd]?.trim();
   if (!value) return undefined;
   const fd = Number(value);
   if (!Number.isSafeInteger(fd) || fd < 3 || fd > 1_024) {
@@ -699,6 +770,12 @@ class RuntimeStdioFailure extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+class RuntimeSessionCleanupFailure extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
   }
 }
 

@@ -2,6 +2,30 @@
 
 Current code includes the durable Runtime execution path in [`durable_runtime_execution.go`](durable_runtime_execution.go), in addition to the original in-memory kernel below. Managed Agent owns application Session/Turn/Execution, not the independent long-lived Workspace/Volume lifetime introduced by the [foundation-first design](../../../../docs/plan/cloud-agents-platform/02-target-architecture.md). Keep existing behavior compatible; new user CloudAgents work follows BASE-READY.
 
+While an execution is active, its in-memory message view is the complete public
+transcript, including the last persisted checkpoint; readers use the persisted
+snapshot only when no active view exists. The execution claim keeps renewing
+after the Runtime returns a terminal message until the fenced durable
+completion or failure transition returns. Each renewal attempt is bounded to
+less than one renewal interval so a stalled store call fails the claim before
+the lease can expire silently. Runtime health checks stop at the terminal
+message so settlement delay cannot turn a completed Runtime into a spurious
+Worker-health failure.
+
+Each accepted non-terminal Runtime frame remains a durable checkpoint boundary.
+Store-side transcript validation, size enforcement, digesting, and persistence
+reuse one canonical encoding at that boundary; optimizations must not batch
+frames or widen the recovery loss window. Checkpoint writes inherit the Runtime
+lifetime and have a finite persistence deadline. Terminal completion, failure,
+and cancellation use an independent finite persistence deadline so Runtime
+expiry cannot stop claim renewal mid-settlement and a stalled store cannot hold
+the execution forever.
+
+Long-running execution POST requests use a bounded admission pool separate from
+ordinary API requests. Execution saturation therefore rejects only new
+execution starts while reads, cancellation, and other control requests retain
+their own bounded capacity.
+
 ## Historical P1 lifecycle kernel
 
 The no-database/no-HTTP statements in this section describe that bounded kernel slice, not the package or platform as a whole.

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/profile.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "formatVersion", "registryId", "profileId", "decisionId", "status", "sourceBinding", "successorBinding", "inputBindings", "receiptPaths", "receiptBindings", "stateMachine", "notGateClosure", "gateStatus", "implementationBoundary"],
+  "properties": {
+    "$schema": { "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/profile.schema.json" },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-registry/v3" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer-replay/v3" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "decisionId": { "const": "D-053-EC-3" },
+    "status": { "enum": ["AUTHORITY_APPROVED_REPLAY_PENDING", "PROJECTION_CURRENT_NATIVE_REPLAY_PENDING", "NATIVE_REPLAY_CURRENT_PROFILE_PENDING", "PROFILE_CURRENT_FINAL_REVIEW_PENDING", "APPROVED_NON_GATE"] },
+    "sourceBinding": { "$ref": "#/$defs/source" },
+    "successorBinding": { "$ref": "#/$defs/successor" },
+    "inputBindings": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/file" } },
+    "receiptPaths": { "const": ["tools/g-contract-external-consumer/v3/evidence/replay/projection.json", "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-a.json", "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-b.json", "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-a.json", "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-b.json", "tools/g-contract-external-consumer/v3/evidence/replay/replay.json"] },
+    "receiptBindings": { "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true, "items": { "$ref": "#/$defs/file" } },
+    "stateMachine": { "enum": ["REPLAY_PENDING", "PROJECTION_CURRENT", "NATIVE_REPLAY_CURRENT", "PROFILE_CURRENT"] },
+    "notGateClosure": { "const": true },
+    "gateStatus": { "const": "ALL_GATES_OPEN" },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productionDatabaseWrites", "providerSideEffects", "deployment", "publication"],
+      "properties": { "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" }, "providerSideEffects": { "const": "FORBIDDEN" }, "deployment": { "const": "NOT_AUTHORIZED" }, "publication": { "const": "NOT_AUTHORIZED" } }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "file": { "type": "object", "additionalProperties": false, "required": ["path", "sha256", "sizeBytes"], "properties": { "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/digest" }, "sizeBytes": { "type": "integer", "minimum": 1 } } },
+    "source": { "type": "object", "additionalProperties": false, "required": ["path", "sha256", "sizeBytes"], "properties": { "path": { "const": "tools/g-contract-external-consumer/v3/source.json" }, "sha256": { "$ref": "#/$defs/digest" }, "sizeBytes": { "type": "integer", "minimum": 1 } } },
+    "successor": { "type": "object", "additionalProperties": false, "required": ["path", "sha256", "sizeBytes", "outputCount", "outputManifestSha256"], "properties": { "path": { "const": "contracts/generation.lock.successor-v3.json" }, "sha256": { "$ref": "#/$defs/digest" }, "sizeBytes": { "type": "integer", "minimum": 1 }, "outputCount": { "const": 47 }, "outputManifestSha256": { "$ref": "#/$defs/digest" } } }
+  }
+}

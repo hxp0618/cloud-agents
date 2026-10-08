@@ -3443,12 +3443,17 @@ func (client *Client) GetManagedAgentSession(ctx context.Context, tenantID, proj
 	}
 	return value, nil
 }
-func (client *Client) ListManagedAgentSessions(ctx context.Context, tenantID, projectID, requestID string, pageSize int, pageToken string) (ManagedAgentSessionPageResult, error) {
+func (client *Client) ListManagedAgentSessions(ctx context.Context, tenantID, projectID, requestID, sandboxID string, pageSize int, pageToken string) (ManagedAgentSessionPageResult, error) {
 	if err := validatePath(tenantID, requestID); err != nil {
 		return ManagedAgentSessionPageResult{}, err
 	}
 	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil {
 		return ManagedAgentSessionPageResult{}, err
+	}
+	if sandboxID != "" {
+		if err := common.ValidateIdentifier(sandboxID, "/sandboxId"); err != nil {
+			return ManagedAgentSessionPageResult{}, err
+		}
 	}
 	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
 		return ManagedAgentSessionPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
@@ -3459,6 +3464,9 @@ func (client *Client) ListManagedAgentSessions(ctx context.Context, tenantID, pr
 		}
 	}
 	query := url.Values{}
+	if sandboxID != "" {
+		query.Set("sandboxId", sandboxID)
+	}
 	if pageSize != 0 {
 		query.Set("pageSize", strconv.Itoa(pageSize))
 	}
@@ -3481,7 +3489,7 @@ func (client *Client) ListManagedAgentSessions(ctx context.Context, tenantID, pr
 		return ManagedAgentSessionPageResult{}, &ClientError{Operation: "managedAgentListSessions", Status: response.Status, Cause: err}
 	}
 	for _, session := range value.Value.Sessions {
-		if session.Metadata.ProjectID != projectID {
+		if session.Metadata.ProjectID != projectID || sandboxID != "" && session.Spec.SandboxID != sandboxID {
 			return ManagedAgentSessionPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/sessions")
 		}
 	}
@@ -3517,6 +3525,11 @@ func (client *Client) ListManagedAgentEvents(ctx context.Context, tenantID, proj
 	value, err := DecodeManagedAgentEventPageResponseJSON(response.Body)
 	if err != nil {
 		return ManagedAgentEventPageResult{}, &ClientError{Operation: "managedAgentListEvents", Status: response.Status, Cause: err}
+	}
+	for _, event := range value.Value.Events {
+		if event.Metadata.ProjectID != projectID || event.Metadata.SessionID != sessionID {
+			return ManagedAgentEventPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/events")
+		}
 	}
 	return value, nil
 }
@@ -3741,7 +3754,7 @@ func (client *Client) DownloadManagedAgentArtifact(ctx context.Context, tenantID
 	if err := validateExecutionPath(tenantID, projectID, requestID, sessionID, turnID, executionID); err != nil {
 		return ManagedAgentArtifactResult{}, err
 	}
-	if messageIndex < 0 || messageIndex >= 64 {
+	if messageIndex < 0 || messageIndex >= 128 {
 		return ManagedAgentArtifactResult{}, common.ContractError("INVALID_MESSAGE_INDEX", "/messageIndex")
 	}
 	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: "/v1/tenants/" + tenantID + "/projects/" + projectID + "/sessions/" + sessionID + "/turns/" + turnID + "/executions/" + executionID + "/messages/" + strconv.Itoa(messageIndex) + "/artifact", Headers: map[string]string{HeaderRequestID: requestID}})
@@ -4920,16 +4933,22 @@ type ListManagedAgentSessionsServerInput struct {
 	TenantID  string
 	ProjectID string
 	RequestID string
+	SandboxID string
 	PageSize  int
 	PageToken string
 }
 
-func ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID string, pageSize int, pageToken string) (ListManagedAgentSessionsServerInput, error) {
+func ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestID, sandboxID string, pageSize int, pageToken string) (ListManagedAgentSessionsServerInput, error) {
 	if err := validatePath(tenantID, requestID); err != nil {
 		return ListManagedAgentSessionsServerInput{}, err
 	}
 	if err := common.ValidateIdentifier(projectID, "/projectId"); err != nil {
 		return ListManagedAgentSessionsServerInput{}, err
+	}
+	if sandboxID != "" {
+		if err := common.ValidateIdentifier(sandboxID, "/sandboxId"); err != nil {
+			return ListManagedAgentSessionsServerInput{}, err
+		}
 	}
 	if pageSize < 1 || pageSize > 200 {
 		return ListManagedAgentSessionsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
@@ -4939,7 +4958,7 @@ func ValidateListManagedAgentSessionsServerRequest(tenantID, projectID, requestI
 			return ListManagedAgentSessionsServerInput{}, err
 		}
 	}
-	return ListManagedAgentSessionsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+	return ListManagedAgentSessionsServerInput{TenantID: tenantID, ProjectID: projectID, RequestID: requestID, SandboxID: sandboxID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type ListManagedAgentTurnsServerInput struct {

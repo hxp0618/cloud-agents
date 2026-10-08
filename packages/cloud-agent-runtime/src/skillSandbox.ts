@@ -21,7 +21,6 @@ import { Readable, type Writable } from "node:stream";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Socket } from "node:net";
 
-import { grantArgs, probe } from "@deepseek-ai/node-addon-landlock-run";
 import {
   CLOUD_AGENT_MAX_COMMAND_BYTES,
   validateCloudAgentCommandEnvelope,
@@ -60,7 +59,10 @@ export type ManagedSkillSandboxOptions = Readonly<{
   childCommand: string;
   childArgs: ReadonlyArray<string>;
   launcher?: string;
-  probeLauncher?: typeof probe;
+  probeLauncher?: (
+    launcher?: string,
+    options?: { readonly timeoutMs?: number },
+  ) => "full" | "partial" | "unusable";
   spawnProcess?: typeof spawn;
   /** @internal Canonical Runtime-owned root injection for conformance tests. */
   skillRootDirectory?: string;
@@ -85,7 +87,9 @@ export async function runManagedSkillSandbox(
   const scratchRoot = mkdtempSync("/tmp/cloud-agents-runtime-");
   try {
     const launcher = options.launcher ?? CLOUD_AGENT_LANDLOCK_LAUNCHER;
-    if ((options.probeLauncher ?? probe)(launcher) !== "full") {
+    const probeLauncher =
+      options.probeLauncher ?? (await import("@deepseek-ai/node-addon-landlock-run")).probe;
+    if (probeLauncher(launcher) !== "full") {
       throw new Error("Managed Skill isolation requires full Landlock enforcement.");
     }
     const source = options.source ?? process.stdin;
@@ -312,6 +316,7 @@ async function launchSandboxChild(
   evidence: ManagedSkillSandboxEvidence,
   launcher: string,
 ): Promise<void> {
+  const { grantArgs } = await import("@deepseek-ai/node-addon-landlock-run");
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     ...mounts.environment,
@@ -394,6 +399,9 @@ async function relayChild(
   child.stderr.pipe(diagnostics, { end: false });
   const evidencePipe = childStdio[5] as Writable;
   const livenessPipe = childStdio[6] as Writable;
+  // A child that exits early closes these pipes; its close status below stays
+  // authoritative, so EPIPE must not crash the relay first.
+  for (const pipe of [child.stdin, evidencePipe, livenessPipe]) pipe.on("error", () => undefined);
   evidencePipe.end(JSON.stringify(evidence));
   if (prefix.length > 0) child.stdin.write(prefix);
   if (source.readableEnded) child.stdin.end();

@@ -29,6 +29,9 @@ services:
     build:
       context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
       dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/worker.Dockerfile
+      args:
+        DEBIAN_MIRROR: ${CLOUD_AGENTS_DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${CLOUD_AGENTS_DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
     command:
       - "--listen"
       - ":8091"

@@ -124,7 +124,7 @@ WHERE session.tenant_id = cloud_agents.require_tenant_id()
 	managedAgentSessionPageCursorIdentitySQL = `SELECT 1
 FROM cloud_agents.managed_agent_sessions
 WHERE tenant_id = cloud_agents.require_tenant_id()
-    AND project_uid = $1 AND session_uid = $2`
+    AND project_uid = $1 AND ($2 = '' OR sandbox_uid = $2) AND session_uid = $3`
 	listManagedAgentSessionsSQL = `SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(managed_session)
     ORDER BY managed_session.session_uid), '[]'::jsonb)
 FROM (
@@ -141,9 +141,10 @@ FROM (
         AND environment.lease_uid = session.environment_lease_uid
     WHERE session.tenant_id = cloud_agents.require_tenant_id()
         AND session.project_uid = $1
-        AND session.session_uid > $2
+        AND ($2 = '' OR session.sandbox_uid = $2)
+        AND session.session_uid > $3
     ORDER BY session.session_uid
-    LIMIT $3
+    LIMIT $4
 ) AS managed_session`
 	resolveMcpServerCapabilitySQL   = `SELECT version, digest, transport, connection_ref, credential_ref, network_policy_ref, permissions, status, pg_catalog.floor(EXTRACT(EPOCH FROM (pg_catalog.transaction_timestamp() + INTERVAL '15 minutes')))::bigint FROM cloud_agents.mcp_servers WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND server_uid=$2`
 	resolveSkillBundleCapabilitySQL = `SELECT version, digest, compatible_providers, status, pg_catalog.floor(EXTRACT(EPOCH FROM (pg_catalog.transaction_timestamp() + INTERVAL '15 minutes')))::bigint FROM cloud_agents.skill_bundles WHERE tenant_id=cloud_agents.require_tenant_id() AND project_uid=$1 AND bundle_uid=$2`
@@ -290,6 +291,7 @@ func (service *DurableCoordinationService) ListManagedAgentSessions(
 	tenantID string,
 	principal *authn.VerifiedPrincipal,
 	projectID string,
+	sandboxID string,
 	afterSessionID string,
 	limit int,
 ) (ManagedAgentSessionPage, error) {
@@ -297,6 +299,7 @@ func (service *DurableCoordinationService) ListManagedAgentSessions(
 		return ManagedAgentSessionPage{}, ErrNilCoordinationRunner
 	}
 	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) ||
+		sandboxID != "" && !validMutationIdentifier(sandboxID) ||
 		afterSessionID != "" && !validMutationIdentifier(afterSessionID) || limit < 1 || limit > 200 {
 		return ManagedAgentSessionPage{}, ErrCoordinationInvalidInput
 	}
@@ -315,7 +318,7 @@ func (service *DurableCoordinationService) ListManagedAgentSessions(
 			return executeVerifiedRBACOperation(readContext, handle, operation, scope, func() error {
 				if afterSessionID != "" {
 					var exists int
-					if err := handle.transaction.queryRow(readContext, managedAgentSessionPageCursorIdentitySQL, projectID, afterSessionID).Scan(&exists); err != nil {
+					if err := handle.transaction.queryRow(readContext, managedAgentSessionPageCursorIdentitySQL, projectID, sandboxID, afterSessionID).Scan(&exists); err != nil {
 						if errors.Is(err, pgx.ErrNoRows) {
 							return ErrCoordinationInvalidInput
 						}
@@ -323,11 +326,11 @@ func (service *DurableCoordinationService) ListManagedAgentSessions(
 					}
 				}
 				var raw []byte
-				if err := handle.transaction.queryRow(readContext, listManagedAgentSessionsSQL, projectID, afterSessionID, limit+1).Scan(&raw); err != nil {
+				if err := handle.transaction.queryRow(readContext, listManagedAgentSessionsSQL, projectID, sandboxID, afterSessionID, limit+1).Scan(&raw); err != nil {
 					return mapMutationDatabaseError("managed agent sessions", err)
 				}
 				var err error
-				result, err = decodeManagedAgentSessionPageRows(raw, tenantID, projectID, limit)
+				result, err = decodeManagedAgentSessionPageRows(raw, tenantID, projectID, sandboxID, limit)
 				return err
 			})
 		})
@@ -336,7 +339,7 @@ func (service *DurableCoordinationService) ListManagedAgentSessions(
 	return result, err
 }
 
-func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, limit int) (ManagedAgentSessionPage, error) {
+func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID, sandboxID string, limit int) (ManagedAgentSessionPage, error) {
 	var rows []managedAgentSessionPageRow
 	if json.Unmarshal(raw, &rows) != nil || rows == nil || len(rows) > limit+1 {
 		return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
@@ -348,17 +351,17 @@ func decodeManagedAgentSessionPageRows(raw []byte, tenantID, projectID string, l
 		}
 		state := internalmanagedagent.SessionState(row.State)
 		environmentLeaseID, environmentGeneration, validEnvironment := managedAgentSessionEnvironment(row.EnvironmentLeaseID, row.EnvironmentGeneration)
-		workspaceID, sandboxID, sandboxGeneration, validFoundation := managedAgentSessionFoundation(row.WorkspaceID, row.SandboxID, row.SandboxGeneration)
+		workspaceID, boundSandboxID, sandboxGeneration, validFoundation := managedAgentSessionFoundation(row.WorkspaceID, row.SandboxID, row.SandboxGeneration)
 		environmentProfileID, environmentProfileVersion, validProfile := managedAgentSessionProfile(row.EnvironmentProfileID, row.EnvironmentProfileVersion)
-		if row.TenantID != tenantID || row.ProjectID != projectID || !validMutationIdentifier(row.SessionID) ||
+		if row.TenantID != tenantID || row.ProjectID != projectID || sandboxID != "" && row.SandboxID == nil || sandboxID != "" && *row.SandboxID != sandboxID || !validMutationIdentifier(row.SessionID) ||
 			!validMutationIdentifier(row.ProviderKind) || state != internalmanagedagent.SessionActive && state != internalmanagedagent.SessionClosed ||
-			!validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(environmentLeaseID, workspaceID, sandboxID, environmentProfileID) || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+			!validEnvironment || !validFoundation || !validProfile || !validManagedAgentBinding(environmentLeaseID, workspaceID, boundSandboxID, environmentProfileID) || row.ResourceVersion < 1 || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
 			return ManagedAgentSessionPage{}, ErrCoordinationResultDrift
 		}
 		sessions = append(sessions, internalmanagedagent.SessionSnapshot{
 			Scope: internalmanagedagent.Scope{TenantID: tenantID, ProjectID: projectID}, SessionID: row.SessionID,
 			ProviderKind: row.ProviderKind, EnvironmentLeaseID: environmentLeaseID, EnvironmentGeneration: environmentGeneration,
-			WorkspaceID: workspaceID, SandboxID: sandboxID, SandboxGeneration: sandboxGeneration,
+			WorkspaceID: workspaceID, SandboxID: boundSandboxID, SandboxGeneration: sandboxGeneration,
 			EnvironmentProfileID: environmentProfileID, EnvironmentProfileVersion: environmentProfileVersion,
 			McpServerRefs:   append([]internalmanagedagent.McpServerRef(nil), row.McpServerRefs...),
 			SkillBundleRefs: append([]internalmanagedagent.SkillBundleRef(nil), row.SkillBundleRefs...),

@@ -126,15 +126,24 @@ func (supervisor *Supervisor) BindRuntime(ctx context.Context) error {
 }
 
 func (supervisor *Supervisor) CheckRuntimeHealth(ctx context.Context) error {
-	return supervisor.checkRuntimeHealth(ctx, true)
+	return supervisor.checkRuntimeHealth(ctx, true, true)
 }
 
-func (supervisor *Supervisor) checkRuntimeHealth(ctx context.Context, retryStaleBinding bool) error {
+// CheckRuntimeHealthStrict validates the current Worker binding without
+// renegotiating. A running Runtime stream uses that binding; a stale result
+// means the Worker was replaced and the stream must be stopped for recovery.
+func (supervisor *Supervisor) CheckRuntimeHealthStrict(ctx context.Context) error {
+	return supervisor.checkRuntimeHealth(ctx, false, false)
+}
+
+func (supervisor *Supervisor) checkRuntimeHealth(ctx context.Context, retryStaleBinding, ensureBinding bool) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	if err := supervisor.ensureBinding(ctx); err != nil {
-		return err
+	if ensureBinding {
+		if err := supervisor.ensureBinding(ctx); err != nil {
+			return err
+		}
 	}
 	supervisor.mu.RLock()
 	state := cloneBinding(supervisor.binding)
@@ -148,7 +157,7 @@ func (supervisor *Supervisor) checkRuntimeHealth(ctx context.Context, retryStale
 	if err != nil {
 		if retryStaleBinding && staleBindingError(err) {
 			supervisor.clearBinding(state)
-			return supervisor.checkRuntimeHealth(ctx, false)
+			return supervisor.checkRuntimeHealth(ctx, false, true)
 		}
 		return rpcFailure("health", err)
 	}

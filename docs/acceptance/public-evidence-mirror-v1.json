@@ -1,0 +1,109 @@
+{
+  "$schema": "https://schemas.cloud-agents.dev/docs/acceptance/public-evidence-mirror-v1.schema.json",
+  "formatVersion": "cloud-agents-public-evidence-mirror/v1",
+  "status": "SANITIZED_PUBLIC_MIRROR",
+  "sourceInputs": [
+    {
+      "path": "docs/acceptance/phase-1.md",
+      "sha256": "sha256:eaf4c7ca3a6ca1a24ad8506e41ba5372d180ae0a9522f5497f35042f4e39d620",
+      "sizeBytes": 82965,
+      "gitMode": "100644"
+    },
+    {
+      "path": "docs/plan/cloud-agents-platform/06-status-tracker.md",
+      "sha256": "sha256:bb4981d429682bfd05c5c57a440beaab6b8c16d45489553f4200578aac6fc28a",
+      "sizeBytes": 326596,
+      "gitMode": "100644"
+    }
+  ],
+  "output": {
+    "path": "docs/acceptance/phase-1.public.md",
+    "sha256": "sha256:4b22ac4d0b2cb0f56e9bb47fdc9d4aa73d91988babfa51245693aee304826300",
+    "sizeBytes": 393672,
+    "gitMode": "100644"
+  },
+  "sanitization": {
+    "profile": "public-evidence-mirror/v1",
+    "sourcePreserved": true,
+    "publicLinksNormalized": 9,
+    "replacementRules": [
+      {
+        "id": "host-path",
+        "replacement": "<host-path>",
+        "count": 11
+      },
+      {
+        "id": "tmp-artifact",
+        "replacement": "<evidence-artifact>",
+        "count": 366
+      },
+      {
+        "id": "pod-cidr",
+        "replacement": "<pod-cidr>",
+        "count": 20
+      },
+      {
+        "id": "service-cidr",
+        "replacement": "<service-cidr>",
+        "count": 10
+      },
+      {
+        "id": "cluster-cidr-summary",
+        "replacement": "<cluster-cidr-summary>",
+        "count": 3
+      },
+      {
+        "id": "pod-ip",
+        "replacement": "<pod-ip>",
+        "count": 5
+      },
+      {
+        "id": "service-ip",
+        "replacement": "<service-ip>",
+        "count": 2
+      },
+      {
+        "id": "vm-ip",
+        "replacement": "<test-vm-ip>",
+        "count": 8
+      },
+      {
+        "id": "private-ip",
+        "replacement": "<private-ip>",
+        "count": 8
+      },
+      {
+        "id": "loopback-endpoint",
+        "replacement": "<loopback-endpoint>",
+        "count": 9
+      },
+      {
+        "id": "kubernetes-api-endpoint",
+        "replacement": "<kubernetes-api-endpoint>",
+        "count": 2
+      },
+      {
+        "id": "credential-path",
+        "replacement": "<credential-path>",
+        "count": 120
+      },
+      {
+        "id": "provider-token-env",
+        "replacement": "<provider-token-env>",
+        "count": 4
+      }
+    ]
+  },
+  "omittedHistoricalObjects": {
+    "patterns": [
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.log",
+      "*.html"
+    ],
+    "count": 138,
+    "source": "git log --all --diff-filter=D --name-only",
+    "reason": "Historical binary and log deletion objects are not restored into the public mirror without an independent review."
+  }
+}

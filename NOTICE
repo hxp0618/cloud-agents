@@ -2,14 +2,24 @@ Cloud Agents
 Copyright (c) 2026 Runora. Licensed under the MIT License (see LICENSE).
 
 The portable Runtime packages were extracted from the MIT-licensed Synara
-repository; see SOURCE_PROVENANCE.md. Those portions remain
-Copyright (c) 2026 Runora and their notices are retained in LICENSE and in each package LICENSE.
+repository; see SOURCE_PROVENANCE.md. Their package LICENSE files retain the
+original T3 Tools Inc. and Emanuele Di Pietro copyright lines alongside the
+Runora notice.
 
 Third-party dependency notices are maintained next to each distributed component:
   services/control-plane/THIRD_PARTY_NOTICES.md
   sdk/go/THIRD_PARTY_NOTICES.md
   sdk/typescript/THIRD_PARTY_NOTICES.md
+  packages/cloud-agent-runtime/THIRD_PARTY_NOTICES.md
 
-Some optional Provider packages depend on third-party SDKs under their own terms
-(for example @anthropic-ai/claude-agent-sdk). These are installed from their
-publishers and are not redistributed in this repository.
+The OpenSandbox successor recipes retain the upstream Apache-2.0 license:
+  tools/opensandbox-execd-successor/v1/LICENSE
+  tools/opensandbox-server-successor/v1/LICENSE
+Their source, patch, and base-image provenance boundaries are recorded in
+SOURCE_PROVENANCE.md and each recipe's source.json.
+
+Provider packages depend on third-party SDKs under their own terms, including
+`@anthropic-ai/claude-agent-sdk`, `@deepseek-ai/dsh-sdk-client`, and
+`@earendil-works/pi-coding-agent`. These dependencies are installed from their
+publishers and are not vendored or redistributed in this repository; their
+licenses remain with their respective packages.

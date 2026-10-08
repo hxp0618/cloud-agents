@@ -28,7 +28,6 @@
     "package.json",
     "scripts/generate-worker-localdev-launcher-profile.ts",
     "scripts/lib/platform-json-semantics.ts",
-    "scripts/lib/worker-localdev-launcher-profile.test.ts",
     "scripts/lib/worker-localdev-launcher-profile.ts",
     "sdk/go/gen/cloudagents/worker/v1alpha1/kernel.pb.go",
     "sdk/go/gen/cloudagents/worker/v1alpha1/worker_supervisor.pb.go",
@@ -56,6 +55,7 @@
     "services/worker/supervisor/dispatch_profile_generated.go",
     "services/worker/supervisor/local_dispatch.go",
     "services/worker/supervisor/local_dispatch_test.go",
+    "test/scripts/worker-localdev-launcher-profile.test.ts",
     "tsconfig.base.json"
   ],
   "exclusionPaths": [
@@ -80,7 +80,7 @@
     "services/worker/localdev_launcher_profile_generated.go"
   ],
   "inputSetAlgorithm": "utf8-bytewise-sorted-path-regular-file-mode-size-sha256-nul-v1",
-  "inputManifestDigest": "sha256:e84694ee3559b36eefe5bec8b9b3fa419c912f8f97f0c700cace03a2d5366e60",
+  "inputManifestDigest": "sha256:af7eacc94ea920f2bdb66e785ff1a1f85adafef9645c9ca9d7073095904f0efd",
   "archive": {
     "algorithm": "deterministic-ustar-v1",
     "emission": "forbidden",
@@ -252,5 +252,5 @@
     "publication": "forbidden",
     "gateTransition": "forbidden"
   },
-  "sourceDigest": "sha256:197c3eac490ef4cf161a13df8dcd07fb15d4a0102a2f6494c3be029eeb5e2941"
+  "sourceDigest": "sha256:6d4087b506bb093b6190d1ac736c97fbab412825b0cbe0c717babd6150d59c38"
 }

@@ -105,6 +105,33 @@ Mock、build/lint、探活或历史其他制品的成功不替代本节真实验
 
 四个 Provider × 三种环境仍是十二格必验：每格必须真实完成 MCP 调用或 Skill 发现/加载、增量事件、断连重连、Control Plane/Worker/Agent 重启、凭据撤销、版本不兼容、跨租户拒绝、旧 generation 拒绝与安全恢复。MCP 不可用时 fail closed；结果未知时不得盲目重放外部副作用。Admin 只展示 opaque ID、版本、digest、权限、兼容性、绑定关系及 Operation/Audit 元数据，不展示 Prompt、源码、工具输入输出、MCP 返回内容或 Secret。
 
+<a id="identity-v1"></a>
+
+### 0.4 身份、登录与租户选择验收 IDENTITY-V1
+
+IDENTITY-V1 按 [ADR-0033](../adr/0033-built-in-identity-service.md) 和 [07](07-admin-web-requirements-and-design.md#identity-v1) 实施。ADR 当前为 `Proposed`；P0 只形成决策与文档，必须由 owner 明确批准后才能开始 P1～P5 runtime，文档完成不算实现通过、Gate 关闭或部署授权。
+
+所有阶段共同满足以下边界：
+
+- 账号使用稳定用户 ID；密码和明确链接的外部身份映射到同一账号，不按相同邮箱自动合并。账号只由管理员邀请创建，不提供自助注册。
+- 每个 tenant token 只绑定一个租户，默认有效期 15 分钟，切换租户重新签发；Control Plane 在每个请求中重新检查角色绑定并保持租户 RLS。`platform.admin` 只提供平台管理与租户发现权限，选择租户后仍进入单租户上下文，不自动获得用户内容权限。
+- 浏览器只持有相互隔离的 Admin Web/User Web `HttpOnly` 会话 cookie，不接触 Identity Provider、Identity Service 或 Control Plane 的 access、refresh、ID token。OAuth/OIDC 临时授权码和一次性邀请 proof 是限时交换材料，不得变成浏览器持久令牌或进入 URL 历史、存储、日志、Audit。
+- 已签发 JWT 的签名和声明验证后，Control Plane 对每个新请求还须在线按 `jti` 查到 user/session/tenant/client 状态且不使用正向缓存，再执行授权；撤销事务提交后开始的新请求立即拒绝。流式连接在每次受保护动作及不超过 15 秒的 heartbeat 重查并关闭；已经授权并开始的 mutation 不回滚。权威不可用或状态未知时 fail closed，不能仅凭离线 JWT 继续放行。
+- 邮箱后缀只限制邀请和新增成员，不授予成员或角色。空列表允许邀请任意已验证邮箱；非空列表只按规范化后的完整邮箱域大小写无关精确匹配，不接受通配符或子域自动匹配。多个租户可以配置同一域名；超级管理员豁免只适用于其自身管理操作，不能替其他账号绕过准入。
+
+阶段验收如下；后续阶段不能用来补记前一阶段的缺失证据：
+
+| 阶段 | 必须完成的验收 |
+| --- | --- |
+| P0 决策与文档 | 新 ADR、01/02/04/05/07 与 SECURITY.md 对内置身份服务、会话、CSRF、密码存储、锁定和 Audit 的 authority 一致；owner 明确批准 ADR 后才可进入 P1。 |
+| P1 契约、数据与核心 | 版本化契约及生成 SDK 覆盖 login/logout、session、me/可用租户、tenant-token、邀请、邮箱后缀和身份链接；平台级最小表只经窄数据库函数访问；Argon2id、账号/IP 限速锁定、重置链接、JWKS 自动刷新和首个超级管理员初始化完成。tenant token 保持当前 RS256 profile 与 Control Plane audience，以 `client_id` 绑定应用用途。错误密码/锁定、切换租户签发新 token、未授权租户 fail closed、禁用用户/撤销会话立即拒绝、后缀策略和 Audit 无 secret 均有 red/green 测试。 |
+| P2 Web 登录与范围切换 | Identity Service 是 durable session owner；`server.mjs` 只签发 cookie、代理并缓存非权威投影，以每个请求路径中的租户换取短期 token。Admin/User cookie、session、`client_id` 和 CSRF 边界分离。两个 Web 具备登录、经重新授权的上次选择或稳定首个可用租户、授权项目选择，移除手填 tenant/project/token；无租户显示拒绝页，选择状态不使用跨标签页或服务端 session 共享的全局可变租户，切换时取消旧请求并清空旧范围数据。Secure `__Host-` cookie 前必须先为 Web 提供最小 HTTPS，不等到 P5 打包。tester-army E2E 证明自动进入租户、超级管理员/租户管理员可见范围、Admin/User 会话互拒及浏览器存储/网络可见数据中无 token。 |
+| P3 租户管理 | Admin Web 覆盖成员、邀请、受授权范围内的角色授予、邮箱后缀、租户内暂停、平台级禁用/管理员重置、用户密码/恢复、显式重新认证的身份链接和 Audit。邀请接受必须证明邮箱所有权；无 SMTP 时复制链接本身不构成验证，已有账号先登录且邀请不能覆盖其密码。租户管理员只能暂停本租户成员，不能全局禁用多租户账号、重置账号凭据、授予 `platform.admin` 或超出自身权限的角色。后端状态与完整页面流一致。 |
+| P4 外部登录 | 依次完成标准 OIDC（discovery、authorization code + PKCE、nonce、ID token 校验及 Keycloak E2E）、GitHub/GitLab、Feishu/DingTalk/WeCom。每个非标准 provider 显式配置是否信任其已验证邮箱；缺失或不可信邮箱不能接受邀请，但已预先链接的 provider subject 可以登录。逐 provider 验证登录、链接/解除链接、未知登录拒绝和邀请接受；client secret 只保存引用。 |
+| P5 CLI、自动化与部署 | `cloud-agentsctl` 浏览器登录、本地 callback、service-account 自动化/E2E token、Compose/Helm identity 容器与签名密钥、Web TLS 和安全复核完成。任何生产迁移/部署仍需单独明确批准，P0 批准或本地验收不能代替生产授权。 |
+
+两步验证、SCIM 与活动会话查看/撤销页面留待后续，不计入 IDENTITY-V1。
+
 ## 1. Gate 总表
 
 以下保留旧完整 Platform/消费者的正式 Gate 定义与批准要求，仅在执行对应 Gate 或该范围变更时适用；不是所有 BASE 日常工作必须先关闭的清单。BASE 联合交付的完成条件由上节定义，不新增一轮泛化审批，也不降低这里任何正式 closure 条件。

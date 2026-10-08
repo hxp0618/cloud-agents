@@ -168,8 +168,9 @@ export async function startManagedMcpBroker(
       expiresAtUnixSeconds: binding.expiresAtUnixSeconds,
     });
   }
+  const shutdown = new AbortController();
   const server = createServer((request, response) => {
-    void handleRequest(request, response, byToken);
+    void handleRequest(request, response, byToken, shutdown.signal);
   });
   await listenLoopback(server);
   const address = server.address();
@@ -187,7 +188,10 @@ export async function startManagedMcpBroker(
   return Object.freeze({
     url,
     environment: Object.freeze(environment),
-    close: () => closeServer(server),
+    close: () => {
+      shutdown.abort();
+      return closeServer(server);
+    },
   });
 }
 
@@ -195,6 +199,7 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
   byToken: ReadonlyMap<string, AuthorizedMcpMaterialization>,
+  shutdown: AbortSignal,
 ): Promise<void> {
   try {
     if (request.url !== "/mcp") {
@@ -221,10 +226,23 @@ async function handleRequest(
     const body = await readRequestBody(request);
     const toolCallId = mcpToolCallId(body);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    const abort = () => controller.abort();
+    const timeout = setTimeout(abort, UPSTREAM_TIMEOUT_MS);
     timeout.unref();
-    let upstream: Response;
+    shutdown.addEventListener("abort", abort, { once: true });
+    if (shutdown.aborted) abort();
+    // undici links the fetch signal to its internal Request controller through a WeakRef;
+    // once that controller is collected, aborting no longer reaches the response body.
+    // The broker therefore races each upstream step against its own abort and cancels
+    // the body itself.
+    const aborted = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
+        once: true,
+      });
+    });
+    aborted.catch(() => undefined);
     try {
+      let upstream: Response | undefined;
       const headers: Record<string, string> = {
         accept: "application/json, text/event-stream",
         "content-type": request.headers["content-type"] ?? "application/json",
@@ -234,38 +252,48 @@ async function handleRequest(
         const value = request.headers[name];
         if (typeof value === "string") headers[name] = value;
       }
-      upstream = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body,
-        redirect: "error",
-        signal: controller.signal,
-      });
-    } catch {
-      if (toolCallId !== undefined) writeUnknownToolCallResult(response, toolCallId);
-      else writeJson(response, 502, { error: "mcp_upstream_unavailable" });
-      return;
-    } finally {
-      clearTimeout(timeout);
-    }
-    let payload: Buffer;
-    try {
-      payload = await readResponseBody(upstream);
-    } catch (error) {
-      if (toolCallId !== undefined && upstream.ok) {
-        writeUnknownToolCallResult(response, toolCallId);
+      let payload: Buffer;
+      try {
+        const pending = fetch(endpoint, {
+          method: "POST",
+          headers,
+          body,
+          redirect: "error",
+          signal: controller.signal,
+        });
+        void pending.then(
+          (late) => {
+            if (controller.signal.aborted) void late.body?.cancel().catch(() => undefined);
+          },
+          () => undefined,
+        );
+        upstream = await Promise.race([pending, aborted]);
+        payload = await readResponseBody(upstream, aborted);
+      } catch (error) {
+        if (toolCallId !== undefined && (!upstream || upstream.ok)) {
+          writeUnknownToolCallResult(response, toolCallId);
+          return;
+        }
+        if (error instanceof BrokerRequestError) throw error;
+        writeJson(response, 502, { error: "mcp_upstream_unavailable" });
         return;
       }
-      throw error;
+      response.statusCode = upstream.status;
+      response.setHeader(
+        "content-type",
+        upstream.headers.get("content-type") ?? "application/json",
+      );
+      response.setHeader("cache-control", "no-store");
+      for (const name of ["mcp-session-id", "mcp-protocol-version"] as const) {
+        const value = upstream.headers.get(name);
+        if (value) response.setHeader(name, value);
+      }
+      response.end(payload);
+    } finally {
+      clearTimeout(timeout);
+      shutdown.removeEventListener("abort", abort);
+      controller.abort();
     }
-    response.statusCode = upstream.status;
-    response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json");
-    response.setHeader("cache-control", "no-store");
-    for (const name of ["mcp-session-id", "mcp-protocol-version"] as const) {
-      const value = upstream.headers.get(name);
-      if (value) response.setHeader(name, value);
-    }
-    response.end(payload);
   } catch (error) {
     const code = error instanceof BrokerRequestError ? error.status : 400;
     writeJson(response, code, {
@@ -442,25 +470,32 @@ async function readRequestBody(request: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function readResponseBody(response: Response): Promise<Buffer> {
+async function readResponseBody(response: Response, aborted: Promise<never>): Promise<Buffer> {
   const contentLength = Number(response.headers.get("content-length") ?? "");
   if (Number.isSafeInteger(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
+    void response.body?.cancel().catch(() => undefined);
     throw new BrokerRequestError(502, "mcp_response_too_large");
   }
   if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
   let size = 0;
-  while (true) {
-    const next = await reader.read();
-    if (next.done) break;
-    const chunk = Buffer.from(next.value);
-    size += chunk.length;
-    if (size > MAX_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new BrokerRequestError(502, "mcp_response_too_large");
+  let complete = false;
+  try {
+    while (true) {
+      const next = await Promise.race([reader.read(), aborted]);
+      if (next.done) break;
+      const chunk = Buffer.from(next.value);
+      size += chunk.length;
+      if (size > MAX_RESPONSE_BYTES) {
+        throw new BrokerRequestError(502, "mcp_response_too_large");
+      }
+      chunks.push(chunk);
     }
-    chunks.push(chunk);
+    complete = true;
+  } finally {
+    if (!complete) void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
   return Buffer.concat(chunks);
 }

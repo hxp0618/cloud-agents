@@ -1,12 +1,11 @@
 {
-  "formatVersion": "cloud-agents-generated-sdk-manifest/v1",
+  "formatVersion": "cloud-agents-generated-sdk-manifest/v2",
   "profile": "cloud-agents-common-identity/v1alpha1",
   "status": "GENERATED_NON_GATE_EVIDENCE",
   "notGateClosure": true,
   "contract": {
-    "manifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "manifestSha256": "sha256:f2b1b9e64249fc9f72cceb857073e49957b78c6f3ab0b7f8d2d01b042a821e37",
-    "inputManifestSha256": "sha256:2253e5baab41fb44d276214b0007b58ed92b5736ef29ab0481628038e8912cbf",
+    "inputManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "inputManifestSha256": "sha256:cfb4ec811bc54b27868db68101adade4af64dc856ec6322ea6c78d14ec92173b",
     "inputs": [
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-canonical.json",
       "contracts/common/v1alpha1/fixtures/golden/namespace-ref-nfc.json",
@@ -29,18 +28,31 @@
   },
   "generator": {
     "id": "platform-common-identity-sdk-generator",
-    "version": "v1",
+    "version": "v2",
     "entrypoint": "scripts/generate-platform-identity-sdks.ts",
-    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v1",
-    "sourceManifestSha256": "sha256:80f78cf57dc661499bd443542d672afd87c3682cbd8c2b2f30cba707e076fc1b",
+    "sourceManifestAlgorithm": "sorted-path-nul-sha256-nul-git-mode-v2",
+    "sourceManifestSha256": "sha256:3b2dc99d9fdacf78ff1e258bd92d47b86702fb7f17677bf1b5b3e800b4e7adef",
     "sources": [
       "scripts/generate-platform-identity-sdks.ts",
-      "scripts/lib/platform-identity-sdk.test.ts",
       "scripts/lib/platform-identity-sdk.ts",
+      "scripts/lib/platform-sdk-manifest.ts",
       "scripts/templates/platform-identity-sdk-go.tmpl",
       "scripts/templates/platform-identity-sdk-typescript.tmpl"
     ],
-    "configDigest": "sha256:28e47b77b878187f02f6acc3f875baa85aa13321c65b56c4d71136b3f96f9d75"
+    "dependencies": {
+      "mise": {
+        "path": ".mise.toml",
+        "sha256": "sha256:be2bf934f1fde8d46e76b1a8b7a19ce7b4bb88d5ed9719b83e250497943f15af"
+      },
+      "rootPackage": {
+        "path": "package.json",
+        "sha256": "sha256:6404de94545152198633c8c3027b5ba73a9d900f6ffb594782fb3003326401d1"
+      },
+      "bunLock": {
+        "path": "bun.lock",
+        "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+      }
+    }
   },
   "implementationBoundary": {
     "gateClosure": false,
@@ -57,19 +69,34 @@
       "module": "golang.org/x/text",
       "version": "v0.39.0",
       "package": "golang.org/x/text/unicode/norm",
-      "license": "BSD-3-Clause",
-      "patentsSha256": "sha256:96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
-      "review": "docs/plan/p1/dependency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md",
-      "bitsReview": "docs/plan/p1/dependency-reviews/x-text-v0.39.0.md"
+      "license": "BSD-3-Clause"
     }
   ],
-  "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-v1",
-  "outputTreeSha256": "sha256:a5aeffec9d08979d398963d1a7e5e2764c614842591ef3531576b848e1e694e3",
+  "dependencyFiles": {
+    "goMod": {
+      "path": "sdk/go/go.mod",
+      "sha256": "sha256:8b9e28f4db2db796bd69a6d1df5c93ff9f145c621209779b76d2df0a52794063"
+    },
+    "goSum": {
+      "path": "sdk/go/go.sum",
+      "sha256": "sha256:9a62d7bf49f4e7cf0a358236a8a8508a2545384e762b5699a1a0e5b44001b65b"
+    },
+    "notice": {
+      "path": "sdk/go/THIRD_PARTY_NOTICES.md",
+      "sha256": "sha256:7c73e29fe4b6bfdd700393923db47ac5ff733b621507dcaff01b429e3a4a88f8"
+    },
+    "review": {
+      "path": "docs/plan/p1/dependency-reviews/x-text-v0.39.0-go-sdk-use-20260820.md",
+      "sha256": "sha256:dd5967127e759860cb13e0e2cebb1ec6b34b7f0a9dcb75256e79689a7d5f7a75"
+    }
+  },
+  "outputTreeAlgorithm": "sorted-path-nul-sha256-nul-size-v1",
+  "outputTreeSha256": "sha256:3ea5a35aabc20615a5998ebb924aa5ab912e2f07fb19cf3248817b0424d05610",
   "outputs": [
     {
       "path": "sdk/go/gen/common/v1alpha1/identity_generated.go",
-      "sha256": "sha256:f5dc88a4c2a439ea304641109df963c0ef4aa09def4046dee609b77ea922cc53",
-      "sizeBytes": 13530
+      "sha256": "sha256:ce401fe0009f9283848e7b9bcfc3e8239dcbf1e46d9db68ded98da9766669052",
+      "sizeBytes": 13237
     }
   ]
 }

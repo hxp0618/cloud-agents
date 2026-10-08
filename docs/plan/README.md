@@ -1,6 +1,6 @@
 # Cloud Agents 文档与执行入口
 
-当前平台实际状态只认 [06 当前状态](cloud-agents-platform/06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../acceptance/phase-1.md)。产品与文档路由依据 [ADR-0032](adr/0032-infrastructure-admin-delivery-and-document-routing.md)。
+当前平台实际状态只认 [06 当前状态](cloud-agents-platform/06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../acceptance/phase-1.public.md)。产品与文档路由依据 [ADR-0032](adr/0032-infrastructure-admin-delivery-and-document-routing.md)。
 
 ## 活动入口
 

@@ -6,7 +6,7 @@
 - Control-plane subtree: `c78ffc27c88b0f50871795a281669b7b2ef9bd27`
 - Proposed decision: [`ADR-0023`](../adr/0023-p1-runner-ledger-recovery-writer-contract.md)
 - Scope: read-only source audit and versioned contract proposal only
-- Independent review: [`6d4da5b`, `APPROVE, P0=0/P1=0/P2=0`](runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md)
+- Independent review: `runner-ledger-recovery-contract-audit-independent-review-r2-20260822.md` (历史私有归档)
 - Review record SHA-256: `e8192b5ae4525ed11717935b2e821e9160f0f24161d3868f8869a4d2cfeb924c`
 
 This record does not add or approve a generated profile, claim, permit, database session, transaction, SQL execution,

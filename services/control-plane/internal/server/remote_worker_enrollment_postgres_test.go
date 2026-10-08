@@ -50,7 +50,11 @@ func TestRemoteWorkerEnrollmentPostgres(t *testing.T) {
 	if runtimeURL == "" || ownerURL == "" {
 		t.Skip("isolated RemoteWorker enrollment PostgreSQL environment not configured")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	// The live acceptance now covers the dual-command PTY takeover sequence,
+	// which adds four real worker process heartbeats before the SSH and cleanup
+	// assertions. Keep the end-to-end bound explicit while leaving the command
+	// and HTTP polling deadlines unchanged.
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	runtimePool, err := pgxpool.New(ctx, runtimeURL)
 	if err != nil {
@@ -1318,6 +1322,16 @@ ORDER BY created_at, command_uid LIMIT 1`, requestID).Scan(&commandID)
 		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 		return commandID, receipt
 	}
+	settlePTYUntilOutput := func(requestID string) (string, platform.RemoteWorkerSandboxPTYCommandReceipt) {
+		for exchange := 0; exchange < 4; exchange++ {
+			commandID, receipt := settlePTY(requestID)
+			if receipt.BytesTransferred > 0 {
+				return commandID, receipt
+			}
+		}
+		t.Fatalf("RemoteWorker PTY command %s produced no output exchange", requestID)
+		return "", platform.RemoteWorkerSandboxPTYCommandReceipt{}
+	}
 	runPTY := func(requestID string, call func() error, beforeSettle ...func(platform.RemoteWorkerSandboxPTYCommandReceipt)) (string, platform.RemoteWorkerSandboxPTYCommandReceipt, error) {
 		done := make(chan error, 1)
 		go func() { done <- call() }()
@@ -1647,22 +1661,102 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 		t.Fatalf("cross-tenant RemoteWorker PTY Grant status=%d err=%v", clientStatus(err), err)
 	}
 	var ptySession api.SandboxPTYSessionResult
-	ptyCreateCommandID, ptyCreateReceipt, err := runPTY("request-remote-pty-create", func() error {
-		var callErr error
-		ptySession, callErr = grantClient.CreatePTYSession(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-pty-create")
-		return callErr
-	}, func(receipt platform.RemoteWorkerSandboxPTYCommandReceipt) {
-		conflictingReceipt := receipt
+	type ptyCreateOutcome struct {
+		result api.SandboxPTYSessionResult
+		err    error
+	}
+	ptyCreateDone := make(chan ptyCreateOutcome, 1)
+	go func() {
+		result, callErr := grantClient.CreatePTYSession(ctx, "tenant", "project", grant.Value.GrantID, "request-remote-pty-create")
+		ptyCreateDone <- ptyCreateOutcome{result: result, err: callErr}
+	}()
+	var ptyCreateCommandID string
+	for retry := 0; ; retry++ {
+		queryErr := owner.QueryRow(ctx, `SELECT command_uid FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND request_id='request-remote-pty-create'
+  AND state IN ('pending','delivered')
+ORDER BY created_at, command_uid LIMIT 1`).Scan(&ptyCreateCommandID)
+		if queryErr == nil {
+			break
+		}
+		if queryErr != pgx.ErrNoRows || retry == 100 {
+			t.Fatalf("queue RemoteWorker stale-delivery PTY command: %v", queryErr)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET state='delivered', assigned_incarnation_uid=$2, delivery_certificate_sha256=$3,
+    delivered_at=clock_timestamp() - interval '29 seconds', updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='pending'`,
+		ptyCreateCommandID, "incarnation-dead-predecessor", "sha256:"+strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("mark RemoteWorker PTY delivery as stale: %v", err)
+	}
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	rawState, readErr := os.ReadFile(stateFile)
+	var ptyState struct {
+		SandboxPTYCommandReceipt *platform.RemoteWorkerSandboxPTYCommandReceipt `json:"sandboxPtyCommandReceipt"`
+	}
+	if readErr != nil || json.Unmarshal(rawState, &ptyState) != nil || ptyState.SandboxPTYCommandReceipt != nil {
+		t.Fatalf("reclaimed RemoteWorker PTY delivery before grace period: state=%s err=%v", rawState, readErr)
+	}
+	var heldState, heldIncarnation, heldCertificate string
+	if queryErr := owner.QueryRow(ctx, `SELECT state, assigned_incarnation_uid, delivery_certificate_sha256
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, ptyCreateCommandID).
+		Scan(&heldState, &heldIncarnation, &heldCertificate); queryErr != nil ||
+		heldState != "delivered" || heldIncarnation != "incarnation-dead-predecessor" ||
+		heldCertificate != "sha256:"+strings.Repeat("a", 64) {
+		t.Fatalf("stale RemoteWorker PTY delivery changed before grace period: state=%q incarnation=%q certificate=%q err=%v",
+			heldState, heldIncarnation, heldCertificate, queryErr)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET delivered_at=clock_timestamp() - interval '31 seconds', updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='delivered'`,
+		ptyCreateCommandID); err != nil {
+		t.Fatalf("age RemoteWorker PTY delivery past takeover grace: %v", err)
+	}
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	rawState, readErr = os.ReadFile(stateFile)
+	ptyState = struct {
+		SandboxPTYCommandReceipt *platform.RemoteWorkerSandboxPTYCommandReceipt `json:"sandboxPtyCommandReceipt"`
+	}{}
+	if readErr != nil || json.Unmarshal(rawState, &ptyState) != nil || ptyState.SandboxPTYCommandReceipt == nil ||
+		ptyState.SandboxPTYCommandReceipt.CommandID != ptyCreateCommandID {
+		t.Fatalf("reclaim stale RemoteWorker PTY delivery after grace period: state=%s err=%v", rawState, readErr)
+	}
+	ptyCreateReceipt := *ptyState.SandboxPTYCommandReceipt
+	// The heartbeat that claims and executes the reclaimed command only persists
+	// its receipt locally; the following heartbeat settles that receipt in the
+	// control plane before the waiting HTTP request can complete.
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	select {
+	case outcome := <-ptyCreateDone:
+		ptySession, err = outcome.result, outcome.err
+	case <-time.After(15 * time.Second):
+		t.Fatal("stale-delivery RemoteWorker PTY request did not settle")
+	}
+	var reclaimedState, reclaimedIncarnation, reclaimedCertificate string
+	if queryErr := owner.QueryRow(ctx, `SELECT state, assigned_incarnation_uid, delivery_certificate_sha256
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, ptyCreateCommandID).
+		Scan(&reclaimedState, &reclaimedIncarnation, &reclaimedCertificate); queryErr != nil ||
+		reclaimedState != "succeeded" || reclaimedIncarnation != incarnationID || reclaimedCertificate != certificateSHA256 {
+		t.Fatalf("stale RemoteWorker PTY delivery was not rebound: state=%q incarnation=%q certificate=%q err=%v",
+			reclaimedState, reclaimedIncarnation, reclaimedCertificate, queryErr)
+	}
+	if err != nil || ptySession.Value.SessionID == "" || ptySession.Value.SessionID != ptyCreateReceipt.SessionID ||
+		ptySession.Value.State != "created" || !strings.HasSuffix(ptySession.Value.WebSocketPath, "/ws") {
+		t.Fatalf("create RemoteWorker PTY after stale delivery: command=%s value=%+v receipt=%+v err=%v", ptyCreateCommandID, ptySession.Value, ptyCreateReceipt, err)
+	}
+	{
+		heartbeat.SandboxPTYCommandReceipt = nil
+		conflictingReceipt := ptyCreateReceipt
 		conflictingReceipt.GrantID = "other-grant"
 		heartbeat.SandboxPTYCommandReceipt = &conflictingReceipt
 		if _, callErr := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-pty-authority-conflict", heartbeat); clientStatus(callErr) != http.StatusConflict {
 			t.Fatalf("mismatched RemoteWorker PTY receipt status=%d err=%v", clientStatus(callErr), callErr)
 		}
 		heartbeat.SandboxPTYCommandReceipt = nil
-	})
-	if err != nil || ptySession.Value.SessionID == "" || ptySession.Value.SessionID != ptyCreateReceipt.SessionID ||
-		ptySession.Value.State != "created" || !strings.HasSuffix(ptySession.Value.WebSocketPath, "/ws") {
-		t.Fatalf("create RemoteWorker PTY: command=%s value=%+v receipt=%+v err=%v", ptyCreateCommandID, ptySession.Value, ptyCreateReceipt, err)
 	}
 	heartbeat.SandboxPTYCommandReceipt = &ptyCreateReceipt
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-pty-receipt-replay", heartbeat); err != nil {
@@ -1675,12 +1769,125 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 		t.Fatalf("conflicting RemoteWorker PTY receipt status=%d err=%v", clientStatus(err), err)
 	}
 	heartbeat.SandboxPTYCommandReceipt = nil
+	{
+		// A recent delivery from an older incarnation must block a later pending
+		// command for the same target. Once the delivery lease expires, the old
+		// command is reclaimed first; a same-incarnation delivered command remains
+		// immediately replayable on the following heartbeat.
+		type ptyGetOutcome struct {
+			result api.SandboxPTYSessionResult
+			err    error
+		}
+		oldRequestID := "request-remote-pty-dual-old"
+		pendingRequestID := "request-remote-pty-dual-pending"
+		oldDone := make(chan ptyGetOutcome, 1)
+		pendingDone := make(chan ptyGetOutcome, 1)
+		go func() {
+			result, callErr := grantClient.GetPTYSession(ctx, "tenant", "project", grant.Value.GrantID, ptySession.Value.SessionID, oldRequestID)
+			oldDone <- ptyGetOutcome{result: result, err: callErr}
+		}()
+		go func() {
+			result, callErr := grantClient.GetPTYSession(ctx, "tenant", "project", grant.Value.GrantID, ptySession.Value.SessionID, pendingRequestID)
+			pendingDone <- ptyGetOutcome{result: result, err: callErr}
+		}()
+		waitPTYCommand := func(requestID string) string {
+			for retry := 0; ; retry++ {
+				var commandID string
+				queryErr := owner.QueryRow(ctx, `SELECT command_uid FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND request_id=$1`, requestID).Scan(&commandID)
+				if queryErr == nil {
+					return commandID
+				}
+				if queryErr != pgx.ErrNoRows || retry == 100 {
+					t.Fatalf("queue dual RemoteWorker PTY command request=%s: %v", requestID, queryErr)
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+		}
+		oldCommandID := waitPTYCommand(oldRequestID)
+		pendingCommandID := waitPTYCommand(pendingRequestID)
+		if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET state='delivered', assigned_incarnation_uid=$2, delivery_certificate_sha256=$3,
+    delivered_at=clock_timestamp() - interval '1 second', updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='pending'`,
+			oldCommandID, "incarnation-dual-predecessor", "sha256:"+strings.Repeat("b", 64)); err != nil {
+			t.Fatalf("mark dual RemoteWorker PTY delivery as recent: %v", err)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		rawState, readErr = os.ReadFile(stateFile)
+		ptyState = struct {
+			SandboxPTYCommandReceipt *platform.RemoteWorkerSandboxPTYCommandReceipt `json:"sandboxPtyCommandReceipt"`
+		}{}
+		if readErr != nil || json.Unmarshal(rawState, &ptyState) != nil || ptyState.SandboxPTYCommandReceipt != nil {
+			t.Fatalf("claimed later pending PTY command around recent predecessor: state=%s err=%v", rawState, readErr)
+		}
+		var oldState, pendingState string
+		if queryErr := owner.QueryRow(ctx, `SELECT state FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, oldCommandID).Scan(&oldState); queryErr != nil {
+			t.Fatalf("read dual old PTY command state: %v", queryErr)
+		}
+		if queryErr := owner.QueryRow(ctx, `SELECT state FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, pendingCommandID).Scan(&pendingState); queryErr != nil {
+			t.Fatalf("read dual pending PTY command state: %v", queryErr)
+		}
+		if oldState != "delivered" || pendingState != "pending" {
+			t.Fatalf("recent dual PTY delivery was bypassed: old=%q pending=%q", oldState, pendingState)
+		}
+		if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET delivered_at=clock_timestamp() - interval '31 seconds', updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='delivered'`, oldCommandID); err != nil {
+			t.Fatalf("age dual RemoteWorker PTY delivery past grace: %v", err)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		rawState, readErr = os.ReadFile(stateFile)
+		ptyState = struct {
+			SandboxPTYCommandReceipt *platform.RemoteWorkerSandboxPTYCommandReceipt `json:"sandboxPtyCommandReceipt"`
+		}{}
+		if readErr != nil || json.Unmarshal(rawState, &ptyState) != nil || ptyState.SandboxPTYCommandReceipt == nil ||
+			ptyState.SandboxPTYCommandReceipt.CommandID != oldCommandID {
+			t.Fatalf("reclaimed wrong dual RemoteWorker PTY command: state=%s err=%v", rawState, readErr)
+		}
+		if _, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET state='delivered', assigned_incarnation_uid=$2, delivery_certificate_sha256=$3,
+    delivered_at=clock_timestamp(), updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='pending'`,
+			pendingCommandID, incarnationID, certificateSHA256); err != nil {
+			t.Fatalf("bind dual same-incarnation PTY delivery: %v", err)
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		rawState, readErr = os.ReadFile(stateFile)
+		ptyState = struct {
+			SandboxPTYCommandReceipt *platform.RemoteWorkerSandboxPTYCommandReceipt `json:"sandboxPtyCommandReceipt"`
+		}{}
+		if readErr != nil || json.Unmarshal(rawState, &ptyState) != nil || ptyState.SandboxPTYCommandReceipt == nil ||
+			ptyState.SandboxPTYCommandReceipt.CommandID != pendingCommandID {
+			t.Fatalf("same-incarnation dual PTY delivery was not replayed: state=%s err=%v", rawState, readErr)
+		}
+		select {
+		case outcome := <-oldDone:
+			if outcome.err != nil || outcome.result.Value.SessionID != ptySession.Value.SessionID {
+				t.Fatalf("settle dual old PTY request: value=%+v err=%v", outcome.result.Value, outcome.err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("dual old PTY request did not settle")
+		}
+		runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+		select {
+		case outcome := <-pendingDone:
+			if outcome.err != nil || outcome.result.Value.SessionID != ptySession.Value.SessionID {
+				t.Fatalf("settle dual pending PTY request: value=%+v err=%v", outcome.result.Value, outcome.err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("dual pending PTY request did not settle")
+		}
+	}
 
 	connection := dialPTY(t, gateway.URL, ptySession.Value.WebSocketPath, grant.Value.AccessToken, 0, false)
 	if err := connection.WriteMessage(websocket.BinaryMessage, append([]byte{0}, []byte("printf 'REMOTE_PTY_FIRST=%s\\n' \"$PWD\"\n")...)); err != nil {
 		t.Fatal(err)
 	}
-	ptyExchangeCommandID, ptyExchangeReceipt := settlePTY("request-pty-websocket")
+	settlePTY("request-pty-websocket")
+	ptyExchangeCommandID, ptyExchangeReceipt := settlePTYUntilOutput("request-pty-websocket")
 	livePTY := readPTYUntil(t, connection, "REMOTE_PTY_FIRST=/workspace")
 	_ = connection.Close()
 	if ptyExchangeReceipt.BytesTransferred == 0 || livePTY.outputBytes == 0 {
@@ -1711,7 +1918,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	}
 	ptyGatewayRecovery = time.Since(ptyGatewayRestarted)
 	connection = dialPTY(t, gateway.URL, persistedPTY.Value.WebSocketPath, grant.Value.AccessToken, 0, true)
-	_, replayReceipt := settlePTY("request-pty-websocket")
+	_, replayReceipt := settlePTYUntilOutput("request-pty-websocket")
 	replayedPTY := readPTYUntil(t, connection, "REMOTE_PTY_FIRST=/workspace")
 	if replayedPTY.replayOffset < 0 || replayReceipt.Frames == nil {
 		t.Fatalf("RemoteWorker PTY cursor replay: receipt=%+v read=%+v", replayReceipt, replayedPTY)
@@ -1719,7 +1926,8 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err := connection.WriteMessage(websocket.BinaryMessage, append([]byte{0}, []byte("printf 'REMOTE_PTY_SECOND\\n'\n")...)); err != nil {
 		t.Fatal(err)
 	}
-	_, secondExchangeReceipt := settlePTY("request-pty-websocket")
+	settlePTY("request-pty-websocket")
+	_, secondExchangeReceipt := settlePTYUntilOutput("request-pty-websocket")
 	readPTYUntil(t, connection, "REMOTE_PTY_SECOND")
 	_ = connection.Close()
 	if secondExchangeReceipt.BytesTransferred == 0 {
@@ -1754,7 +1962,7 @@ NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_
 FROM cloud_agents.remote_worker_sandbox_pty_commands
 WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateSHA256).Scan(
 		&ptyCommands, &succeededPTY, &ptyIncarnationBound, &ptyCertificateBound, &ptyReceiptsSettled, &ptyContentTableHidden,
-	); err != nil || ptyCommands != 7 || succeededPTY != ptyCommands || !ptyIncarnationBound || !ptyCertificateBound ||
+	); err != nil || ptyCommands != 11 || succeededPTY != ptyCommands || !ptyIncarnationBound || !ptyCertificateBound ||
 		!ptyReceiptsSettled || !ptyContentTableHidden {
 		t.Fatalf("RemoteWorker PTY authority: commands=%d succeeded=%d incarnation=%v certificate=%v receipts=%v hidden=%v err=%v",
 			ptyCommands, succeededPTY, ptyIncarnationBound, ptyCertificateBound, ptyReceiptsSettled, ptyContentTableHidden, err)
@@ -1799,7 +2007,8 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-capability-restore", heartbeat); err != nil {
 		t.Fatal("restore RemoteWorker SSH capability", err)
 	}
-	stopRemoteWorker := startRemoteWorkerProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	sshInitialIncarnationID, sshInitialCertificateSHA256 := incarnationID, certificateSHA256
+	stopRemoteWorker := startRemoteWorkerProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 	sshClient, err := ssh.Dial("tcp", sshAddress, sshClientConfig(grant.Value.SSHUsername, grant.Value.AccessToken, hostSigner))
 	if err != nil {
 		t.Fatal("RemoteWorker SSH Grant authentication failed", err)
@@ -1829,19 +2038,186 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	if err := sshSession.Shell(); err != nil {
 		t.Fatal("RemoteWorker SSH shell failed", err)
 	}
+	terminalLineCount := func(output []byte, marker string) int {
+		count := 0
+		for _, line := range strings.Split(strings.ReplaceAll(string(output), "\r\n", "\n"), "\n") {
+			if strings.TrimSpace(line) == marker {
+				count++
+			}
+		}
+		return count
+	}
 	sshOutputDone := make(chan []byte, 1)
+	sshPrefixSeen := make(chan struct{})
 	go func() {
-		output, _ := io.ReadAll(io.LimitReader(sshOutputReader, 1<<20))
-		sshOutputDone <- output
+		var output bytes.Buffer
+		buffer := make([]byte, 4096)
+		var prefixOnce sync.Once
+		for output.Len() < 1<<20 {
+			read, readErr := sshOutputReader.Read(buffer)
+			if read > 0 {
+				_, _ = output.Write(buffer[:read])
+				if terminalLineCount(output.Bytes(), "REMOTE_SSH_PREFIX") == 1 {
+					prefixOnce.Do(func() { close(sshPrefixSeen) })
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		sshOutputDone <- output.Bytes()
 	}()
-	_, _ = io.WriteString(sshInput, "printf 'REMOTE_SSH_DIR=%s\\n' \"$PWD\"; exit 7\n")
+	_, _ = io.WriteString(sshInput, "printf 'REMOTE_SSH_PREFIX\\n'; sleep 2; printf 'REMOTE_SSH_TAIL\\n'; exit 7\n")
+	select {
+	case <-sshPrefixSeen:
+	case <-time.After(15 * time.Second):
+		t.Fatal("RemoteWorker SSH command did not produce its prefix before restart")
+	}
+	var sshRestartCommandID string
+	var sshRestartSinceOffset int64
+	for retry := 0; ; retry++ {
+		queryErr := owner.QueryRow(ctx, `SELECT command_uid, since_offset
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session
+  AND action='exchange' AND input_message_type IS NULL AND state='delivered'
+  AND assigned_incarnation_uid=$1 AND delivery_certificate_sha256=$2
+ORDER BY delivered_at DESC, command_uid DESC LIMIT 1`, incarnationID, certificateSHA256).
+			Scan(&sshRestartCommandID, &sshRestartSinceOffset)
+		if queryErr == nil {
+			break
+		}
+		if queryErr != pgx.ErrNoRows || retry == 200 {
+			t.Fatalf("observe active RemoteWorker SSH delivery before restart: %v", queryErr)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	setWorkerConnected(false)
+	stopRemoteWorker()
+	var heldSSHRestartState string
+	if queryErr := owner.QueryRow(ctx, `SELECT state
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, sshRestartCommandID).
+		Scan(&heldSSHRestartState); queryErr != nil || heldSSHRestartState != "delivered" {
+		t.Fatalf("active RemoteWorker SSH delivery was not retained for restart: state=%q err=%v", heldSSHRestartState, queryErr)
+	}
+
+	currentEnrollment, err := admin.GetAdminRemoteWorkerEnrollment(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-restart-enrollment")
+	if err != nil {
+		t.Fatal("read RemoteWorker enrollment before SSH restart", err)
+	}
+	sshRestartCSR, sshRestartPrivateKey := remoteWorkerCertificateRequest(t, enrollmentID)
+	sshRestartIncarnationID := "incarnation-remote-ssh-restart"
+	sshRestartCertificate, err := node.RotateRemoteWorkerCertificate(ctx, "tenant", "project", enrollmentID,
+		"request-remote-ssh-restart-rotate", "remote-ssh-restart-rotate-key", platform.RemoteWorkerCertificateIssueRequest{
+			ExpectedResourceVersion:      currentEnrollment.Value.Metadata.ResourceVersion,
+			ConfirmedEnrollmentID:        enrollmentID,
+			IncarnationID:                sshRestartIncarnationID,
+			CertificateSigningRequestPEM: sshRestartCSR,
+		})
+	if err != nil || sshRestartCertificate.Value.CertificateSHA256 == certificateSHA256 ||
+		sshRestartCertificate.Value.IncarnationID != sshRestartIncarnationID {
+		t.Fatalf("rotate RemoteWorker certificate for SSH restart: value=%+v err=%v", sshRestartCertificate.Value, err)
+	}
+	oldHeartbeat := heartbeat
+	oldHeartbeat.SandboxCommandReceipt, oldHeartbeat.WorkspaceSnapshotCommandReceipt = nil, nil
+	oldHeartbeat.SandboxExecCommandReceipt, oldHeartbeat.SandboxFileCommandReceipt = nil, nil
+	oldHeartbeat.SandboxPTYCommandReceipt, oldHeartbeat.SandboxPreviewCommandReceipt = nil, nil
+	if _, err := node.HeartbeatRemoteWorker(ctx, "tenant", "project", enrollmentID, "request-remote-ssh-restart-old-incarnation", oldHeartbeat); clientStatus(err) != http.StatusUnauthorized {
+		t.Fatalf("old RemoteWorker SSH incarnation status=%d err=%v", clientStatus(err), err)
+	}
+	ageSSHRestart, err := owner.Exec(ctx, `UPDATE cloud_agents.remote_worker_sandbox_pty_commands
+SET delivered_at=clock_timestamp() - interval '31 seconds', updated_at=clock_timestamp()
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1 AND state='delivered'`,
+		sshRestartCommandID)
+	if err != nil || ageSSHRestart.RowsAffected() != 1 {
+		t.Fatalf("age active RemoteWorker SSH delivery past takeover grace: rows=%d err=%v", ageSSHRestart.RowsAffected(), err)
+	}
+	// The runtime owns the PTY independently of the Worker process. Let the
+	// command reach its real terminal state before a fresh Worker incarnation
+	// reclaims the exact delivery and consumes the persisted tail and exit frame.
+	time.Sleep(2500 * time.Millisecond)
+	sshRestartNodeHTTP := remoteWorkerMTLSHTTPClient(t, server, sshRestartCertificate.Value.CertificateChainPEM, sshRestartPrivateKey)
+	sshRestartNode, err := api.NewRemoteWorkerMTLSHTTPClientWithClient(server.URL, sshRestartNodeHTTP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshRestartWorkerServer, _ := startRemoteWorkerControlPlaneProxy(t, server, sshRestartCertificate.Value.CertificateChainPEM, sshRestartPrivateKey)
+	sshRestartStateFile := filepath.Join(t.TempDir(), "remote-worker-ssh-restart-state.json")
+	stopRemoteWorker = startRemoteWorkerProcess(t, ctx, binary, sshRestartWorkerServer, enrollmentID, sshRestartIncarnationID,
+		sshRestartCertificate.Value.CertificateChainPEM, sshRestartPrivateKey, sshRestartStateFile)
 	sshErr := sshSession.Wait()
 	sshOutput := <-sshOutputDone
 	_ = sshClient.Close()
 	exitError, exited := sshErr.(*ssh.ExitError)
-	if !exited || exitError.ExitStatus() != 7 || !strings.Contains(string(sshOutput), "REMOTE_SSH_DIR=/workspace") {
+	if !exited || exitError.ExitStatus() != 7 || terminalLineCount(sshOutput, "REMOTE_SSH_PREFIX") != 1 ||
+		terminalLineCount(sshOutput, "REMOTE_SSH_TAIL") != 1 {
 		t.Fatalf("RemoteWorker SSH output=%q err=%v", sshOutput, sshErr)
 	}
+	var sshRestartState, sshRestartAssignedIncarnation, sshRestartDeliveryCertificate, sshRestartReceiptDigest string
+	var sshRestartRunning bool
+	var sshRestartOutputOffset int64
+	var sshRestartFramesJSON []byte
+	if queryErr := owner.QueryRow(ctx, `SELECT state, assigned_incarnation_uid, delivery_certificate_sha256,
+receipt_digest, result_running, result_output_offset, result_frames
+FROM cloud_agents.remote_worker_sandbox_pty_commands
+WHERE tenant_id='tenant' AND project_uid='project' AND command_uid=$1`, sshRestartCommandID).Scan(
+		&sshRestartState, &sshRestartAssignedIncarnation, &sshRestartDeliveryCertificate,
+		&sshRestartReceiptDigest, &sshRestartRunning, &sshRestartOutputOffset, &sshRestartFramesJSON,
+	); queryErr != nil {
+		t.Fatalf("read durable RemoteWorker SSH restart receipt: %v", queryErr)
+	}
+	var sshRestartFrames []platform.RemoteWorkerSandboxPTYFrame
+	if json.Unmarshal(sshRestartFramesJSON, &sshRestartFrames) != nil {
+		t.Fatalf("decode durable RemoteWorker SSH restart frames: %s", sshRestartFramesJSON)
+	}
+	var sshRestartBinary bytes.Buffer
+	sshRestartExitFrames := 0
+	for frameIndex, frame := range sshRestartFrames {
+		payload, decodeErr := base64.RawURLEncoding.Strict().DecodeString(frame.PayloadBase64URL)
+		if decodeErr != nil {
+			t.Fatalf("decode durable RemoteWorker SSH restart frame: %v", decodeErr)
+		}
+		switch frame.MessageType {
+		case "binary":
+			if len(payload) == 0 {
+				t.Fatal("empty durable RemoteWorker SSH binary frame")
+			}
+			content := payload[1:]
+			switch payload[0] {
+			case 1, 2:
+			case 3:
+				if len(payload) < 9 {
+					t.Fatal("short durable RemoteWorker SSH replay frame")
+				}
+				content = payload[9:]
+			default:
+				t.Fatalf("unexpected durable RemoteWorker SSH binary frame type %d", payload[0])
+			}
+			_, _ = sshRestartBinary.Write(content)
+		case "text":
+			// Gorilla WebSocket WriteJSON uses json.Encoder.Encode, which appends a newline.
+			if string(payload) != "{\"type\":\"exit\",\"exit_code\":7}\n" || frameIndex != len(sshRestartFrames)-1 {
+				t.Fatalf("unexpected durable RemoteWorker SSH terminal frame: %q", payload)
+			}
+			sshRestartExitFrames++
+		default:
+			t.Fatalf("unexpected durable RemoteWorker SSH frame type %q", frame.MessageType)
+		}
+	}
+	if sshRestartState != "succeeded" || sshRestartAssignedIncarnation != sshRestartIncarnationID ||
+		sshRestartDeliveryCertificate != sshRestartCertificate.Value.CertificateSHA256 || sshRestartReceiptDigest == "" ||
+		sshRestartRunning || sshRestartOutputOffset <= sshRestartSinceOffset || sshRestartExitFrames != 1 ||
+		terminalLineCount(sshRestartBinary.Bytes(), "REMOTE_SSH_TAIL") != 1 {
+		t.Fatalf("durable RemoteWorker SSH restart authority: state=%q incarnation=%q certificate=%q receipt=%q running=%v offset=%d since=%d exits=%d output=%q",
+			sshRestartState, sshRestartAssignedIncarnation, sshRestartDeliveryCertificate, sshRestartReceiptDigest,
+			sshRestartRunning, sshRestartOutputOffset, sshRestartSinceOffset, sshRestartExitFrames, sshRestartBinary.Bytes())
+	}
+	node, incarnationID = sshRestartNode, sshRestartIncarnationID
+	certificateChain, certificateSHA256, privateKey = sshRestartCertificate.Value.CertificateChainPEM,
+		sshRestartCertificate.Value.CertificateSHA256, sshRestartPrivateKey
+	stateFile, workerServer = sshRestartStateFile, sshRestartWorkerServer
+	heartbeat = oldHeartbeat
+	heartbeat.IncarnationID = incarnationID
 	sshGatewayRestarted := time.Now()
 	stopSSH()
 	sshAddress, stopSSH = startSSHGateway(t, ctx, gatewayStore, sandboxDirectory, hostSigner)
@@ -1867,7 +2243,7 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 		t.Fatalf("RemoteWorker SSH Admin metadata: value=%+v err=%v", sshGrantPage.Value, err)
 	}
 	adminSSHJSON, _ := json.Marshal(sshGrantPage.Value)
-	for _, forbidden := range []string{"REMOTE_SSH_DIR", "REMOTE_SSH_ERR", "REMOTE_SSH_RESTART", "payloadBase64Url", "providerCredentialRef", "credentialRef"} {
+	for _, forbidden := range []string{"REMOTE_SSH_DIR", "REMOTE_SSH_PREFIX", "REMOTE_SSH_TAIL", "REMOTE_SSH_ERR", "REMOTE_SSH_RESTART", "payloadBase64Url", "providerCredentialRef", "credentialRef"} {
 		if strings.Contains(string(adminSSHJSON), forbidden) {
 			t.Fatalf("RemoteWorker SSH Admin metadata disclosed %q", forbidden)
 		}
@@ -1876,7 +2252,9 @@ WHERE tenant_id='tenant' AND project_uid='project'`, incarnationID, certificateS
 	var sshIncarnationBound, sshCertificateBound, sshReceiptsSettled, sshShapeBound, sshPTYBound, sshNonPTYBound, sshContentTableHidden bool
 	if err := owner.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE state='succeeded'),
 count(*) FILTER (WHERE action='exchange' AND input_message_type='binary' AND pg_catalog.octet_length(input_payload) > 1),
-bool_and(assigned_incarnation_uid=$1), bool_and(delivery_certificate_sha256=$2),
+bool_and(assigned_incarnation_uid IN ($1,$3)),
+bool_and((assigned_incarnation_uid=$1 AND delivery_certificate_sha256=$2)
+ OR (assigned_incarnation_uid=$3 AND delivery_certificate_sha256=$4)),
 bool_and(receipt_digest IS NOT NULL),
 bool_and((action='create' AND pty_enabled IS NULL)
  OR (action='exchange' AND pty_enabled IS NOT NULL)
@@ -1885,7 +2263,8 @@ bool_or(action='exchange' AND pty_enabled),
 bool_or(action='exchange' AND NOT pty_enabled),
 NOT pg_catalog.has_table_privilege('cloud_agents_runtime', 'cloud_agents.remote_worker_sandbox_pty_commands', 'SELECT')
 FROM cloud_agents.remote_worker_sandbox_pty_commands
-WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnationID, certificateSHA256).Scan(
+WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, sshInitialIncarnationID, sshInitialCertificateSHA256,
+		incarnationID, certificateSHA256).Scan(
 		&sshCommands, &succeededSSH, &sshInputCommands, &sshIncarnationBound, &sshCertificateBound,
 		&sshReceiptsSettled, &sshShapeBound, &sshPTYBound, &sshNonPTYBound, &sshContentTableHidden,
 	); err != nil || sshCommands < 6 || succeededSSH != sshCommands || sshInputCommands < 2 || !sshIncarnationBound ||
@@ -1915,7 +2294,7 @@ WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnation
 	if err := os.WriteFile(stateFile, append(state, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runRemoteWorkerHeartbeatProcess(t, ctx, binary, server, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
+	runRemoteWorkerHeartbeatProcess(t, ctx, binary, workerServer, enrollmentID, incarnationID, certificateChain, privateKey, stateFile)
 	adminSandbox, err = admin.GetAdminSandboxSession(ctx, "tenant", "project", "remote-sandbox", "request-remote-sandbox-get-cleaned")
 	if err != nil || adminSandbox.Value.Spec.TargetID != selectedTargetID || adminSandbox.Value.Spec.ObservedState != "stopped" || adminSandbox.Value.Spec.RuntimeID != "" ||
 		adminSandbox.Value.Spec.PhysicalVolumeID != volumeName || !adminSandbox.Value.Spec.WriterReleased {
@@ -1931,11 +2310,13 @@ WHERE tenant_id='tenant' AND project_uid='project' AND ssh_session`, incarnation
 	var nodeAuditCount int
 	var exactNodeAuditSubject bool
 	expectedNodeAuditCount := 6 + int(command.Attempt) + int(rebuildCommand.Attempt)
-	if err := owner.QueryRow(ctx, `SELECT count(*), bool_and(subject_digest = $2)
+	if err := owner.QueryRow(ctx, `SELECT count(*), bool_and(
+ (operation_id IN ($1,$3,$4) AND subject_digest=$2)
+ OR (operation_id=$5 AND subject_digest=$6))
 FROM cloud_agents.coordination_audit_facts
 WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outbox.delivery_succeeded')`,
-		sandbox.Value.OperationID, certificateSHA256, stopOperation.Value.OperationID, rebuildOperation.Value.OperationID,
-		cleanupStopOperation.Value.OperationID).Scan(&nodeAuditCount, &exactNodeAuditSubject); err != nil || nodeAuditCount != expectedNodeAuditCount || !exactNodeAuditSubject {
+		sandbox.Value.OperationID, sshInitialCertificateSHA256, stopOperation.Value.OperationID, rebuildOperation.Value.OperationID,
+		cleanupStopOperation.Value.OperationID, certificateSHA256).Scan(&nodeAuditCount, &exactNodeAuditSubject); err != nil || nodeAuditCount != expectedNodeAuditCount || !exactNodeAuditSubject {
 		t.Fatalf("RemoteWorker Sandbox audit authority: count=%d exact=%v err=%v", nodeAuditCount, exactNodeAuditSubject, err)
 	}
 	marker, _ := json.Marshal(map[string]any{"operationId": sandbox.Value.OperationID,
@@ -1974,6 +2355,9 @@ WHERE operation_id IN ($1, $3, $4, $5) AND transition IN ('sandbox.claim', 'outb
 		"sshIncarnationBound": sshIncarnationBound, "sshCertificateBound": sshCertificateBound,
 		"sshReceiptsSettled": sshReceiptsSettled, "sshShapeBound": sshShapeBound, "sshPTYBound": sshPTYBound,
 		"sshNonPTYBound": sshNonPTYBound, "sshContentTableHidden": sshContentTableHidden,
+		"sshWorkerRestart": true, "sshIncarnationRestart": true, "sshTailRecovered": true,
+		"sshTerminalReceiptDurable": true, "sshOldIncarnationRejected": true,
+		"sshRestartRPOBytesLost": 0, "sshRestartCommandId": sshRestartCommandID,
 		"longClaimRenewed": true, "renewWrongCommandStatus": 409, "reconnectOriginalCommandNotReplayed": true,
 		"reconnectAttempt": command.Attempt, "receiptReplay": true, "stopReceiptReplay": true,
 		"remoteWorkerFaultSoak": map[string]any{
@@ -2175,6 +2559,48 @@ func startRemoteWorkerDockerProxy(t *testing.T) string {
 	return server.URL
 }
 
+func TestRemoteWorkerOpenSandboxProxyRestoresCredential(t *testing.T) {
+	directory := t.TempDir()
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	credentialPath := filepath.Join(directory, "fixture-only", "opensandbox.json")
+	if err := os.Mkdir(filepath.Dir(credentialPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(fmt.Sprintf("{\n  \"endpoint\": %q,\n  \"apiKey\": \"test-key\"\n}\n", upstream.URL))
+	if err := os.WriteFile(credentialPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY", directory)
+	t.Setenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_REF", "fixture-only")
+	t.Run("proxy lifetime", func(t *testing.T) {
+		startRemoteWorkerOpenSandboxProxy(t, 0)
+		data, err := os.ReadFile(credentialPath)
+		var config struct{ Endpoint, APIKey string }
+		if err != nil || json.Unmarshal(data, &config) != nil || config.Endpoint == upstream.URL || config.APIKey != "test-key" {
+			t.Fatal("proxy credential was not installed")
+		}
+		response, err := http.Get(config.Endpoint + "/health")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			t.Fatalf("proxy status=%d", response.StatusCode)
+		}
+	})
+	restored, err := os.ReadFile(credentialPath)
+	if err != nil || !bytes.Equal(restored, original) {
+		t.Fatal("proxy credential original bytes were not restored")
+	}
+	info, err := os.Stat(credentialPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("proxy credential original mode was not restored")
+	}
+}
+
 func startRemoteWorkerOpenSandboxProxy(t *testing.T, createDelay time.Duration) {
 	t.Helper()
 	credentialPath := filepath.Join(os.Getenv("CLOUD_AGENTS_REMOTE_WORKER_CREDENTIAL_DIRECTORY"),
@@ -2186,6 +2612,10 @@ func startRemoteWorkerOpenSandboxProxy(t *testing.T, createDelay time.Duration) 
 	}
 	if err != nil {
 		t.Fatalf("read node-local OpenSandbox credentials: %v", err)
+	}
+	info, err := os.Stat(credentialPath)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatal("node-local OpenSandbox credentials must be a regular file")
 	}
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatalf("decode node-local OpenSandbox credentials: %v", err)
@@ -2214,6 +2644,15 @@ func startRemoteWorkerOpenSandboxProxy(t *testing.T, createDelay time.Duration) 
 	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		if err := os.WriteFile(credentialPath, data, info.Mode().Perm()); err != nil {
+			t.Errorf("restore node-local OpenSandbox credentials: %v", err)
+			return
+		}
+		if err := os.Chmod(credentialPath, info.Mode().Perm()); err != nil {
+			t.Errorf("restore node-local OpenSandbox credential permissions: %v", err)
+		}
+	})
 	encoded, err := json.Marshal(map[string]string{"endpoint": server.URL, "apiKey": config.APIKey})
 	if err != nil {
 		t.Fatal(err)

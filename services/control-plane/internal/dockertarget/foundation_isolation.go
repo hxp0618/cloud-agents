@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 )
+
+var foundationNetworkOwnerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type networkInspect struct {
 	ID       string            `json:"Id"`
@@ -71,7 +75,7 @@ func (directory *CredentialDirectory) MeasureFoundationSandboxNetwork(
 		return 0, 0, ErrDeploymentConflict
 	}
 	container, err := inspectWorkerContainer(ctx, client, base, containers[0].ID)
-	if err != nil || !container.State.Running || container.Config.Labels["opensandbox.io/id"] != runtimeID {
+	if err != nil || container.ID != containers[0].ID || !container.State.Running || container.Config.Labels["opensandbox.io/id"] != runtimeID {
 		return 0, 0, ErrDeploymentConflict
 	}
 	var stats struct {
@@ -80,8 +84,28 @@ func (directory *CredentialDirectory) MeasureFoundationSandboxNetwork(
 			TransmittedBytes int64 `json:"tx_bytes"`
 		} `json:"networks"`
 	}
-	if dockerJSON(ctx, client, http.MethodGet, base+"/containers/"+url.PathEscape(containers[0].ID)+"/stats?stream=false&one-shot=true", nil, http.StatusOK, &stats) != nil || len(stats.Networks) == 0 {
+	if dockerJSON(ctx, client, http.MethodGet, base+"/containers/"+url.PathEscape(containers[0].ID)+"/stats?stream=false&one-shot=true", nil, http.StatusOK, &stats) != nil {
 		return 0, 0, ErrDeploymentFailed
+	}
+	if len(stats.Networks) == 0 {
+		// OpenSandbox places the workload in its egress sidecar's network
+		// namespace. Follow only that exact, runtime-bound owner, never a name.
+		ownerID, shared := strings.CutPrefix(container.HostConfig.NetworkMode, "container:")
+		if !shared {
+			return 0, 0, ErrDeploymentFailed
+		}
+		if !foundationNetworkOwnerIDPattern.MatchString(ownerID) || ownerID == containers[0].ID {
+			return 0, 0, ErrDeploymentConflict
+		}
+		owner, err := inspectWorkerContainer(ctx, client, base, ownerID)
+		if err != nil || owner.ID != ownerID || !owner.State.Running ||
+			owner.Config.Labels["opensandbox.io/egress-sidecar-for"] != runtimeID ||
+			strings.HasPrefix(owner.HostConfig.NetworkMode, "container:") {
+			return 0, 0, ErrDeploymentConflict
+		}
+		if dockerJSON(ctx, client, http.MethodGet, base+"/containers/"+ownerID+"/stats?stream=false&one-shot=true", nil, http.StatusOK, &stats) != nil || len(stats.Networks) == 0 {
+			return 0, 0, ErrDeploymentFailed
+		}
 	}
 	var received, transmitted int64
 	for _, network := range stats.Networks {

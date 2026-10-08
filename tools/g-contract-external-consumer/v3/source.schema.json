@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/source.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "formatVersion",
+    "registryId",
+    "profileId",
+    "decisionId",
+    "status",
+    "predecessor",
+    "contractSuccessor",
+    "semanticInputs",
+    "receiptPaths",
+    "evidenceContract",
+    "implementationBoundary"
+  ],
+  "properties": {
+    "$schema": { "const": "https://schemas.cloud-agents.dev/tools/g-contract-external-consumer/v3/source.schema.json" },
+    "formatVersion": { "const": "cloud-agents-g-contract-external-consumer-source/v3" },
+    "registryId": { "const": "cloud-agents/g-contract-external-consumer-current" },
+    "profileId": { "const": "g-contract-external-consumer/v3" },
+    "decisionId": { "const": "D-053-EC-3" },
+    "status": { "const": "AUTHORITY_FROZEN_REVIEW_PENDING" },
+    "predecessor": { "$ref": "#/$defs/fileRecord", "required": ["formatVersion"] },
+    "contractSuccessor": {
+      "$ref": "#/$defs/fileRecord",
+      "required": ["outputCount", "outputManifestSha256"],
+      "properties": {
+        "outputCount": { "const": 47 },
+        "outputManifestSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "semanticInputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/fileRecord" }
+    },
+    "receiptPaths": {
+      "const": [
+        "tools/g-contract-external-consumer/v3/evidence/replay/projection.json",
+        "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-a.json",
+        "tools/g-contract-external-consumer/v3/evidence/replay/darwin-arm64-b.json",
+        "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-a.json",
+        "tools/g-contract-external-consumer/v3/evidence/replay/linux-amd64-b.json",
+        "tools/g-contract-external-consumer/v3/evidence/replay/replay.json"
+      ]
+    },
+    "evidenceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "syntheticReceipts", "loopbackOnly", "externalEgress"],
+      "properties": {
+        "state": { "const": "REPLAY_PENDING" },
+        "syntheticReceipts": { "const": "FORBIDDEN" },
+        "loopbackOnly": { "const": true },
+        "externalEgress": { "const": "DENIED" }
+      }
+    },
+    "implementationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productionDatabaseWrites", "providerSideEffects", "deployment", "publication", "gateStatus"],
+      "properties": {
+        "productionDatabaseWrites": { "const": "NOT_AUTHORIZED" },
+        "providerSideEffects": { "const": "FORBIDDEN" },
+        "deployment": { "const": "NOT_AUTHORIZED" },
+        "publication": { "const": "NOT_AUTHORIZED" },
+        "gateStatus": { "const": "ALL_GATES_OPEN" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sizeBytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 0 },
+        "formatVersion": { "type": "string" },
+        "outputCount": { "type": "integer", "minimum": 0 },
+        "outputManifestSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

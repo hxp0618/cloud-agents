@@ -498,12 +498,4 @@ func coordinationService(t *testing.T, transaction *fakeTransaction) (*DurableCo
 	return service, connection
 }
 
-func assertCoordinationCommitted(t *testing.T, transaction *fakeTransaction, connection *fakeConnection) {
-	t.Helper()
-	if transaction.commitCalls != 1 || transaction.rollbackCalls != 0 {
-		t.Fatalf("coordination commit/rollback = %d/%d", transaction.commitCalls, transaction.rollbackCalls)
-	}
-	assertConnectionDisposition(t, connection, 1, 0)
-}
-
 func timePtr(value time.Time) *time.Time { return &value }

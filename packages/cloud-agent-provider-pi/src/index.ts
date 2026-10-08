@@ -1,16 +1,6 @@
 import { mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import {
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-  loadSkillsFromDir,
-  type AgentSession,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
 import type { CloudAgentProviderPluginV1 } from "@cloud-agents/cloud-agent-provider-api";
 import {
   ManagedCapabilityCallResultUnknownError,
@@ -45,6 +35,7 @@ import {
   createManagedPiMcpTools,
   type ManagedPiMcpToolMetadata,
   type ManagedPiMcpTools,
+  type PiToolDefinition,
 } from "./managedMcpTools";
 
 export const PI_PROVIDER_KIND = "pi" as const;
@@ -56,27 +47,26 @@ const CREDENTIAL_STRING_OPTIONS = {
   singleLineMessage: false,
 } as const;
 
-type PiSession = Pick<
-  AgentSession,
-  | "abort"
-  | "compact"
-  | "dispose"
-  | "getLastAssistantText"
-  | "prompt"
-  | "sessionFile"
-  | "steer"
-  | "subscribe"
->;
+type PiSession = {
+  abort(): Promise<void>;
+  compact(): Promise<unknown>;
+  dispose(): void;
+  getLastAssistantText(): string | undefined;
+  prompt(input: string): Promise<unknown>;
+  readonly sessionFile: string | undefined;
+  steer(input: string): Promise<void>;
+  subscribe(listener: (event: unknown) => void): unknown;
+};
 
 type PiSessionFactoryOptions = Readonly<{
   cwd: string;
   agentDirectory: string;
   modelsPath: string;
-  sessionManager: SessionManager;
+  sessionManager: unknown;
   model: string;
   apiKey: string;
   skillDirectories?: ReadonlyArray<string>;
-  customTools?: ReadonlyArray<ToolDefinition>;
+  customTools?: ReadonlyArray<PiToolDefinition>;
 }>;
 
 type PiRunOptions = ProviderRunOptions & {
@@ -141,6 +131,7 @@ export function startPiProviderRun(
         capabilityManifest,
         options.environment ?? process.env,
       );
+      const { SessionManager } = await import("@earendil-works/pi-coding-agent");
       const requestedCursor = stringValue(effectiveInput.providerResumeCursor);
       let resumed = requestedCursor !== undefined;
       try {
@@ -226,7 +217,7 @@ export function startPiProviderRun(
         await Promise.race([
           session.prompt(prompt),
           managedMcpTools.resultUnknown.then((error) => {
-            void session?.abort();
+            void session?.abort().catch(() => undefined);
             throw error;
           }),
         ]);
@@ -253,7 +244,7 @@ export function startPiProviderRun(
     result,
     interrupt() {
       interrupted = true;
-      void session?.abort();
+      void session?.abort().catch(() => undefined);
     },
     forceStop() {
       interrupted = true;
@@ -305,6 +296,13 @@ export function createPiProvider(): CloudAgentProviderPluginV1 {
 }
 
 async function createPiSession(options: PiSessionFactoryOptions): Promise<PiSession> {
+  const {
+    DefaultResourceLoader,
+    ModelRuntime,
+    SettingsManager,
+    createAgentSession,
+    loadSkillsFromDir,
+  } = await import("@earendil-works/pi-coding-agent");
   const modelRuntime = await ModelRuntime.create({
     authPath: join(options.agentDirectory, "auth.json"),
     modelsPath: options.modelsPath,
@@ -359,10 +357,10 @@ async function createPiSession(options: PiSessionFactoryOptions): Promise<PiSess
       agentDir: options.agentDirectory,
       modelRuntime,
       model,
-      sessionManager: options.sessionManager,
+      sessionManager: options.sessionManager as never,
       settingsManager,
       resourceLoader,
-      ...(options.customTools?.length ? { customTools: [...options.customTools] } : {}),
+      ...(options.customTools?.length ? { customTools: [...options.customTools] as never } : {}),
       tools: [
         "read",
         "bash",

@@ -34,7 +34,7 @@ export const DURABLE_PROJECT_CREATE_LINEAGE_GENERATOR_PATH =
 export const DURABLE_PROJECT_CREATE_LINEAGE_LIBRARY_PATH =
   "scripts/lib/platform-durable-project-create-lineage-v2.ts";
 export const DURABLE_PROJECT_CREATE_LINEAGE_TEST_PATH =
-  "scripts/lib/platform-durable-project-create-lineage-v2.test.ts";
+  "test/scripts/platform-durable-project-create-lineage-v2.test.ts";
 
 const DURABLE_REGISTRY_SOURCE_V2_PATH =
   "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v2.json";
@@ -52,7 +52,7 @@ const V1_PROFILE_PATH =
 const V1_SOURCE_PATH =
   "contracts/platform/v1alpha1/fixtures/golden/durable-coordination-registry-source-v1.json";
 const MIGRATION_LIBRARY_PATH = "scripts/lib/platform-migration-bundle.ts";
-const MIGRATION_TEST_PATH = "scripts/lib/platform-migration-bundle.test.ts";
+const MIGRATION_TEST_PATH = "test/scripts/platform-migration-bundle.test.ts";
 
 const EXPECTED_FIXTURE_CASE_NAMES = [
   "durable-coordination-profile-managed-agent-create-project-durable-v1alpha1",
@@ -96,7 +96,7 @@ const EXPECTED_DURABLE_GENERATOR_PATHS = [
   "scripts/lib/platform-durable-coordination-registry.ts",
   "scripts/generate-platform-durable-project-create-lineage-v2.ts",
   "scripts/lib/platform-durable-project-create-lineage-v2.ts",
-  "scripts/lib/platform-durable-project-create-lineage-v2.test.ts",
+  "test/scripts/platform-durable-project-create-lineage-v2.test.ts",
 ] as const;
 
 const EXPECTED_FIXTURE_CASES = [

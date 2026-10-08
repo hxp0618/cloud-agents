@@ -3,6 +3,7 @@ import {
   ClientError,
   type EnvironmentProfileSummary,
   type ManagedAgentEvent,
+  type ManagedAgentExecution,
   type ManagedAgentSession,
   type UserEnvironment,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
@@ -12,6 +13,7 @@ import {
   agentErrorMessage,
   agentInteractions,
   executionMessageText,
+  isAcceptedAgentSubmission,
   isAgentPollingFatal,
   isExecutionActive,
   loadAgentResources,
@@ -26,6 +28,7 @@ import {
   type AgentArtifact,
   type AgentInteraction,
   type AgentResources,
+  type AgentSubmissionIdentity,
 } from "./agent";
 import { newIdempotencyKey, newRequestId } from "./environment";
 import { InteractionCard } from "./InteractionCard";
@@ -41,13 +44,12 @@ type AgentWorkspaceProps = Readonly<{
 }>;
 
 type BusyOperation = Readonly<{ key: string; label: string }>;
-type PendingSubmission = Readonly<{
-  sessionId: string;
-  turnId: string;
-  executionId: string;
-  interactionMode: "default" | "plan";
-  inputText: string;
-}>;
+type PendingSubmission = Readonly<
+  AgentSubmissionIdentity & {
+    interactionMode: "default" | "plan";
+    inputText: string;
+  }
+>;
 type LocalPrompt = Readonly<{ turnId: string; text: string }>;
 type InteractionResolution =
   | Readonly<{ kind: "approval"; decision: "accept" | "decline" }>
@@ -103,8 +105,14 @@ export function AgentWorkspace({
   const executionControllerRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pendingKeysRef = useRef(new Map<string, string>());
+  const pendingSubmissionRef = useRef<PendingSubmission | undefined>(undefined);
   const pendingInteractionRef = useRef(new Map<string, InteractionResolution>());
   const eventCursorRef = useRef(savedSelection.current.eventCursor);
+
+  function selectSupportedProvider(value: string | undefined) {
+    const supported = providerKind(value);
+    if (supported !== undefined) setProvider(supported);
+  }
 
   const selectedSession = resources.sessions.find(
     ({ metadata }) => metadata.uid === selectedSessionId,
@@ -168,11 +176,7 @@ export function AgentWorkspace({
         setResources(loaded);
         setSelectedSessionId(nextSessionId);
         setSelectedExecutionId(nextExecution?.metadata.uid ?? "");
-        setProvider(providerKind(loaded.session?.spec.providerKind));
-        if (nextExecution?.metadata.uid === pendingSubmission?.executionId) {
-          setPendingSubmission(undefined);
-          setPrompt("");
-        }
+        selectSupportedProvider(loaded.session?.spec.providerKind);
         setInitialEventsRead(false);
         persistSelection(
           nextSessionId,
@@ -202,11 +206,35 @@ export function AgentWorkspace({
     setResolvedInteractions(new Set());
   }, [selectedExecutionId]);
 
+  function finishAcceptedSubmission(
+    submission: PendingSubmission | undefined,
+    sessionId: string,
+    execution: ManagedAgentExecution | undefined,
+  ) {
+    if (
+      submission === undefined ||
+      pendingSubmissionRef.current !== submission ||
+      !isAcceptedAgentSubmission(submission, sessionId, execution)
+    )
+      return;
+    pendingSubmissionRef.current = undefined;
+    pendingKeysRef.current.delete(`create-turn:${submission.turnId}`);
+    pendingKeysRef.current.delete(`execute:${submission.executionId}`);
+    setLocalPrompts((current) => [
+      ...current.filter(({ turnId }) => turnId !== submission.turnId),
+      { turnId: submission.turnId, text: submission.inputText },
+    ]);
+    setPendingSubmission((current) => (current === submission ? undefined : current));
+    setPrompt("");
+    setError("");
+    setInitialEventsRead(false);
+  }
+
   useEffect(() => {
     if (!pollingNeeded || pollingStopped || selectedSession === undefined) return;
     const session = selectedSession;
-    const turnId = selectedExecution?.metadata.turnId ?? pendingExecution?.turnId ?? "";
-    const executionId = selectedExecution?.metadata.uid ?? pendingExecution?.executionId ?? "";
+    const turnId = pendingExecution?.turnId ?? selectedExecution?.metadata.turnId ?? "";
+    const executionId = pendingExecution?.executionId ?? selectedExecution?.metadata.uid ?? "";
     const controller = new AbortController();
     let polling = false;
 
@@ -244,6 +272,8 @@ export function AgentWorkspace({
             executions: replaceAgentExecution(current.executions, result.value),
             execution: result.value,
           }));
+          if (executionControllerRef.current === null)
+            finishAcceptedSubmission(pendingExecution, session.metadata.uid, result.value);
           if (isExecutionActive(selectedExecution) && !isExecutionActive(result.value))
             setInitialEventsRead(false);
         }
@@ -327,12 +357,22 @@ export function AgentWorkspace({
           tenantId,
           projectId,
           selectedSessionId,
-          selectedExecution?.metadata.turnId ?? "",
-          selectedExecutionId,
+          pendingExecution?.turnId ?? selectedExecution?.metadata.turnId ?? "",
+          pendingExecution?.executionId ?? selectedExecutionId,
           signal,
         );
         const nextSessionId = loaded.session?.metadata.uid ?? "";
         const nextExecution = loaded.execution;
+        const keepPendingSelection =
+          pendingExecution !== undefined &&
+          nextSessionId === pendingExecution.sessionId &&
+          !isAcceptedAgentSubmission(pendingExecution, nextSessionId, nextExecution);
+        const nextTurnId = keepPendingSelection
+          ? pendingExecution.turnId
+          : (nextExecution?.metadata.turnId ?? "");
+        const nextExecutionId = keepPendingSelection
+          ? pendingExecution.executionId
+          : (nextExecution?.metadata.uid ?? "");
         if (nextSessionId !== selectedSessionId) {
           eventCursorRef.current = "";
           setEvents([]);
@@ -340,13 +380,11 @@ export function AgentWorkspace({
         }
         setResources(loaded);
         setSelectedSessionId(nextSessionId);
-        setSelectedExecutionId(nextExecution?.metadata.uid ?? "");
-        setProvider(providerKind(loaded.session?.spec.providerKind));
-        persistSelection(
-          nextSessionId,
-          nextExecution?.metadata.turnId ?? "",
-          nextExecution?.metadata.uid ?? "",
-        );
+        setSelectedExecutionId(nextExecutionId);
+        selectSupportedProvider(loaded.session?.spec.providerKind);
+        if (executionControllerRef.current === null)
+          finishAcceptedSubmission(pendingExecution, nextSessionId, nextExecution);
+        persistSelection(nextSessionId, nextTurnId, nextExecutionId);
         setLoadState("ready");
       },
     );
@@ -377,7 +415,7 @@ export function AgentWorkspace({
         setResources((current) => ({ ...current, session, ...loaded }));
         setSelectedSessionId(session.metadata.uid);
         setSelectedExecutionId(loaded.execution?.metadata.uid ?? "");
-        setProvider(providerKind(session.spec.providerKind));
+        selectSupportedProvider(session.spec.providerKind);
         persistSelection(
           session.metadata.uid,
           loaded.execution?.metadata.turnId ?? "",
@@ -538,6 +576,7 @@ export function AgentWorkspace({
         inputText,
       };
       setPendingSubmission(submission);
+      pendingSubmissionRef.current = submission;
       setSelectedExecutionId(submission.executionId);
       setInitialEventsRead(false);
       persistSelection(submission.sessionId, submission.turnId, submission.executionId);
@@ -579,21 +618,13 @@ export function AgentWorkspace({
           },
           signal,
         );
-        pendingKeysRef.current.delete(turnKey);
-        pendingKeysRef.current.delete(executionKey);
         setResources((current) => ({
           ...current,
           executions: replaceAgentExecution(current.executions, result.value),
           execution: result.value,
         }));
         setSelectedExecutionId(result.value.metadata.uid);
-        setLocalPrompts((current) => [
-          ...current.filter(({ turnId }) => turnId !== submission.turnId),
-          { turnId: submission.turnId, text: submission.inputText },
-        ]);
-        setPendingSubmission(undefined);
-        setPrompt("");
-        setInitialEventsRead(false);
+        finishAcceptedSubmission(submission, submission.sessionId, result.value);
         persistSelection(
           submission.sessionId,
           result.value.metadata.turnId,
@@ -934,7 +965,7 @@ export function AgentWorkspace({
                 <span>
                   <strong>{selectedSession.metadata.uid}</strong>
                   <small>
-                    {providerLabel(providerKind(selectedSession.spec.providerKind))} · Profile{" "}
+                    {providerLabel(selectedSession.spec.providerKind)} · Profile{" "}
                     {selectedSession.spec.environmentProfileId ?? profile?.profileId ?? "legacy"} ·
                     v{selectedSession.spec.environmentProfileVersion ?? profile?.version ?? "—"}
                   </small>
@@ -1245,24 +1276,21 @@ export function AgentWorkspace({
             </div>
           ) : (
             <ol className="event-list">
-              {events
-                .slice(-32)
-                .toReversed()
-                .map((event) => (
-                  <li key={event.metadata.uid}>
-                    <span className="event-node" aria-hidden="true" />
-                    <div>
-                      <strong>{event.spec.operation}</strong>
-                      <small>
-                        {event.spec.executionId ?? event.spec.turnId ?? event.spec.resource} · gen{" "}
-                        {event.spec.generation}
-                      </small>
-                    </div>
-                    <time dateTime={event.metadata.occurredAt}>
-                      {formatTime(event.metadata.occurredAt)}
-                    </time>
-                  </li>
-                ))}
+              {events.toReversed().map((event) => (
+                <li key={event.metadata.uid}>
+                  <span className="event-node" aria-hidden="true" />
+                  <div>
+                    <strong>{event.spec.operation}</strong>
+                    <small>
+                      {event.spec.executionId ?? event.spec.turnId ?? event.spec.resource} · gen{" "}
+                      {event.spec.generation}
+                    </small>
+                  </div>
+                  <time dateTime={event.metadata.occurredAt}>
+                    {formatTime(event.metadata.occurredAt)}
+                  </time>
+                </li>
+              ))}
             </ol>
           )}
         </div>

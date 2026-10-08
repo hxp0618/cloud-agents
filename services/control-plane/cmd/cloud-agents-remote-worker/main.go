@@ -581,6 +581,7 @@ func uploadWorkspaceSnapshot(ctx context.Context, value config, command platform
 	if clientErr != nil {
 		return clientErr
 	}
+	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
 		return err
@@ -608,6 +609,7 @@ func downloadWorkspaceSnapshot(ctx context.Context, value config, command platfo
 	if clientErr != nil {
 		return nil, clientErr
 	}
+	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -700,11 +702,7 @@ func executePendingSandboxExec(ctx context.Context, value config, state *nodeSta
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
-		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
-		var client *opensandbox.Client
-		if directoryErr == nil {
-			client, directoryErr = directory.Client(value.credentialRef)
-		}
+		client, directoryErr := sandboxClient(value)
 		if directoryErr == nil {
 			execContext, cancel := context.WithDeadline(ctx, deadline)
 			result := make(chan struct {
@@ -772,6 +770,14 @@ func executePendingSandboxExec(ctx context.Context, value config, state *nodeSta
 	return saveNodeState(value.stateFile, *state)
 }
 
+func sandboxClient(value config) (*opensandbox.Client, error) {
+	directory, err := opensandbox.NewCredentialDirectory(value.credentialDirectory)
+	if err != nil {
+		return nil, err
+	}
+	return directory.Client(value.credentialRef)
+}
+
 func sandboxExecStableError(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -804,11 +810,7 @@ func executePendingSandboxFile(ctx context.Context, value config, state *nodeSta
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
-		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
-		var client *opensandbox.Client
-		if directoryErr == nil {
-			client, directoryErr = directory.Client(value.credentialRef)
-		}
+		client, directoryErr := sandboxClient(value)
 		if directoryErr == nil {
 			fileContext, cancel := context.WithDeadline(ctx, deadline)
 			input := opensandbox.PTYInput{Identity: opensandbox.Identity{Tenant: value.tenantID,
@@ -907,11 +909,7 @@ func executePendingSandboxPTY(ctx context.Context, value config, state *nodeStat
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
-		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
-		var client *opensandbox.Client
-		if directoryErr == nil {
-			client, directoryErr = directory.Client(value.credentialRef)
-		}
+		client, directoryErr := sandboxClient(value)
 		if directoryErr == nil {
 			ptyContext, cancel := context.WithDeadline(ctx, deadline)
 			input := opensandbox.PTYInput{Identity: opensandbox.Identity{Tenant: value.tenantID,
@@ -988,130 +986,230 @@ func exchangeSandboxPTY(ctx context.Context, client *opensandbox.Client, input o
 	default:
 		return nil, 0, false, opensandbox.ErrUnavailable
 	}
-	query := target.Query()
-	query.Set("since", fmt.Sprintf("%d", *command.Since))
-	if *command.Takeover {
-		query.Set("takeover", "1")
-	}
-	if command.PTY != nil && !*command.PTY {
-		query.Set("pty", "0")
-	}
-	target.RawQuery = query.Encode()
-	recoverClose := func(outputOffset int64, closeErr error) (bool, error) {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
+	const attempts = 3
+	dialAttachment := func(since int64, maximum, maximumFrames int) (*websocket.Conn, []platform.RemoteWorkerSandboxPTYFrame, int64, bool, error) {
+		if maximum <= 9 || maximumFrames < 1 {
+			return nil, nil, 0, false, opensandbox.ErrOutputLimit
 		}
+		candidate := *target
+		query := candidate.Query()
+		query.Set("since", fmt.Sprintf("%d", since))
+		if *command.Takeover {
+			query.Set("takeover", "1")
+		}
+		if command.PTY != nil && !*command.PTY {
+			query.Set("pty", "0")
+		}
+		candidate.RawQuery = query.Encode()
+		var connection *websocket.Conn
+		var frames []platform.RemoteWorkerSandboxPTYFrame
+		var outputOffset int64
+		var truncated bool
+		var dialErr error
+		for attempt := 0; attempt < attempts; attempt++ {
+			var response *http.Response
+			connection, response, dialErr = (&websocket.Dialer{HandshakeTimeout: 5 * time.Second}).DialContext(ctx, candidate.String(), headers)
+			if response != nil && response.Body != nil {
+				_ = response.Body.Close()
+			}
+			if dialErr == nil {
+				connection.SetReadLimit(1052672)
+				frames, outputOffset, truncated, dialErr = receiveSandboxPTYAttachment(ctx, connection, since, maximum, maximumFrames)
+			}
+			if dialErr == nil {
+				return connection, frames, outputOffset, truncated, nil
+			}
+			if connection != nil {
+				closeSandboxPTYConnection(connection)
+				connection = nil
+			}
+			if attempt+1 < attempts {
+				select {
+				case <-ctx.Done():
+					return nil, nil, 0, false, ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * 50 * time.Millisecond):
+				}
+			}
+		}
+		return nil, nil, 0, false, dialErr
+	}
+
+	frames := make([]platform.RemoteWorkerSandboxPTYFrame, 0, 1)
+	outputOffset, minimumOffset := *command.Since, *command.Since
+	bytesTransferred := 0
+	requireExit := false
+	recoverClose := func(closeErr error) (bool, error) {
 		observation, observationErr := client.GetPTY(ctx, input, command.SessionID)
 		if observationErr != nil || observation.OutputOffset < outputOffset {
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
 			return false, closeErr
 		}
-		return observation.Running || observation.OutputOffset > outputOffset, nil
+		if observation.Running && observation.OutputOffset == outputOffset && !requireExit {
+			return false, nil
+		}
+		requireExit = requireExit || !observation.Running
+		if observation.OutputOffset > minimumOffset {
+			minimumOffset = observation.OutputOffset
+		}
+		return true, nil
 	}
-	const attempts = 3
-	var connection *websocket.Conn
-	var frames []platform.RemoteWorkerSandboxPTYFrame
-	var outputOffset int64
-	var attachmentTruncated bool
-	for attempt := 0; attempt < attempts; attempt++ {
-		var response *http.Response
-		connection, response, err = (&websocket.Dialer{HandshakeTimeout: 5 * time.Second}).DialContext(ctx, target.String(), headers)
-		if response != nil && response.Body != nil {
-			_ = response.Body.Close()
-		}
-		if err == nil {
-			connection.SetReadLimit(1052672)
-			frames, outputOffset, attachmentTruncated, err = receiveSandboxPTYAttachment(ctx, connection, *command.Since, 1052672)
-		}
-		if err == nil {
-			break
-		}
-		if connection != nil {
-			closeSandboxPTYConnection(connection)
-			connection = nil
-		}
-		if attempt+1 < attempts {
-			select {
-			case <-ctx.Done():
-				return nil, 0, false, ctx.Err()
-			case <-time.After(time.Duration(attempt+1) * 50 * time.Millisecond):
-			}
-		}
-	}
-	if err != nil {
-		if command.Input == nil {
-			running, recoveryErr := recoverClose(*command.Since, err)
-			return []platform.RemoteWorkerSandboxPTYFrame{}, *command.Since, running, recoveryErr
-		}
-		return nil, 0, false, opensandbox.ErrUnavailable
-	}
-	defer closeSandboxPTYConnection(connection)
-	if command.Input != nil {
-		payload, decodeErr := base64.RawURLEncoding.Strict().DecodeString(command.Input.PayloadBase64URL)
-		messageType := websocket.BinaryMessage
-		if command.Input.MessageType == "text" {
-			messageType = websocket.TextMessage
-		}
-		if decodeErr != nil || connection.WriteMessage(messageType, payload) != nil {
+	finishExit := func() ([]platform.RemoteWorkerSandboxPTYFrame, int64, bool, error) {
+		if outputOffset < minimumOffset {
 			return nil, 0, false, opensandbox.ErrUnavailable
 		}
-		return frames, outputOffset, true, nil
+		return frames, outputOffset, false, nil
 	}
-	bytesTransferred, running := 0, true
-	for _, frame := range frames {
-		payload, _ := base64.RawURLEncoding.DecodeString(frame.PayloadBase64URL)
-		bytesTransferred += len(payload)
-	}
-	if attachmentTruncated {
-		return frames, outputOffset, running, nil
-	}
-	for len(frames) < 256 {
-		messageType, payload, pollComplete, readErr := readSandboxPTYMessage(ctx, connection, 250*time.Millisecond)
-		if readErr != nil {
-			running, err = recoverClose(outputOffset, readErr)
-			if err != nil {
-				return nil, 0, false, err
+	for recovery := 0; recovery <= attempts; recovery++ {
+		if len(frames) == 256 || 1052672-bytesTransferred <= 9 {
+			return frames, outputOffset, true, nil
+		}
+		connection, replay, replayOffset, attachmentTruncated, attachErr := dialAttachment(
+			outputOffset, 1052672-bytesTransferred, 256-len(frames))
+		if attachErr != nil {
+			if command.Input != nil {
+				return nil, 0, false, opensandbox.ErrUnavailable
 			}
-			break
+			retry, recoveryErr := recoverClose(attachErr)
+			if recoveryErr != nil {
+				return nil, 0, false, recoveryErr
+			}
+			if !retry {
+				return frames, outputOffset, true, nil
+			}
+			if recovery == attempts {
+				return nil, 0, false, opensandbox.ErrUnavailable
+			}
+			continue
 		}
-		if messageType == 0 {
-			break
+
+		frames = append(frames, replay...)
+		outputOffset = replayOffset
+		for _, frame := range replay {
+			payload, _ := base64.RawURLEncoding.DecodeString(frame.PayloadBase64URL)
+			bytesTransferred += len(payload)
 		}
-		if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
-			return nil, 0, false, opensandbox.ErrOutputLimit
+		if command.Input != nil {
+			payload, decodeErr := base64.RawURLEncoding.Strict().DecodeString(command.Input.PayloadBase64URL)
+			messageType := websocket.BinaryMessage
+			if command.Input.MessageType == "text" {
+				messageType = websocket.TextMessage
+			}
+			if decodeErr != nil || connection.WriteMessage(messageType, payload) != nil {
+				closeSandboxPTYConnection(connection)
+				return nil, 0, false, opensandbox.ErrUnavailable
+			}
+			closeSandboxPTYConnection(connection)
+			return frames, outputOffset, true, nil
 		}
-		truncated := false
-		if messageType == websocket.BinaryMessage {
-			if 1052672-bytesTransferred <= 9 {
+		if attachmentTruncated || len(frames) == 256 {
+			closeSandboxPTYConnection(connection)
+			return frames, outputOffset, true, nil
+		}
+
+		exitSeen, recoverAttachment := false, false
+		for len(frames) < 256 {
+			messageType, payload, pollComplete, readErr := readSandboxPTYMessage(ctx, connection, 250*time.Millisecond)
+			if readErr != nil {
+				if exitSeen {
+					closeSandboxPTYConnection(connection)
+					return finishExit()
+				}
+				retry, recoveryErr := recoverClose(readErr)
+				if recoveryErr != nil {
+					closeSandboxPTYConnection(connection)
+					return nil, 0, false, recoveryErr
+				}
+				if !retry {
+					closeSandboxPTYConnection(connection)
+					return frames, outputOffset, true, nil
+				}
+				recoverAttachment = true
 				break
 			}
-			payload, outputOffset, truncated, err = boundSandboxPTYBinaryFrame(payload, outputOffset, 1052672-bytesTransferred)
-			if err != nil {
-				return nil, 0, false, err
+			if messageType == 0 {
+				closeSandboxPTYConnection(connection)
+				if exitSeen {
+					return finishExit()
+				}
+				if requireExit || outputOffset < minimumOffset {
+					return nil, 0, false, opensandbox.ErrUnavailable
+				}
+				return frames, outputOffset, true, nil
 			}
-		} else {
-			if bytesTransferred+len(payload) > 1052672 {
+			if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
+				closeSandboxPTYConnection(connection)
 				return nil, 0, false, opensandbox.ErrOutputLimit
 			}
-			if strings.Contains(string(payload), `"type":"exit"`) {
-				running = false
+			truncated := false
+			if messageType == websocket.BinaryMessage {
+				if exitSeen {
+					closeSandboxPTYConnection(connection)
+					return nil, 0, false, opensandbox.ErrUnavailable
+				}
+				if 1052672-bytesTransferred <= 9 {
+					closeSandboxPTYConnection(connection)
+					return frames, outputOffset, true, nil
+				}
+				payload, outputOffset, truncated, err = boundSandboxPTYBinaryFrame(payload, outputOffset, 1052672-bytesTransferred)
+				if err != nil {
+					closeSandboxPTYConnection(connection)
+					return nil, 0, false, err
+				}
+			} else {
+				if exitSeen || bytesTransferred+len(payload) > 1052672 || !validSandboxPTYExitFrame(payload) {
+					closeSandboxPTYConnection(connection)
+					return nil, 0, false, opensandbox.ErrUnavailable
+				}
+				exitSeen = true
+			}
+			frameType := "binary"
+			if messageType == websocket.TextMessage {
+				frameType = "text"
+			}
+			frames = append(frames, platform.RemoteWorkerSandboxPTYFrame{MessageType: frameType,
+				PayloadBase64URL: base64.RawURLEncoding.EncodeToString(payload)})
+			bytesTransferred += len(payload)
+			if truncated {
+				closeSandboxPTYConnection(connection)
+				return frames, outputOffset, true, nil
+			}
+			if pollComplete {
+				closeSandboxPTYConnection(connection)
+				if exitSeen {
+					return finishExit()
+				}
+				if requireExit || outputOffset < minimumOffset {
+					return nil, 0, false, opensandbox.ErrUnavailable
+				}
+				return frames, outputOffset, true, nil
 			}
 		}
-		frameType := "binary"
-		if messageType == websocket.TextMessage {
-			frameType = "text"
+		closeSandboxPTYConnection(connection)
+		if exitSeen {
+			return finishExit()
 		}
-		frames = append(frames, platform.RemoteWorkerSandboxPTYFrame{MessageType: frameType,
-			PayloadBase64URL: base64.RawURLEncoding.EncodeToString(payload)})
-		bytesTransferred += len(payload)
-		if truncated || pollComplete {
-			break
+		if !recoverAttachment {
+			return frames, outputOffset, true, nil
+		}
+		if recovery == attempts {
+			return nil, 0, false, opensandbox.ErrUnavailable
 		}
 	}
-	return frames, outputOffset, running, nil
+	return nil, 0, false, opensandbox.ErrUnavailable
 }
 
-func receiveSandboxPTYAttachment(ctx context.Context, connection *websocket.Conn, since int64, maximum int) ([]platform.RemoteWorkerSandboxPTYFrame, int64, bool, error) {
-	if ctx == nil || connection == nil || since < 0 || maximum <= 9 {
+func validSandboxPTYExitFrame(payload []byte) bool {
+	var event struct {
+		Type     string `json:"type"`
+		ExitCode *int   `json:"exit_code"`
+	}
+	return json.Unmarshal(payload, &event) == nil && event.Type == "exit" && event.ExitCode != nil && *event.ExitCode >= 0 && *event.ExitCode <= 255
+}
+
+func receiveSandboxPTYAttachment(ctx context.Context, connection *websocket.Conn, since int64, maximum, maximumFrames int) ([]platform.RemoteWorkerSandboxPTYFrame, int64, bool, error) {
+	if ctx == nil || connection == nil || since < 0 || maximum <= 9 || maximumFrames < 1 {
 		return nil, 0, false, opensandbox.ErrInvalid
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -1125,6 +1223,9 @@ func receiveSandboxPTYAttachment(ctx context.Context, connection *websocket.Conn
 	frames := make([]platform.RemoteWorkerSandboxPTYFrame, 0, 1)
 	offset, bytesTransferred := since, 0
 	for {
+		if len(frames) == maximumFrames {
+			return frames, offset, true, nil
+		}
 		messageType, payload, err := connection.ReadMessage()
 		if err != nil {
 			return nil, 0, false, opensandbox.ErrUnavailable
@@ -1161,6 +1262,8 @@ type sandboxPTYReadResult struct {
 	err         error
 }
 
+var errSandboxPTYPeerClosed = errors.New("sandbox PTY peer closed")
+
 func readSandboxPTYMessage(ctx context.Context, connection *websocket.Conn, idle time.Duration) (int, []byte, bool, error) {
 	if ctx == nil || connection == nil || idle <= 0 {
 		return 0, nil, false, opensandbox.ErrInvalid
@@ -1175,7 +1278,7 @@ func readSandboxPTYMessage(ctx context.Context, connection *websocket.Conn, idle
 			return read.messageType, read.payload, pollComplete, nil
 		}
 		if websocket.IsCloseError(read.err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-			return 0, nil, true, nil
+			return 0, nil, false, errSandboxPTYPeerClosed
 		}
 		return 0, nil, false, opensandbox.ErrUnavailable
 	}
@@ -1284,11 +1387,7 @@ func executePendingSandboxPreview(ctx context.Context, value config, state *node
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, command.Deadline)
 	if err == nil && deadline.After(time.Now()) {
-		directory, directoryErr := opensandbox.NewCredentialDirectory(value.credentialDirectory)
-		var client *opensandbox.Client
-		if directoryErr == nil {
-			client, directoryErr = directory.Client(value.credentialRef)
-		}
+		client, directoryErr := sandboxClient(value)
 		body, bodyErr := base64.RawURLEncoding.Strict().DecodeString(command.BodyBase64URL)
 		if directoryErr == nil && bodyErr == nil && len(body) <= 1<<20 {
 			previewContext, cancel := context.WithDeadline(ctx, deadline)
@@ -1380,7 +1479,7 @@ func newRemoteWorkerHTTPClient(value config, timeout time.Duration) (*http.Clien
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, errInvalidRemoteWorkerConfig
 	}
-	return &http.Client{Transport: &http.Transport{Proxy: nil, ForceAttemptHTTP2: true, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}}}, Timeout: timeout}, nil
+	return &http.Client{Transport: &http.Transport{Proxy: nil, ForceAttemptHTTP2: true, IdleConnTimeout: 90 * time.Second, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, Certificates: []tls.Certificate{certificate}}}, Timeout: timeout}, nil
 }
 
 func newClient(value config) (*api.Client, error) {

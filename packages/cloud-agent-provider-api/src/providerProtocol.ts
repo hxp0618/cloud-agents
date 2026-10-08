@@ -1,6 +1,7 @@
 // FILE: protocol.ts
 // Purpose: Implements Provider Host Protocol v2 negotiation and command envelopes.
 
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 
@@ -26,8 +27,10 @@ import { normalizeRuntimeEventV2 } from "./runtimeEventV2";
 import { ManagedCapabilityUnavailableError } from "./capabilityManifest";
 import { ManagedCapabilityCallResultUnknownError } from "./providerRunErrors";
 import {
+  conversationHistoryHasTurnCapacity,
   isRecord,
   persistConversationHistory,
+  validateConversationHistory,
   withPersistedConversationHistory,
 } from "./providerConversationHistory";
 import {
@@ -56,7 +59,8 @@ import {
 
 const SUSPEND_TURN_CHECKPOINT_PROTOCOL = "provider-host-suspend-terminal-v1";
 const MAX_IN_FLIGHT_COMMANDS = 128;
-const MAX_TERMINAL_RECEIPTS = 4_096;
+const MAX_COMMAND_RECORDS = 4_096;
+const MAX_TERMINAL_RECEIPT_BYTES = 8 << 20;
 const STOP_SESSION_QUIESCE_TIMEOUT_MS = 5_000;
 const STOP_SESSION_FORCE_TIMEOUT_MS = 1_000;
 
@@ -78,6 +82,14 @@ export type {
 
 type ProviderDescriptorFactory = (provider: ProviderHostProviderKind) => ProviderHostDescriptor;
 
+type CommandRecord = {
+  readonly fingerprint: string;
+  terminal?: ProviderHostMessageEnvelope;
+  terminalBytes: number;
+};
+
+type EmergencyControlType = "StopSession" | "InterruptTurn";
+
 type ProtocolState = {
   sessionInput: RunnerInput | null;
   sessionEpoch: number;
@@ -88,7 +100,13 @@ type ProtocolState = {
     run: ProviderRunController;
   } | null;
   inFlightByCommandId: Map<string, Promise<ProviderHostMessageEnvelope>>;
-  terminalByCommandId: Map<string, ProviderHostMessageEnvelope>;
+  emergencyControlByCommandId: Map<
+    string,
+    { fingerprint: string; terminal: Promise<ProviderHostMessageEnvelope> }
+  >;
+  emergencyControlTypes: Set<EmergencyControlType>;
+  commandById: Map<string, CommandRecord>;
+  terminalReceiptBytes: number;
 };
 
 type ProtocolHandler = (
@@ -108,35 +126,64 @@ export function createProviderHostProtocolHandler(input: {
     sessionEpoch: 0,
     activeOperation: null,
     inFlightByCommandId: new Map(),
-    terminalByCommandId: new Map(),
+    emergencyControlByCommandId: new Map(),
+    emergencyControlTypes: new Set(),
+    commandById: new Map(),
+    terminalReceiptBytes: 0,
   };
   const startRun = input.startRun ?? missingProviderExecutor;
   const descriptorForProvider = input.descriptorForProvider;
 
   return async (command) => {
-    const cached = state.terminalByCommandId.get(command.commandId);
-    if (cached) {
-      input.emit(cached);
-      return [cached];
+    const fingerprint = commandFingerprint(command);
+    const recorded = state.commandById.get(command.commandId);
+    if (recorded) {
+      if (recorded.fingerprint !== fingerprint) {
+        return emitSingle(input.emit, commandIdentityConflict(command));
+      }
+      const inFlight = state.inFlightByCommandId.get(command.commandId);
+      if (inFlight) {
+        const terminal = await inFlight;
+        input.emit(terminal);
+        return [terminal];
+      }
+      if (recorded.terminal) {
+        input.emit(recorded.terminal);
+        return [recorded.terminal];
+      }
+      return emitSingle(input.emit, expiredReceiptMessage(command));
     }
-    const inFlight = state.inFlightByCommandId.get(command.commandId);
-    if (inFlight) {
-      const terminal = await inFlight;
+    const emergencyControl = state.emergencyControlByCommandId.get(command.commandId);
+    if (emergencyControl) {
+      if (emergencyControl.fingerprint !== fingerprint) {
+        return emitSingle(input.emit, commandIdentityConflict(command));
+      }
+      const terminal = await emergencyControl.terminal;
       input.emit(terminal);
       return [terminal];
     }
-    if (state.inFlightByCommandId.size >= MAX_IN_FLIGHT_COMMANDS) {
-      const terminal = errorMessage(command, {
-        code: "provider_unavailable",
-        message: `Provider Host already has ${MAX_IN_FLIGHT_COMMANDS} commands in flight.`,
-        retryable: true,
-        requiresNewExecution: false,
-        requiresUserAction: false,
-        canReconstructFromHistory: true,
-        canMoveWorker: true,
-      });
-      input.emit(terminal);
-      return [terminal];
+
+    const recordsFull = state.commandById.size >= MAX_COMMAND_RECORDS;
+    const inFlightFull = state.inFlightByCommandId.size >= MAX_IN_FLIGHT_COMMANDS;
+    const capacityControl = capacityControlType(command.commandType);
+    if (recordsFull && !capacityControl) {
+      return emitSingle(input.emit, commandCapacityMessage(command));
+    }
+    if (inFlightFull && !capacityControl) {
+      return emitSingle(input.emit, inFlightCapacityMessage(command));
+    }
+    const emergencyControlType =
+      capacityControl !== undefined && (recordsFull || inFlightFull) ? capacityControl : undefined;
+    if (
+      emergencyControlType !== undefined &&
+      state.emergencyControlTypes.has(emergencyControlType)
+    ) {
+      return emitSingle(input.emit, emergencyControlCapacityMessage(command, emergencyControlType));
+    }
+    let record: CommandRecord | undefined;
+    if (emergencyControlType === undefined) {
+      record = { fingerprint, terminalBytes: 0 };
+      state.commandById.set(command.commandId, record);
     }
 
     const terminalPromise = executeCommand(
@@ -149,22 +196,129 @@ export function createProviderHostProtocolHandler(input: {
       input.stopQuiesceTimeoutMs ?? STOP_SESSION_QUIESCE_TIMEOUT_MS,
       input.stopForceTimeoutMs ?? STOP_SESSION_FORCE_TIMEOUT_MS,
     ).catch((error) => errorMessage(command, classifyProviderHostError(error)));
-    state.inFlightByCommandId.set(command.commandId, terminalPromise);
+    if (emergencyControlType === undefined) {
+      state.inFlightByCommandId.set(command.commandId, terminalPromise);
+    } else {
+      state.emergencyControlByCommandId.set(command.commandId, {
+        fingerprint,
+        terminal: terminalPromise,
+      });
+      state.emergencyControlTypes.add(emergencyControlType);
+    }
     const terminal = await terminalPromise;
-    state.inFlightByCommandId.delete(command.commandId);
-    state.terminalByCommandId.set(command.commandId, terminal);
-    trimTerminalReceipts(state.terminalByCommandId);
+    if (emergencyControlType === undefined && record) {
+      state.inFlightByCommandId.delete(command.commandId);
+      record.terminal = terminal;
+      record.terminalBytes = Buffer.byteLength(JSON.stringify(terminal));
+      state.terminalReceiptBytes += record.terminalBytes;
+      trimTerminalReceipts(state);
+    } else if (emergencyControlType !== undefined) {
+      state.emergencyControlByCommandId.delete(command.commandId);
+      state.emergencyControlTypes.delete(emergencyControlType);
+    }
     input.emit(terminal);
     return [terminal];
   };
 }
 
-function trimTerminalReceipts(receipts: Map<string, ProviderHostMessageEnvelope>): void {
-  while (receipts.size > MAX_TERMINAL_RECEIPTS) {
-    const oldest = receipts.keys().next().value;
-    if (oldest === undefined) return;
-    receipts.delete(oldest);
+function trimTerminalReceipts(state: ProtocolState): void {
+  if (state.terminalReceiptBytes <= MAX_TERMINAL_RECEIPT_BYTES) return;
+  for (const record of state.commandById.values()) {
+    if (!record.terminal) continue;
+    state.terminalReceiptBytes -= record.terminalBytes;
+    delete record.terminal;
+    record.terminalBytes = 0;
+    if (state.terminalReceiptBytes <= MAX_TERMINAL_RECEIPT_BYTES) return;
   }
+}
+
+function emitSingle(
+  emit: (message: ProviderHostMessageEnvelope) => void,
+  terminal: ProviderHostMessageEnvelope,
+): ReadonlyArray<ProviderHostMessageEnvelope> {
+  emit(terminal);
+  return [terminal];
+}
+
+function commandIdentityConflict(command: ProviderHostCommand): ProviderHostMessageEnvelope {
+  return errorMessage(command, {
+    code: "protocol_violation",
+    message: `Provider Host commandId ${command.commandId} was reused with different command content.`,
+    retryable: false,
+    requiresNewExecution: true,
+    requiresUserAction: false,
+    canReconstructFromHistory: true,
+    canMoveWorker: true,
+  });
+}
+
+function expiredReceiptMessage(command: ProviderHostCommand): ProviderHostMessageEnvelope {
+  return errorMessage(command, {
+    code: "protocol_violation",
+    message: `Provider Host terminal receipt for commandId ${command.commandId} is no longer retained; start a new Provider host Session.`,
+    retryable: false,
+    requiresNewExecution: true,
+    requiresUserAction: false,
+    canReconstructFromHistory: true,
+    canMoveWorker: true,
+  });
+}
+
+function commandCapacityMessage(command: ProviderHostCommand): ProviderHostMessageEnvelope {
+  return errorMessage(command, {
+    code: "provider_unavailable",
+    message: `Provider Host command identity capacity ${MAX_COMMAND_RECORDS} is exhausted; start a new Provider host Session.`,
+    retryable: false,
+    requiresNewExecution: true,
+    requiresUserAction: false,
+    canReconstructFromHistory: true,
+    canMoveWorker: true,
+  });
+}
+
+function inFlightCapacityMessage(command: ProviderHostCommand): ProviderHostMessageEnvelope {
+  return errorMessage(command, {
+    code: "provider_unavailable",
+    message: `Provider Host already has ${MAX_IN_FLIGHT_COMMANDS} commands in flight.`,
+    retryable: true,
+    requiresNewExecution: false,
+    requiresUserAction: false,
+    canReconstructFromHistory: true,
+    canMoveWorker: true,
+  });
+}
+
+function emergencyControlCapacityMessage(
+  command: ProviderHostCommand,
+  commandType: EmergencyControlType,
+): ProviderHostMessageEnvelope {
+  return errorMessage(command, {
+    code: "provider_unavailable",
+    message: `Provider Host emergency ${commandType} slot is already in use.`,
+    retryable: true,
+    requiresNewExecution: false,
+    requiresUserAction: false,
+    canReconstructFromHistory: true,
+    canMoveWorker: true,
+  });
+}
+
+function capacityControlType(commandType: string): EmergencyControlType | undefined {
+  return commandType === "StopSession" || commandType === "InterruptTurn" ? commandType : undefined;
+}
+
+function commandFingerprint(command: ProviderHostCommand): string {
+  return createHash("sha256").update(canonicalJSON(command)).digest("hex");
+}
+
+function canonicalJSON(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJSON).join(",")}]`;
+  return `{${Object.entries(value)
+    .filter(([, member]) => member !== undefined)
+    .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([name, member]) => `${JSON.stringify(name)}:${canonicalJSON(member)}`)
+    .join(",")}}`;
 }
 
 async function settlesWithin(
@@ -374,6 +528,17 @@ async function executeCommand(
           canMoveWorker: true,
         });
       }
+      if (!conversationHistoryHasTurnCapacity(runInput)) {
+        throw new ProtocolFailure({
+          code: "session_resume_invalid",
+          message: "Conversation history is full. Start a new Session before sending another Turn.",
+          retryable: false,
+          requiresNewExecution: false,
+          requiresUserAction: true,
+          canReconstructFromHistory: true,
+          canMoveWorker: true,
+        });
+      }
       const run = startRun(runInput, credential, (message) => {
         // StopSession advances the epoch before waiting for the provider. Drop
         // late output so a stopped Session cannot leak into its successor.
@@ -434,14 +599,21 @@ async function executeCommand(
           conversationHistory: history,
         },
       };
-      state.sessionInput = nextSessionInput;
-      const provider = readProvider(nextSessionInput.workload.provider);
-      if (
-        descriptorForProvider(provider).capabilityDescriptor.capabilities["resume-session"] ===
-        "emulated"
-      ) {
-        persistConversationHistory(nextSessionInput, provider, missingEmulatedHistory);
+      try {
+        validateConversationHistory(history);
+        const provider = readProvider(nextSessionInput.workload.provider);
+        if (
+          descriptorForProvider(provider).capabilityDescriptor.capabilities["resume-session"] ===
+          "emulated"
+        ) {
+          persistConversationHistory(nextSessionInput, provider, missingEmulatedHistory);
+        }
+      } catch (cause) {
+        state.sessionEpoch += 1;
+        state.sessionInput = null;
+        throw cause;
       }
+      state.sessionInput = nextSessionInput;
       return resultMessage(command, {
         output: terminalResult.output,
         ...(terminalResult.providerResumeCursor
