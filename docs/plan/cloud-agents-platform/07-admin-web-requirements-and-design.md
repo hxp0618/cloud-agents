@@ -808,7 +808,6 @@ ADMIN-M1～M4 已完成；详细里程碑记录已在开源整理前归档。原
 
 P4 顺序固定为标准 OIDC → GitHub/GitLab → Feishu/DingTalk/WeCom。每个 provider 必须覆盖登录、显式链接/解除、未知身份拒绝、邀请接受和无 secret Audit；非标准 provider 的邮箱信任逐 provider 配置，缺失或不可信邮箱不能接受邀请，已预链接 subject 仍可登录。P5 的生产迁移和部署需要与 P0 决策批准分开的明确生产授权，不在本文记录具体生产地址。
 
-
 ## 16. 状态入口
 
 本文只维护 Admin Web 的需求、信息架构、交互与验收设计。实现进度和最终实际结果统一读取 [06](06-status-tracker.md)；第一阶段验收证据见 [phase-1 验收](../../acceptance/phase-1.public.md)。
