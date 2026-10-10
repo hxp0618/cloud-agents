@@ -237,14 +237,8 @@ writeFileSync(
 process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 
 function buildGoArtifact(command: string, target: PlatformReleaseTarget, output: string): void {
-  const { args, env } = platformGoBuildCommand(
-    repositoryRoot,
-    command,
-    target,
-    output,
-    options.version,
-  );
-  run("go", args, repositoryRoot, env);
+  const build = platformGoBuildCommand(repositoryRoot, command, target, output, options.version);
+  run(build.command, build.args, repositoryRoot, build.env);
 }
 
 function buildGoArtifacts(

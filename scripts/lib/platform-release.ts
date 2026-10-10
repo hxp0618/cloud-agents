@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
@@ -391,17 +391,26 @@ function webIndexDigest(root: string, app: "admin-web" | "user-web"): string {
     .digest("hex");
 }
 
+// A GOROOT exported by a version manager must run with its own go binary;
+// another `go` earlier on PATH would drive that GOROOT's mismatched compiler.
+export function platformGoBinary(): string {
+  const goroot = process.env.GOROOT ?? "";
+  const binary = join(goroot, "bin", "go");
+  return goroot !== "" && existsSync(binary) ? binary : "go";
+}
+
 export function platformGoBuildCommand(
   root: string,
   command: string,
   target: PlatformReleaseTarget,
   output: string,
   version?: string,
-): Readonly<{ args: string[]; env: Record<string, string> }> {
+): Readonly<{ command: string; args: string[]; env: Record<string, string> }> {
   const [goos, goarch] = target.split("-") as [string, string];
   const module = command === "cloud-agents-worker" ? "services/worker" : "services/control-plane";
   const versionFlag = version === undefined ? "" : ` -X main.version=${version}`;
   return {
+    command: platformGoBinary(),
     args: [
       "-C",
       module,

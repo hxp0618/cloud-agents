@@ -15,12 +15,14 @@ import { createInterface } from "node:readline/promises";
 import {
   buildPlatformDeploymentPackage,
   buildPlatformMigrationPackage,
+  platformGoBinary,
   platformGoBuildCommand,
   PLATFORM_RELEASE_DEPLOYMENT,
   PLATFORM_RELEASE_MIGRATION_HEAD,
   PLATFORM_RELEASE_MIGRATIONS,
   type PlatformReleaseTarget,
 } from "./lib/platform-release.ts";
+import { PLATFORM_GO_TOOLCHAIN } from "./lib/platform-go-modules.ts";
 import { buildWorkerOciSupplyArtifacts } from "./lib/worker-oci-supply.ts";
 
 type ImageSpec = Readonly<{
@@ -162,6 +164,13 @@ done
   const releaseDir = join(stage, releaseName);
   const deployDir = join(stage, "deployment/deploy");
   mkdirSync(releaseDir, { recursive: true });
+  // Image tags digest the binaries, so another toolchain would rebuild every Go service.
+  const goVersion = spawnSync(platformGoBinary(), ["version"], { encoding: "utf8" });
+  if (!goVersion.stdout?.startsWith(`go version ${PLATFORM_GO_TOOLCHAIN} `)) {
+    fail(
+      `expected ${PLATFORM_GO_TOOLCHAIN}, found ${goVersion.stdout?.trim() || String(goVersion.error ?? "no go")}; activate the repository mise toolchain`,
+    );
+  }
   step("Building Web applications");
   for (const directory of ["sdk/typescript", "apps/admin-web", "apps/user-web"]) {
     run("bun", ["run", "--cwd", directory, "build"]);
@@ -174,7 +183,7 @@ done
       `linux-${arch}` as PlatformReleaseTarget,
       join(releaseDir, `${command}-linux-${arch}`),
     );
-    run("go", build.args, build.env);
+    run(build.command, build.args, build.env);
   }
   step("Packaging deployment and migrations");
   writeFileSync(
