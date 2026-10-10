@@ -248,7 +248,8 @@ function codeErrorKey(code: string | null): MessageKey | undefined {
 function errorKey(error: unknown, code: string | null): MessageKey {
   // Quota codes are only actionable for the lease-conflict response. A stale
   // or malformed code must not hide a more important auth or transport error.
-  const codeKey = error instanceof ClientError && error.status === 409 ? codeErrorKey(code) : undefined;
+  const codeKey =
+    error instanceof ClientError && error.status === 409 ? codeErrorKey(code) : undefined;
   if (codeKey !== undefined) return codeKey;
   if (error instanceof AdminUIError) return error.messageKey;
   if (error instanceof ClientError && error.status === 401) return "error.tokenExpired";

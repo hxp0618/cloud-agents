@@ -26,8 +26,7 @@ export function NameField({
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => input.current?.setCustomValidity(takenMessage), [takenMessage]);
-  const error =
-    takenMessage || (value === "" || namePattern.test(value) ? "" : t("form.nameHint"));
+  const error = takenMessage || (value === "" || namePattern.test(value) ? "" : t("form.nameHint"));
   return (
     <label>
       <span>{label}</span>
@@ -48,7 +47,9 @@ export function NameField({
         onChange={(event) => onChange(event.target.value)}
       />
       {error === "" ? (
-        help === undefined ? null : <small>{help}</small>
+        help === undefined ? null : (
+          <small>{help}</small>
+        )
       ) : (
         <small className="danger-text" role="alert">
           {error}
@@ -153,6 +154,15 @@ export function AdvancedFields({ children }: Readonly<{ children: ReactNode }>) 
     <details className="form-advanced">
       <summary>{t("form.advanced")}</summary>
       <div className="resource-form-group">{children}</div>
+    </details>
+  );
+}
+
+export function DetailMore({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
+  return (
+    <details className="detail-more">
+      <summary>{title}</summary>
+      <dl className="detail-list">{children}</dl>
     </details>
   );
 }

@@ -1,5 +1,5 @@
-import { SheetHeading } from "../AdminSheet";
 import { useState, type FormEvent } from "react";
+import { SheetHeading } from "../AdminSheet";
 import { useI18n } from "../i18n";
 import {
   type AdminSandboxSession,
@@ -182,19 +182,27 @@ export function WorkspaceSnapshotPanel({
           </button>
         </form>
       )}
-      <WorkspaceSnapshotTable snapshots={snapshots} onCleanup={onCleanup} />
+      <WorkspaceSnapshotTable
+        snapshots={snapshots}
+        workspaceNames={
+          new Map(sandboxes.map(({ spec }) => [spec.workspaceId, spec.workspaceName] as const))
+        }
+        onCleanup={onCleanup}
+      />
     </section>
   );
 }
 
 export function WorkspaceSnapshotTable({
   snapshots,
+  workspaceNames,
   onCleanup,
 }: Readonly<{
   snapshots: readonly WorkspaceSnapshot[];
+  workspaceNames: ReadonlyMap<string, string>;
   onCleanup: (snapshot: WorkspaceSnapshot) => void;
 }>) {
-  const { t, number, bytes, dateTime } = useI18n();
+  const { t, bytes, dateTime } = useI18n();
   if (snapshots.length === 0)
     return <div className="table-empty">{t("workspaceSnapshot.empty")}</div>;
   return (
@@ -204,15 +212,10 @@ export function WorkspaceSnapshotTable({
           <tr>
             <th>{t("workspaceSnapshot.id")}</th>
             <th>{t("workspaceSnapshot.sourceWorkspace")}</th>
-            <th>{t("workspaceSnapshot.sourceTarget")}</th>
-            <th>{t("workspaceSnapshot.backend")}</th>
             <th>{t("table.status")}</th>
             <th>{t("workspaceSnapshot.size")}</th>
-            <th>{t("workspaceSnapshot.retention")}</th>
             <th>{t("workspaceSnapshot.expires")}</th>
-            <th>{t("workspaceSnapshot.operation")}</th>
-            <th>{t("table.updated")}</th>
-            <th>{t("table.actions")}</th>
+            <th aria-label={t("table.actions")} />
           </tr>
         </thead>
         <tbody>
@@ -220,14 +223,12 @@ export function WorkspaceSnapshotTable({
             <tr key={snapshot.metadata.uid}>
               <td>
                 <strong>{snapshot.metadata.name}</strong>
-                <small className="mono">rv{snapshot.metadata.resourceVersion}</small>
               </td>
               <td>
-                <span className="mono">{snapshot.spec.sourceWorkspaceId}</span>
-                <small>rv{snapshot.spec.sourceWorkspaceResourceVersion}</small>
+                {workspaceNames.get(snapshot.spec.sourceWorkspaceId) ?? (
+                  <span className="mono">{snapshot.spec.sourceWorkspaceId}</span>
+                )}
               </td>
-              <td className="mono">{snapshot.spec.sourceTargetId}</td>
-              <td className="mono">{snapshot.spec.backend}</td>
               <td>
                 <span className={`phase ${phaseTone(snapshot.spec.status)}`}>
                   <i /> {phaseLabel(snapshot.spec.status, t)}
@@ -237,21 +238,10 @@ export function WorkspaceSnapshotTable({
                 {snapshot.spec.sizeBytes === undefined ? "—" : bytes(snapshot.spec.sizeBytes)}
               </td>
               <td>
-                {snapshot.spec.retentionSeconds === undefined
-                  ? t("common.never")
-                  : t("workspaceSnapshot.retentionValue", {
-                      seconds: number(snapshot.spec.retentionSeconds),
-                    })}
-              </td>
-              <td>
                 {snapshot.spec.expiresAt === undefined
                   ? t("common.never")
                   : dateTime(snapshot.spec.expiresAt)}
               </td>
-              <td className="mono">
-                {snapshot.spec.cleanupOperationId ?? snapshot.spec.operationId}
-              </td>
-              <td>{dateTime(snapshot.metadata.updatedAt)}</td>
               <td>
                 {snapshot.spec.status === "available" ||
                 snapshot.spec.status === "cleanup_failed" ? (
@@ -307,10 +297,6 @@ export function WorkspaceSnapshotCleanupConfirmation({
           <div>
             <dt>{t("workspaceSnapshot.sourceWorkspace")}</dt>
             <dd className="mono">{snapshot.spec.sourceWorkspaceId}</dd>
-          </div>
-          <div>
-            <dt>{t("detail.resourceVersion")}</dt>
-            <dd className="mono">{snapshot.metadata.resourceVersion}</dd>
           </div>
           <div>
             <dt>{t("workspaceSnapshot.size")}</dt>

@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import {
-  chmodSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -62,7 +55,10 @@ function startPurposeServer(application, acceptedCredentials) {
             return;
           }
           const body = JSON.parse(Buffer.concat(parts).toString("utf8"));
-          assert.deepEqual(body, { tenantId: "tenant-compose-smoke", projectId: "project-renewal" });
+          assert.deepEqual(body, {
+            tenantId: "tenant-compose-smoke",
+            projectId: "project-renewal",
+          });
           requests.push({ application, label });
           responseJSON(response, 200, {
             accessToken: `${label}.${requests.length.toString(36)}.signature`,
@@ -231,9 +227,21 @@ wait "$automation_refresh_pid"
     `renewal loop did not complete two shortened cycles: ${shellStderr.trim()}`,
   );
   assert.deepEqual(errors, []);
-  assert.equal(requests.filter(({ application, label }) => application === "admin" && label === "admin").length >= 3, true);
-  assert.equal(requests.filter(({ application, label }) => application === "admin" && label === "denied").length >= 3, true);
-  assert.equal(requests.filter(({ application, label }) => application === "user" && label === "user").length >= 3, true);
+  assert.equal(
+    requests.filter(({ application, label }) => application === "admin" && label === "admin")
+      .length >= 3,
+    true,
+  );
+  assert.equal(
+    requests.filter(({ application, label }) => application === "admin" && label === "denied")
+      .length >= 3,
+    true,
+  );
+  assert.equal(
+    requests.filter(({ application, label }) => application === "user" && label === "user")
+      .length >= 3,
+    true,
+  );
   assertPrivateCompleteOutputs();
   assert.equal(atomicFailure, undefined, "an atomically replaced output was missing or partial");
   assert.match(readFileSync(join(directory, "admin-token"), "utf8"), /^admin\./u);

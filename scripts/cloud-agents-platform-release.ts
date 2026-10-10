@@ -13,6 +13,7 @@ import {
   buildRuntimeNotice,
   captureRuntimeReleaseCandidate,
   parsePlatformReleaseOptions,
+  platformGoBuildCommand,
   platformReleaseArtifact,
   PLATFORM_RELEASE_CONTRACTS,
   PLATFORM_RELEASE_DEPLOYMENT,
@@ -236,30 +237,14 @@ writeFileSync(
 process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 
 function buildGoArtifact(command: string, target: PlatformReleaseTarget, output: string): void {
-  const [goos, goarch] = target.split("-") as [string, string];
-  const module = command === "cloud-agents-worker" ? "services/worker" : "services/control-plane";
-  run(
-    "go",
-    [
-      "-C",
-      module,
-      "build",
-      "-trimpath",
-      `-ldflags=-buildid= -X main.version=${options.version}`,
-      "-o",
-      output,
-      `./cmd/${command}`,
-    ],
+  const { args, env } = platformGoBuildCommand(
     repositoryRoot,
-    {
-      GOOS: goos,
-      GOARCH: goarch,
-      CGO_ENABLED: "0",
-      GOTOOLCHAIN: "local",
-      GOWORK: join(repositoryRoot, "go.work"),
-      GOFLAGS: "-mod=readonly",
-    },
+    command,
+    target,
+    output,
+    options.version,
   );
+  run("go", args, repositoryRoot, env);
 }
 
 function buildGoArtifacts(

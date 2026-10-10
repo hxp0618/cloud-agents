@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { DetailMore } from "./form-fields";
 import {
   type Worker,
   type WorkerHealthObservation,
@@ -303,14 +304,6 @@ export function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
         {worker.spec.health !== undefined ? (
           <>
             <div>
-              <dt>{t("worker.healthCheckedAt")}</dt>
-              <dd>{dateTime(worker.spec.health.checkedAt)}</dd>
-            </div>
-            <div>
-              <dt>{t("worker.healthExpiresAt")}</dt>
-              <dd>{dateTime(worker.spec.health.expiresAt)}</dd>
-            </div>
-            <div>
               <dt>{t("worker.healthLastSuccessAt")}</dt>
               <dd>
                 {worker.spec.health.lastSuccessAt === undefined
@@ -321,10 +314,6 @@ export function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
           </>
         ) : null}
         <div>
-          <dt>{t("worker.id")}</dt>
-          <dd className="mono">{worker.metadata.uid}</dd>
-        </div>
-        <div>
           <dt>{t("worker.lease")}</dt>
           <dd className="mono">{worker.spec.leaseId}</dd>
         </div>
@@ -334,18 +323,6 @@ export function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
             {worker.spec.targetId} · {targetKindLabel(worker.spec.targetKind, t)} · g
             {number(worker.spec.targetGeneration)}
           </dd>
-        </div>
-        <div>
-          <dt>{t("table.generation")}</dt>
-          <dd className="mono">{number(worker.spec.generation)}</dd>
-        </div>
-        <div>
-          <dt>{t("detail.resourceVersion")}</dt>
-          <dd className="mono">{worker.metadata.resourceVersion}</dd>
-        </div>
-        <div>
-          <dt>{t("worker.releaseDigest")}</dt>
-          <dd className="mono break">{worker.spec.releaseDigest}</dd>
         </div>
         <div>
           <dt>{t("worker.resourceLimits")}</dt>
@@ -379,14 +356,6 @@ export function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
           <dd>{dateTime(worker.metadata.createdAt)}</dd>
         </div>
         <div>
-          <dt>{t("worker.identity")}</dt>
-          <dd className="mono break">{worker.spec.workerSpiffeId ?? t("common.notReady")}</dd>
-        </div>
-        <div>
-          <dt>{t("worker.serverName")}</dt>
-          <dd className="mono">{worker.spec.workerServerName ?? t("common.notReady")}</dd>
-        </div>
-        <div>
           <dt>{t("worker.updatedAt")}</dt>
           <dd>{dateTime(worker.metadata.updatedAt)}</dd>
         </div>
@@ -397,7 +366,44 @@ export function WorkerDetail({ worker }: Readonly<{ worker: Worker }>) {
           </div>
         ) : null}
       </dl>
-      <p className="boundary-note">{t("worker.healthBoundary")}</p>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("worker.id")}</dt>
+          <dd className="mono">{worker.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(worker.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{worker.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.releaseDigest")}</dt>
+          <dd className="mono break">{worker.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.identity")}</dt>
+          <dd className="mono break">{worker.spec.workerSpiffeId ?? t("common.notReady")}</dd>
+        </div>
+        <div>
+          <dt>{t("worker.serverName")}</dt>
+          <dd className="mono">{worker.spec.workerServerName ?? t("common.notReady")}</dd>
+        </div>
+        {worker.spec.health !== undefined ? (
+          <>
+            <div>
+              <dt>{t("worker.healthCheckedAt")}</dt>
+              <dd>{dateTime(worker.spec.health.checkedAt)}</dd>
+            </div>
+            <div>
+              <dt>{t("worker.healthExpiresAt")}</dt>
+              <dd>{dateTime(worker.spec.health.expiresAt)}</dd>
+            </div>
+          </>
+        ) : null}
+      </DetailMore>
     </>
   );
 }

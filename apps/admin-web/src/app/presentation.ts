@@ -11,6 +11,34 @@ export type TargetKind = DeploymentTarget["spec"]["targetKind"];
 export type WorkloadTrust = RuntimeProfile["spec"]["workloadTrust"];
 export type IsolationRuntime = RuntimeProfile["spec"]["isolationRuntime"];
 
+export const workloadTrusts = [
+  "trusted-single-tenant",
+  "dedicated-node",
+  "shared-untrusted",
+] as const satisfies readonly WorkloadTrust[];
+
+export function runtimeProfileTargetAllowed(
+  target: DeploymentTarget,
+  workloadTrust: WorkloadTrust,
+): boolean {
+  return (
+    target.spec.targetKind === "remote-worker" ||
+    (workloadTrust === "trusted-single-tenant" && target.spec.targetKind === "docker")
+  );
+}
+
+// A runtime profile can be created when some trust level has both a target and a network policy.
+export function runtimeProfileCreatable(
+  targets: readonly DeploymentTarget[],
+  networkPolicies: readonly NetworkPolicy[],
+): boolean {
+  return workloadTrusts.some(
+    (trust) =>
+      targets.some((target) => runtimeProfileTargetAllowed(target, trust)) &&
+      networkPolicies.some((policy) => executableFoundationNetworkPolicy(policy, trust)),
+  );
+}
+
 export function executableFoundationNetworkPolicy(
   policy: NetworkPolicy,
   workloadTrust: WorkloadTrust,

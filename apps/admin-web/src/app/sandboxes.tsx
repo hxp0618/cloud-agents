@@ -1,5 +1,6 @@
-import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
+import { SheetHeading } from "../AdminSheet";
+import { DetailMore } from "./form-fields";
 import {
   type AdminSandboxAccessGrant,
   type AdminSandboxSession,
@@ -152,14 +153,6 @@ export function SandboxDetail({
           </dd>
         </div>
         <div>
-          <dt>{t("sandbox.volume")}</dt>
-          <dd className="mono">{sandbox.spec.volumeId}</dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.physicalVolume")}</dt>
-          <dd className="mono break">{sandbox.spec.physicalVolumeId ?? t("common.notBound")}</dd>
-        </div>
-        <div>
           <dt>{t("sandbox.workspaceState")}</dt>
           <dd>{phaseLabel(sandbox.spec.workspaceObservedState, t)}</dd>
         </div>
@@ -174,24 +167,12 @@ export function SandboxDetail({
           <dd>{t(`runtimeProfile.workloadTrust.${sandbox.spec.workloadTrust}`)}</dd>
         </div>
         <div>
-          <dt>{t("runtimeProfile.isolationRuntime")}</dt>
-          <dd>{t(`runtimeProfile.isolationRuntime.${sandbox.spec.isolationRuntime}`)}</dd>
-        </div>
-        <div>
           <dt>{t("sandbox.target")}</dt>
           <dd className="mono">{sandbox.spec.targetId}</dd>
         </div>
         <div>
           <dt>{t("sandbox.networkPolicy")}</dt>
           <dd className="mono">{sandbox.spec.networkPolicyRef ?? t("common.notBound")}</dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.networkPolicyEnforcement")}</dt>
-          <dd>
-            {t(
-              `sandbox.networkPolicyEnforcement.${sandbox.spec.networkPolicyEnforcement}` as MessageKey,
-            )}
-          </dd>
         </div>
         <div>
           <dt>{t("sandbox.ttl")}</dt>
@@ -212,47 +193,11 @@ export function SandboxDetail({
           </dd>
         </div>
         <div>
-          <dt>{t("sandbox.lifecycleTrigger")}</dt>
-          <dd>
-            {sandbox.spec.lifecycleTrigger === undefined
-              ? t("common.notAvailable")
-              : t(
-                  sandbox.spec.lifecycleTrigger === "ttl"
-                    ? "sandbox.lifecycleTrigger.ttl"
-                    : "sandbox.lifecycleTrigger.manual",
-                )}
-          </dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.operation")}</dt>
-          <dd className="mono break">{sandbox.spec.operationId}</dd>
-        </div>
-        <div>
           <dt>{t("sandbox.operationState")}</dt>
           <dd>
             {phaseLabel(sandbox.spec.operationState, t)} ·{" "}
             {phaseLabel(sandbox.spec.cleanupPhase, t)}
           </dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.desiredState")}</dt>
-          <dd>{phaseLabel(sandbox.spec.desiredState, t)}</dd>
-        </div>
-        <div>
-          <dt>{t("table.generation")}</dt>
-          <dd className="mono">{number(sandbox.spec.generation)}</dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.observedGeneration")}</dt>
-          <dd className="mono">{number(sandbox.spec.observedGeneration)}</dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.writerReleased")}</dt>
-          <dd>{t(sandbox.spec.writerReleased ? "common.yes" : "common.no")}</dd>
-        </div>
-        <div>
-          <dt>{t("sandbox.runtimeId")}</dt>
-          <dd className="mono break">{sandbox.spec.runtimeId ?? t("common.notBound")}</dd>
         </div>
         <div>
           <dt>{t("sandbox.runtimeState")}</dt>
@@ -266,6 +211,14 @@ export function SandboxDetail({
               : dateTime(sandbox.spec.observedAt)}
           </dd>
         </div>
+        {sandbox.spec.stableErrorCode === undefined ? null : (
+          <div>
+            <dt>{t("detail.stableError")}</dt>
+            <dd className="mono danger-text">{sandbox.spec.stableErrorCode}</dd>
+          </div>
+        )}
+      </dl>
+      <DetailMore title={t("sandbox.usageTitle")}>
         {sandbox.spec.usage === undefined ? null : (
           <>
             <div>
@@ -400,17 +353,69 @@ export function SandboxDetail({
             )}
           </>
         )}
+      </DetailMore>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("sandbox.volume")}</dt>
+          <dd className="mono">{sandbox.spec.volumeId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.physicalVolume")}</dt>
+          <dd className="mono break">{sandbox.spec.physicalVolumeId ?? t("common.notBound")}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.isolationRuntime")}</dt>
+          <dd>{t(`runtimeProfile.isolationRuntime.${sandbox.spec.isolationRuntime}`)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.networkPolicyEnforcement")}</dt>
+          <dd>
+            {t(
+              `sandbox.networkPolicyEnforcement.${sandbox.spec.networkPolicyEnforcement}` as MessageKey,
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.lifecycleTrigger")}</dt>
+          <dd>
+            {sandbox.spec.lifecycleTrigger === undefined
+              ? t("common.notAvailable")
+              : t(
+                  sandbox.spec.lifecycleTrigger === "ttl"
+                    ? "sandbox.lifecycleTrigger.ttl"
+                    : "sandbox.lifecycleTrigger.manual",
+                )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.operation")}</dt>
+          <dd className="mono break">{sandbox.spec.operationId}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.desiredState")}</dt>
+          <dd>{phaseLabel(sandbox.spec.desiredState, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(sandbox.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.observedGeneration")}</dt>
+          <dd className="mono">{number(sandbox.spec.observedGeneration)}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.writerReleased")}</dt>
+          <dd>{t(sandbox.spec.writerReleased ? "common.yes" : "common.no")}</dd>
+        </div>
+        <div>
+          <dt>{t("sandbox.runtimeId")}</dt>
+          <dd className="mono break">{sandbox.spec.runtimeId ?? t("common.notBound")}</dd>
+        </div>
         <div>
           <dt>{t("detail.resourceVersion")}</dt>
           <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
         </div>
-        {sandbox.spec.stableErrorCode === undefined ? null : (
-          <div>
-            <dt>{t("detail.stableError")}</dt>
-            <dd className="mono danger-text">{sandbox.spec.stableErrorCode}</dd>
-          </div>
-        )}
-      </dl>
+      </DetailMore>
       <ManagedAgentRuntimeSection
         sandbox={sandbox}
         runtime={runtime}
@@ -501,16 +506,6 @@ export function SandboxDetail({
               disabled={disabled || correctionLimitReached}
             />
           </label>
-          <dl className="detail-list cleanup-fence">
-            <div>
-              <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
-              <dd className="mono">{number(sandbox.spec.generation)}</dd>
-            </div>
-            <div>
-              <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
-              <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
-            </div>
-          </dl>
           <label className="confirmation-check">
             <input
               type="checkbox"
@@ -631,7 +626,6 @@ export function SandboxDetail({
           </button>
         </section>
       )}
-      <p className="boundary-note">{t("sandbox.boundary")}</p>
     </>
   );
 }
@@ -649,13 +643,18 @@ export function SandboxLifecycleConfirmation({
   onClose: () => void;
   onConfirm: () => void;
 }>) {
-  const { t, number } = useI18n();
+  const { t } = useI18n();
   const [confirmed, setConfirmed] = useState(false);
   const stopping = action === "stop";
   const actionLabel = t(stopping ? "sandbox.lifecycle.stop" : "sandbox.lifecycle.rebuild");
   return (
     <section className="dialog" aria-labelledby="sandbox-lifecycle-title">
-      <SheetHeading id="sandbox-lifecycle-title" title={t("sandbox.lifecycle.title", { action: actionLabel })} subject={sandbox.metadata.name} onClose={onClose} />
+      <SheetHeading
+        id="sandbox-lifecycle-title"
+        title={t("sandbox.lifecycle.title", { action: actionLabel })}
+        subject={sandbox.metadata.name}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -670,14 +669,6 @@ export function SandboxLifecycleConfirmation({
           <div>
             <dt>{t("sandbox.id")}</dt>
             <dd className="mono">{sandbox.metadata.uid}</dd>
-          </div>
-          <div>
-            <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
-            <dd className="mono">{number(sandbox.spec.generation)}</dd>
-          </div>
-          <div>
-            <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
-            <dd className="mono">{sandbox.metadata.resourceVersion}</dd>
           </div>
           <div>
             <dt>{t("sandbox.lifecycle.compute")}</dt>
@@ -736,7 +727,12 @@ export function SandboxGrantRevokeConfirmation({
   const [confirmed, setConfirmed] = useState(false);
   return (
     <section className="dialog" aria-labelledby="sandbox-grant-revoke-title">
-      <SheetHeading id="sandbox-grant-revoke-title" title={t("sandbox.grants.revokeTitle")} subject={grant.metadata.uid} onClose={onClose} />
+      <SheetHeading
+        id="sandbox-grant-revoke-title"
+        title={t("sandbox.grants.revokeTitle")}
+        subject={grant.metadata.uid}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -755,14 +751,6 @@ export function SandboxGrantRevokeConfirmation({
           <div>
             <dt>{t("sandbox.id")}</dt>
             <dd className="mono break">{grant.spec.sandboxId}</dd>
-          </div>
-          <div>
-            <dt>{t("sandbox.lifecycle.expectedGeneration")}</dt>
-            <dd className="mono">{number(grant.spec.generation)}</dd>
-          </div>
-          <div>
-            <dt>{t("sandbox.lifecycle.expectedResourceVersion")}</dt>
-            <dd className="mono">{grant.metadata.resourceVersion}</dd>
           </div>
           <div>
             <dt>{t("sandbox.grants.expiresAt")}</dt>

@@ -15,6 +15,7 @@ import {
   type FixtureTransport,
 } from "../../sdk/typescript/dist/platform.mjs";
 import { expect, type Screen } from "e2e";
+import { openAccountMenu, openEmailDomains } from "./admin-account-menu";
 
 const adminURL = requiredURL("CLOUD_AGENTS_IDENTITY_E2E_ADMIN_URL");
 const userURL = requiredURL("CLOUD_AGENTS_IDENTITY_E2E_USER_URL");
@@ -171,6 +172,8 @@ test("a platform administrator signs in, sees every tenant, switches scope, and 
   const login = await passwordLogin(browser, screen, accounts.platform);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
 
+  // Tenant switching lives in the account menu; projects live in the sidebar.
+  await openAccountMenu(browser);
   const tenant = screen.getByLabel("Tenant");
   const project = screen.getByLabel("Project");
   expect(await browser.locator('select[aria-label="Tenant"] option').allTextContents()).toEqual([
@@ -239,16 +242,20 @@ test("a platform administrator signs in, sees every tenant, switches scope, and 
   await expect(tenant).toHaveValue("tenant-a");
   await expect(project).toHaveValue("project-a1");
 
+  // Each scope change remounts the console, which closes the account menu.
   await project.selectOption({ value: "project-a2" });
   await expect(project).toHaveValue("project-a2");
+  await openAccountMenu(browser);
   await tenant.selectOption({ value: "tenant-b" });
-  await expect(tenant).toHaveValue("tenant-b");
   await expect(project).toHaveValue("project-b1");
+  await openAccountMenu(browser);
+  await expect(tenant).toHaveValue("tenant-b");
   expect(proxiedPaths.some((path) => path.includes("/tenant-a/projects/project-a2/"))).toBe(true);
   expect(proxiedPaths.some((path) => path.includes("/tenant-b/projects/project-b1/"))).toBe(true);
 
   await tenant.selectOption({ value: "tenant-a" });
-  await browser.locator("details.profile-menu summary").tap();
+  await expect(project).toHaveValue("project-a1");
+  await openEmailDomains(browser, screen);
   const domains = screen.getByRole("textbox", /^Allowed email domains/);
   await domains.fill("identity.test\nexample.test");
   const saveEmailDomains = screen.getByRole("button", "Save email domains");
@@ -258,7 +265,7 @@ test("a platform administrator signs in, sees every tenant, switches scope, and 
   expect((await saveResponse).status).toBe(200);
   await browser.reload();
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openEmailDomains(browser, screen);
   await expect(screen.getByRole("textbox", /^Allowed email domains/)).toHaveValue(
     "example.test\nidentity.test",
   );
@@ -272,10 +279,11 @@ test("a tenant administrator sees only the administered tenant", async ({
   await app.open();
   await passwordLogin(browser, screen, accounts.tenant);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  expect(await browser.locator('select[aria-label="Tenant"] option').allTextContents()).toEqual([
+  // A single administered tenant is shown as text, not as a one-option selector.
+  expect(await browser.locator(".profile-trigger-text small").allTextContents()).toEqual([
     "Tenant A",
   ]);
-  await expect(screen.getByLabel("Tenant")).toHaveValue("tenant-a");
+  await expect(screen.getByLabel("Tenant")).toHaveCount(0);
   await assertBrowserHasNoReusableCredential(browser, "__Host-cloud-agents-admin-session");
 });
 
@@ -297,7 +305,7 @@ test("an administrator creates, rotates, and permanently disables a service acco
   await app.open();
   await passwordLogin(browser, screen, accounts.platform);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Service accounts").tap();
   await expect(screen.getByRole("heading", "Service accounts")).toBeVisible();
 
@@ -553,7 +561,7 @@ test("an administrator creates an invitation that is accepted once while a secon
   await app.open();
   await passwordLogin(browser, screen, accounts.platform);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Members and invitations").tap();
   await expect(screen.getByRole("heading", "Members and invitations")).toBeVisible();
   await screen.getByLabel("Email").fill(invitedEmail);
@@ -611,7 +619,7 @@ test("an administrator creates an invitation that is accepted once while a secon
 
   await browser.goto(adminURL);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Members and invitations").tap();
   await expect(screen.getByRole("heading", "Members and invitations")).toBeVisible();
   await screen.getByLabel("Email").fill(revokedEmail);
@@ -738,7 +746,7 @@ test("an administrator suspends and restores a member, then adds and removes a b
     roles: true,
     organizations: true,
   });
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Members and invitations").tap();
   await screen.getByRole("tab", "Members").tap();
   await expect(screen.getByRole("heading", "Tenant members")).toBeVisible();
@@ -790,7 +798,7 @@ test("an administrator suspends and restores a member, then adds and removes a b
 
   await browser.goto(adminURL);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Members and invitations").tap();
   await screen.getByRole("tab", "Members").tap();
   const resumeResponse = browser.waitForResponse(
@@ -821,8 +829,11 @@ test("an administrator suspends and restores a member, then adds and removes a b
   await expect(screen.getByText(`Removed a role from ${member}.`)).toBeVisible();
 
   await screen.getByRole("button", "Close").tap();
+  await openAccountMenu(browser);
   await screen.getByLabel("Tenant").selectOption({ value: "tenant-b" });
-  await browser.locator("details.profile-menu summary").tap();
+  // The tenant switch remounts the console; wait for it before reopening the menu.
+  await expect(browser.locator(".profile-trigger-text small")).toHaveText("Tenant B");
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Members and invitations").tap();
   await screen.getByRole("tab", "Members").tap();
   await expect(screen.getByRole("heading", "Tenant members")).toBeVisible();

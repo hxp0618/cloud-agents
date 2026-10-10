@@ -1,6 +1,7 @@
 import { chmodSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { test, type Browser } from "@e2e-dev/web";
 import { expect, type Screen } from "e2e";
+import { openAccountMenu, openEmailDomains } from "./admin-account-menu";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -237,6 +238,7 @@ async function allowExternalProviderEmailDomain(browser: Browser, screen: Screen
   const expected = [...new Set(["example.test", "identity.test", providerEmailDomain()])]
     .sort()
     .join("\n");
+  await openEmailDomains(browser, screen);
   const domains = screen.getByRole("textbox", /^Allowed email domains/);
   await expect(domains).toHaveValue("example.test\nidentity.test");
   await domains.fill(expected);
@@ -247,8 +249,9 @@ async function allowExternalProviderEmailDomain(browser: Browser, screen: Screen
   await expect(domains).toHaveValue(expected);
   await browser.reload();
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openEmailDomains(browser, screen);
   await expect(screen.getByRole("textbox", /^Allowed email domains/)).toHaveValue(expected);
+  await screen.getByRole("button", "Cancel").tap();
 }
 
 async function createProviderInvitation(browser: Browser): Promise<string> {
@@ -377,7 +380,7 @@ test(`${providerDisplayName} invitation, login, reauthentication, linking and un
   await browser.goto(adminURL);
   await passwordLogin(browser, screen, "platform-admin@identity.test", password);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   if (humanAuthorization) await allowExternalProviderEmailDomain(browser, screen);
   await screen.getByRole("button", "Login providers").tap();
   await configureProvider(browser, screen, "admin", providerAdminClientId, providerAdminSecretRef);

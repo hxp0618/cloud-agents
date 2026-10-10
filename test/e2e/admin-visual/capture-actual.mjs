@@ -6,6 +6,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { format } from "oxfmt";
 
+import { selectScope as selectAdminScope } from "../admin-scope.mjs";
+
 const [output, adminAccountFile, deniedAccountFile, projectId, tenantId = "tenant-local"] =
   process.argv.slice(2);
 if (!output || !adminAccountFile || !deniedAccountFile || !projectId) {
@@ -378,30 +380,16 @@ try {
     await command("Page.navigate", { url: app });
     await waitFor("document.querySelector('.connect-form') !== null", `${label} signed out`);
   };
-  const selectScope = async () => {
-    await waitFor("document.querySelector('.scope-switchers select') !== null", "scope selectors");
-    const tenantSelected = await evaluate(`(() => {
-      const select = document.querySelector('.scope-switchers label:first-child select');
-      if (![...select.options].some(option => option.value === ${JSON.stringify(tenantId)})) return false;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(tenantId)});
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    })()`);
-    assert.equal(tenantSelected, true, "capture tenant is selectable");
-    await waitFor(
-      `[...document.querySelectorAll('.scope-switchers label:last-child select option')].some(option => option.value === ${JSON.stringify(projectId)})`,
-      "capture project option",
-    );
-    await evaluate(`(() => {
-      const select = document.querySelector('.scope-switchers label:last-child select');
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(projectId)});
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
-    await waitFor(
-      `document.querySelector('.scope-switchers label:last-child select')?.value === ${JSON.stringify(projectId)}`,
-      "capture project selection",
-    );
-  };
+  const selectScope = () =>
+    selectAdminScope({
+      evaluate,
+      waitFor,
+      tenantSelector: "select[data-scope=tenant]",
+      projectSelector: "select[data-scope=project]",
+      tenantId,
+      projectId,
+      label: "capture",
+    });
   const setTheme = async (theme) => {
     if ((await evaluate("document.documentElement.dataset.theme")) === theme) return;
     await click(".profile-menu summary");
@@ -416,7 +404,7 @@ try {
     if ((await evaluate("document.documentElement.lang")) === locale) return;
     await click(".profile-menu summary");
     const changed = await evaluate(
-      `(() => { const select = document.querySelector('.locale-picker select'); if (!select) return false; const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; setter.call(select, ${JSON.stringify(locale)}); select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
+      `(() => { const select = document.querySelector('select[data-preference=locale]'); if (!select) return false; const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; setter.call(select, ${JSON.stringify(locale)}); select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`,
     );
     if (!changed) throw new Error("Missing locale selector");
     await waitFor(
@@ -882,6 +870,11 @@ try {
       ["workers", "workers"],
       ["lease-attention", "leases"],
     ];
+    // Paginated lists expose their full filtered total; other lists render every row.
+    const listTotal = () =>
+      evaluate(
+        "Number(document.querySelector('.content .resource-pagination')?.dataset.total ?? document.querySelectorAll('.content tbody tr').length)",
+      );
     const counts = {};
     for (const [metric, destination] of metrics) {
       await navigatePage("overview");
@@ -889,7 +882,9 @@ try {
       await evaluate(
         `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block: 'center'})`,
       );
-      counts[metric] = await evaluate(`document.querySelector('${selector} strong').textContent`);
+      counts[metric] = Number(
+        (await evaluate(`document.querySelector('${selector} strong').textContent`)).replace(/\D/gu, ""),
+      );
       // Use a real keyboard activation, not a DOM click, for the metric-to-list transition.
       await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
       await command("Input.dispatchKeyEvent", {
@@ -910,11 +905,7 @@ try {
         `${metric} destination`,
       );
       assert.equal(await evaluate(`document.querySelector('.list-toolbar input').value`), "");
-      assert.ok(
-        await evaluate(
-          `[...document.querySelectorAll('.list-toolbar .scope-chip')].some(e => e.textContent.trim() === '${destination}.list · ${counts[metric]}')`,
-        ),
-      );
+      assert.equal(await listTotal(), counts[metric], `${metric} list total`);
       if (metric === "target-attention") {
         assert.equal(
           await evaluate(
@@ -951,11 +942,7 @@ try {
           "document.querySelector('.lease-attention-filter').getAttribute('aria-pressed') === 'false'",
           "clear lease attention",
         );
-        assert.ok(
-          await evaluate(
-            `document.querySelector('.list-toolbar .scope-chip').textContent.trim() === 'leases.list · ${counts.leases}'`,
-          ),
-        );
+        assert.equal(await listTotal(), counts.leases, "lease list total");
       }
     }
     await navigatePage("overview");

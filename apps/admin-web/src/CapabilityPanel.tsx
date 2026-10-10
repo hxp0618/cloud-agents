@@ -261,7 +261,6 @@ export function CapabilityPanel({
           }}
         </AdminAgentEvents>
       </div>
-      <p className="boundary-note">{t("capabilities.boundary")}</p>
     </section>
   );
 }

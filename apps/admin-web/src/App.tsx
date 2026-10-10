@@ -158,7 +158,7 @@ import { RemoteWorkerEnrollmentPanel } from "./RemoteWorkerEnrollmentPanel";
 import { TargetFilters } from "./TargetFilters";
 import { AdminSidebar } from "./AdminSidebar";
 import { NavigationCommands, NavigationIcon, ResourceNavigation, type Page } from "./navigation";
-import { normalizeLocale, useI18n, type MessageKey, type MessageValues } from "./i18n";
+import { LocaleSelect, useI18n, type MessageKey, type MessageValues } from "./i18n";
 import {
   loadAdminWorkspaceData,
   loadAdminPollData,
@@ -169,6 +169,8 @@ import {
 } from "./app/loaders";
 import {
   executableFoundationNetworkPolicy,
+  runtimeProfileCreatable,
+  runtimeProfileTargetAllowed,
   phaseTone,
   phaseLabel,
   auditLabel,
@@ -213,7 +215,7 @@ function Dashboard({
   onScopeChange,
   onSessionExpired,
 }: DashboardProps) {
-  const { locale, setLocale, t, number, dateTime } = useI18n();
+  const { t, number, dateTime } = useI18n();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -264,6 +266,7 @@ function Dashboard({
   const [skillBundles, setSkillBundles] = useState<readonly SkillBundle[]>(Object.freeze([]));
   const [capabilityRuntime, setCapabilityRuntime] = useState(emptyManagedAgentRuntime);
   const [networkEditorEpoch, setNetworkEditorEpoch] = useState(0);
+  const [creatingRemoteWorker, setCreatingRemoteWorker] = useState(false);
   const [selectedStoragePolicyId, setSelectedStoragePolicyId] = useState("");
   const [storagePolicyAudit, setStoragePolicyAudit] = useState<readonly AdminAuditEvent[]>(
     Object.freeze([]),
@@ -669,6 +672,7 @@ function Dashboard({
     }
     setError(null);
     setCommandsOpen(false);
+    setCreatingRemoteWorker(false);
     setPage(nextPage);
     setQuery("");
     setTargetKindFilter([]);
@@ -2014,6 +2018,16 @@ function Dashboard({
       </div>
     ) : null;
 
+  const accountName = session.user.displayName || session.user.email;
+  // Explain a disabled create action instead of leaving the operator guessing.
+  const createPrerequisite: MessageKey | null =
+    page === "profiles" &&
+    (releases.length === 0 || storagePolicies.length === 0 || networkPolicies.length === 0)
+      ? "profile.createPrerequisite"
+      : page === "runtimeProfiles" && !runtimeProfileCreatable(targets, networkPolicies)
+        ? "runtimeProfile.createPrerequisite"
+        : null;
+
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}`}>
       {commandsOpen ? (
@@ -2043,6 +2057,33 @@ function Dashboard({
             <NavigationIcon name="sidebar" />
           </button>
         </div>
+        {projects.length > 1 ? (
+          <label className="sidebar-project">
+            <span>{t("scope.project")}</span>
+            <select
+              data-scope="project"
+              aria-label={t("scope.project")}
+              value={project.metadata.uid}
+              disabled={interactionDisabled}
+              onChange={(event) => onScopeChange(tenant.id, event.target.value)}
+            >
+              {projects.map((item) => (
+                <option key={item.metadata.uid} value={item.metadata.uid}>
+                  {item.spec.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div
+            className="sidebar-project"
+            data-scope="project"
+            data-scope-id={project.metadata.uid}
+          >
+            <span>{t("scope.project")}</span>
+            <strong>{project.spec.displayName}</strong>
+          </div>
+        )}
         <ResourceNavigation
           page={page}
           disabled={busy !== null}
@@ -2082,64 +2123,50 @@ function Dashboard({
           >
             <NavigationIcon name="sidebar" />
           </button>
-          <div className="scope-switchers">
-            <label>
-              <span>{t("scope.tenant")}</span>
-              <select
-                aria-label={t("scope.tenant")}
-                value={tenant.id}
-                disabled={interactionDisabled}
-                onChange={(event) => {
-                  onScopeChange(event.target.value, "");
-                }}
-              >
-                {tenants.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{t("scope.project")}</span>
-              <select
-                aria-label={t("scope.project")}
-                value={project.metadata.uid}
-                disabled={interactionDisabled}
-                onChange={(event) => onScopeChange(tenant.id, event.target.value)}
-              >
-                {projects.map((item) => (
-                  <option key={item.metadata.uid} value={item.metadata.uid}>
-                    {item.spec.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="topbar-context">
-            <span className="live">
-              <i /> Admin API
-            </span>
-          </div>
           <details ref={profileMenuRef} className="profile-menu">
-            <summary className="button outline compact">
-              {session.user.displayName || session.user.email}
+            <summary className="profile-trigger">
+              <span className="avatar" aria-hidden="true">
+                {accountName.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="profile-trigger-text">
+                <strong>{accountName}</strong>
+                <small>{tenant.name}</small>
+              </span>
             </summary>
             <div className="dropdown-menu">
               <div className="dropdown-context">
-                <strong>{session.user.displayName || session.user.email}</strong>
+                <strong>{accountName}</strong>
                 <small>{session.user.email}</small>
               </div>
-              <label className="locale-picker">
+              {tenants.length > 1 ? (
+                <label className="menu-field">
+                  <span>{t("scope.tenant")}</span>
+                  <select
+                    data-scope="tenant"
+                    aria-label={t("scope.tenant")}
+                    value={tenant.id}
+                    disabled={interactionDisabled}
+                    onChange={(event) => {
+                      profileMenuRef.current?.removeAttribute("open");
+                      onScopeChange(event.target.value, "");
+                    }}
+                  >
+                    {tenants.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="menu-field" data-scope="tenant" data-scope-id={tenant.id}>
+                  <span>{t("scope.tenant")}</span>
+                  <strong>{tenant.name}</strong>
+                </div>
+              )}
+              <label className="menu-field">
                 <span>{t("account.language")}</span>
-                <select
-                  value={locale}
-                  aria-label={t("account.language")}
-                  onChange={(event) => setLocale(normalizeLocale(event.target.value))}
-                >
-                  <option value="zh-CN">{t("locale.zhCN")}</option>
-                  <option value="en-US">{t("locale.enUS")}</option>
-                </select>
+                <LocaleSelect />
               </label>
               <button
                 type="button"
@@ -2183,6 +2210,9 @@ function Dashboard({
             <div>
               <h1>{t(pageEntry.title)}</h1>
               <p>{t(pageEntry.description)}</p>
+              {createPrerequisite === null ? null : (
+                <p className="page-prerequisite">{t(createPrerequisite)}</p>
+              )}
             </div>
             <div className="heading-actions">
               <button
@@ -2213,15 +2243,11 @@ function Dashboard({
                         current.storagePolicyRef || storagePolicies[0]?.metadata.uid || "",
                       networkPolicyRef:
                         current.networkPolicyRef || networkPolicies[0]?.metadata.uid || "",
+                      releaseDigest: current.releaseDigest || releases[0]?.spec.releaseDigest || "",
                     }));
                     setCreatingProfile(true);
                   }}
-                  disabled={
-                    interactionDisabled ||
-                    releases.length === 0 ||
-                    storagePolicies.length === 0 ||
-                    networkPolicies.length === 0
-                  }
+                  disabled={interactionDisabled || createPrerequisite !== null}
                 >
                   {t("action.createProfile")}
                 </button>
@@ -2235,17 +2261,12 @@ function Dashboard({
                       targetId:
                         current.targetId ||
                         targets.find(
-                          ({ spec }) =>
-                            (spec.targetKind === "remote-worker" ||
-                              (current.workloadTrust === "trusted-single-tenant" &&
-                                spec.targetKind === "docker")) &&
-                            spec.observedPhase === "ready",
+                          (target) =>
+                            runtimeProfileTargetAllowed(target, current.workloadTrust) &&
+                            target.spec.observedPhase === "ready",
                         )?.metadata.uid ||
-                        targets.find(
-                          ({ spec }) =>
-                            spec.targetKind === "remote-worker" ||
-                            (current.workloadTrust === "trusted-single-tenant" &&
-                              spec.targetKind === "docker"),
+                        targets.find((target) =>
+                          runtimeProfileTargetAllowed(target, current.workloadTrust),
                         )?.metadata.uid ||
                         "",
                       networkPolicyRef:
@@ -2257,18 +2278,18 @@ function Dashboard({
                     }));
                     setCreatingRuntimeProfile(true);
                   }}
-                  disabled={
-                    interactionDisabled ||
-                    !targets.some(
-                      ({ spec }) =>
-                        spec.targetKind === "docker" || spec.targetKind === "remote-worker",
-                    ) ||
-                    !networkPolicies.some((policy) =>
-                      executableFoundationNetworkPolicy(policy, "trusted-single-tenant"),
-                    )
-                  }
+                  disabled={interactionDisabled || createPrerequisite !== null}
                 >
                   {t("action.createRuntimeProfile")}
+                </button>
+              ) : page === "remoteWorkers" ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={interactionDisabled || creatingRemoteWorker}
+                  onClick={() => setCreatingRemoteWorker(true)}
+                >
+                  {t("remoteWorkerEnrollment.create")}
                 </button>
               ) : page === "network" ? (
                 <button
@@ -2625,7 +2646,12 @@ function Dashboard({
               </ResourceRefresh>
             </section>
           ) : page === "remoteWorkers" && client !== null ? (
-            <RemoteWorkerEnrollmentPanel client={client} connection={connection} />
+            <RemoteWorkerEnrollmentPanel
+              client={client}
+              connection={connection}
+              creating={creatingRemoteWorker}
+              onCreatingChange={setCreatingRemoteWorker}
+            />
           ) : page === "workers" ? (
             <section className="resource-list">
               <div className="list-toolbar">
@@ -2990,13 +3016,6 @@ function Dashboard({
                       : number(Math.floor(leaseQuota.spec.maxLeaseTtlSeconds / 60))}
                   </strong>
                   <span>{t("quota.minutes")}</span>
-                </article>
-                <article className="metric-card">
-                  <small>{t("detail.resourceVersion")}</small>
-                  <strong>{leaseQuota?.metadata.resourceVersion ?? "—"}</strong>
-                  <span>
-                    {leaseQuota === undefined ? t("quota.notConfigured") : t("quota.configured")}
-                  </span>
                 </article>
               </section>
 
@@ -3915,7 +3934,7 @@ export function App() {
               void sessionClient.logoutBrowserSession().finally(() => clearSession());
             }}
           >
-            Sign out
+            {t("auth.logout")}
           </button>
         </section>
       </main>

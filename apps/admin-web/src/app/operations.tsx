@@ -1,5 +1,6 @@
 import { type MaintenanceOperation } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { useI18n, type MessageKey } from "../i18n";
+import { DetailMore } from "./form-fields";
 import {
   auditLabel,
   operationImpactLabel,
@@ -103,30 +104,14 @@ export function MaintenanceOperationDetail({
       </div>
       <dl className="detail-list">
         <div>
-          <dt>{t("maintenance.operationId")}</dt>
-          <dd className="mono break">{operation.operationId}</dd>
-        </div>
-        <div>
           <dt>{t("maintenance.resource")}</dt>
           <dd className="mono">
             {operation.resourceKind} · {operation.resourceId}
           </dd>
         </div>
         <div>
-          <dt>{t("table.generation")}</dt>
-          <dd className="mono">g{number(operation.resourceGeneration)}</dd>
-        </div>
-        <div>
           <dt>{t("maintenance.currentStep")}</dt>
           <dd className="mono">{operation.currentStep}</dd>
-        </div>
-        <div>
-          <dt>{t("maintenance.requestId")}</dt>
-          <dd className="mono break">{operation.requestId}</dd>
-        </div>
-        <div>
-          <dt>{t("maintenance.idempotencyKey")}</dt>
-          <dd className="mono break">{operation.idempotencyKey}</dd>
         </div>
         <div>
           <dt>{t("maintenance.requestedBy")}</dt>
@@ -151,6 +136,24 @@ export function MaintenanceOperationDetail({
           </div>
         ) : null}
       </dl>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("maintenance.operationId")}</dt>
+          <dd className="mono break">{operation.operationId}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">g{number(operation.resourceGeneration)}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.requestId")}</dt>
+          <dd className="mono break">{operation.requestId}</dd>
+        </div>
+        <div>
+          <dt>{t("maintenance.idempotencyKey")}</dt>
+          <dd className="mono break">{operation.idempotencyKey}</dd>
+        </div>
+      </DetailMore>
       <section className="activity-block" aria-labelledby="maintenance-impact-title">
         <div className="activity-heading">
           <h3 id="maintenance-impact-title">{t("maintenance.impact")}</h3>

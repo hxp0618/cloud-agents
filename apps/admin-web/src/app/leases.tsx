@@ -1,5 +1,6 @@
-import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
+import { DetailMore } from "./form-fields";
+import { SheetHeading } from "../AdminSheet";
 import {
   type DeploymentTarget,
   type EnvironmentLease,
@@ -129,38 +130,14 @@ export function LeaseDetail({
       </div>
       <dl className="detail-list">
         <div>
-          <dt>{t("lease.id")}</dt>
-          <dd className="mono">{lease.metadata.uid}</dd>
-        </div>
-        <div>
-          <dt>{t("lease.environmentId")}</dt>
-          <dd className="mono">{lease.spec.environmentId}</dd>
-        </div>
-        <div>
           <dt>{t("lease.target")}</dt>
           <dd className="mono">{lease.spec.targetId ?? t("common.legacyLease")}</dd>
-        </div>
-        <div>
-          <dt>{t("lease.desiredPhase")}</dt>
-          <dd>{phaseLabel(lease.spec.desiredPhase, t)}</dd>
         </div>
         <div>
           <dt>{t("lease.cleanupPhase")}</dt>
           <dd className={lease.spec.cleanupPhase === "blocked" ? "danger-text" : ""}>
             {phaseLabel(lease.spec.cleanupPhase, t)}
           </dd>
-        </div>
-        <div>
-          <dt>{t("table.generation")}</dt>
-          <dd className="mono">{number(lease.spec.generation)}</dd>
-        </div>
-        <div>
-          <dt>{t("detail.resourceVersion")}</dt>
-          <dd className="mono">{lease.metadata.resourceVersion}</dd>
-        </div>
-        <div>
-          <dt>{t("lease.releaseDigest")}</dt>
-          <dd className="mono break">{lease.spec.releaseDigest}</dd>
         </div>
         <div>
           <dt>{t("lease.cpuMemory")}</dt>
@@ -173,10 +150,6 @@ export function LeaseDetail({
         <div>
           <dt>{t("lease.providerCredentialRef")}</dt>
           <dd className="mono">{lease.spec.providerCredentialRef ?? t("common.legacyLease")}</dd>
-        </div>
-        <div>
-          <dt>{t("lease.workerEndpoint")}</dt>
-          <dd className="mono break">{lease.spec.workerEndpoint ?? t("common.notReady")}</dd>
         </div>
         <div>
           <dt>{t("lease.expires")}</dt>
@@ -193,6 +166,36 @@ export function LeaseDetail({
           </div>
         ) : null}
       </dl>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("lease.id")}</dt>
+          <dd className="mono">{lease.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>{t("lease.environmentId")}</dt>
+          <dd className="mono">{lease.spec.environmentId}</dd>
+        </div>
+        <div>
+          <dt>{t("lease.desiredPhase")}</dt>
+          <dd>{phaseLabel(lease.spec.desiredPhase, t)}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(lease.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{lease.metadata.resourceVersion}</dd>
+        </div>
+        <div>
+          <dt>{t("lease.releaseDigest")}</dt>
+          <dd className="mono break">{lease.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("lease.workerEndpoint")}</dt>
+          <dd className="mono break">{lease.spec.workerEndpoint ?? t("common.notReady")}</dd>
+        </div>
+      </DetailMore>
       <section className="action-block">
         <div>
           <h3>{t("lease.releaseLifecycle")}</h3>
@@ -243,7 +246,6 @@ export function LeaseDetail({
           </button>
         </div>
       </section>
-      <p className="boundary-note">{t("lease.releaseBoundary")}</p>
     </>
   );
 }
@@ -268,7 +270,12 @@ export function LeaseReleaseConfirmation({
   );
   return (
     <section className="dialog" aria-labelledby="lease-release-title">
-      <SheetHeading id="lease-release-title" title={t("lease.releaseConfirmTitle", { action: actionLabel })} subject={lease.metadata.name} onClose={onClose} />
+      <SheetHeading
+        id="lease-release-title"
+        title={t("lease.releaseConfirmTitle", { action: actionLabel })}
+        subject={lease.metadata.name}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -306,14 +313,6 @@ export function LeaseReleaseConfirmation({
             <dd className="mono break">
               {preview.spec.rollbackReleaseDigest} · g{number(preview.spec.rollbackGeneration)}
             </dd>
-          </div>
-          <div>
-            <dt>{t("table.generation")}</dt>
-            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
-          </div>
-          <div>
-            <dt>{t("detail.resourceVersion")}</dt>
-            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
           </div>
           <div>
             <dt>{t("lease.impactDigest")}</dt>

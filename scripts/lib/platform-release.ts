@@ -391,6 +391,38 @@ function webIndexDigest(root: string, app: "admin-web" | "user-web"): string {
     .digest("hex");
 }
 
+export function platformGoBuildCommand(
+  root: string,
+  command: string,
+  target: PlatformReleaseTarget,
+  output: string,
+  version?: string,
+): Readonly<{ args: string[]; env: Record<string, string> }> {
+  const [goos, goarch] = target.split("-") as [string, string];
+  const module = command === "cloud-agents-worker" ? "services/worker" : "services/control-plane";
+  const versionFlag = version === undefined ? "" : ` -X main.version=${version}`;
+  return {
+    args: [
+      "-C",
+      module,
+      "build",
+      "-trimpath",
+      `-ldflags=-buildid=${versionFlag}`,
+      "-o",
+      output,
+      `./cmd/${command}`,
+    ],
+    env: {
+      GOOS: goos,
+      GOARCH: goarch,
+      CGO_ENABLED: "0",
+      GOTOOLCHAIN: "local",
+      GOWORK: join(root, "go.work"),
+      GOFLAGS: "-mod=readonly",
+    },
+  };
+}
+
 export function buildPlatformContractPackage(root: string): Uint8Array {
   const paths = [
     "LICENSE",

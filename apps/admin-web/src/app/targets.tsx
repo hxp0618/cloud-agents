@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { DetailMore } from "./form-fields";
 import {
   type AdminAuditEvent,
   type DeploymentTarget,
@@ -350,7 +351,11 @@ export function PaginatedTargets({
           onSelect={onSelect}
         />
       </div>
-      <nav className="resource-pagination" aria-label={t("pagination.label")}>
+      <nav
+        className="resource-pagination"
+        aria-label={t("pagination.label")}
+        data-total={targets.length}
+      >
         <div className="pagination-summary">
           <select
             aria-label={t("pagination.size")}
@@ -551,10 +556,6 @@ export function TargetDetail({
       </div>
       <dl className="detail-list">
         <div>
-          <dt>{t("target.id")}</dt>
-          <dd className="mono">{target.metadata.uid}</dd>
-        </div>
-        <div>
           <dt>{t("target.endpoint")}</dt>
           <dd className="mono break">{target.spec.endpoint}</dd>
         </div>
@@ -563,16 +564,8 @@ export function TargetDetail({
           <dd className="mono">{target.spec.credentialRef}</dd>
         </div>
         <div>
-          <dt>{t("table.generation")}</dt>
-          <dd className="mono">{number(target.spec.generation)}</dd>
-        </div>
-        <div>
           <dt>{t("detail.schedulingState")}</dt>
           <dd>{phaseLabel(target.spec.schedulingState, t)}</dd>
-        </div>
-        <div>
-          <dt>{t("detail.resourceVersion")}</dt>
-          <dd className="mono">{target.metadata.resourceVersion}</dd>
         </div>
         <div>
           <dt>{t("detail.runtimeApi")}</dt>
@@ -600,6 +593,20 @@ export function TargetDetail({
           </div>
         ) : null}
       </dl>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("target.id")}</dt>
+          <dd className="mono">{target.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>{t("table.generation")}</dt>
+          <dd className="mono">{number(target.spec.generation)}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{target.metadata.resourceVersion}</dd>
+        </div>
+      </DetailMore>
       {target.spec.targetKind === "remote-worker" ? (
         <p className="cluster-boundary">{t("detail.remoteWorkerManaged")}</p>
       ) : null}
@@ -624,11 +631,7 @@ export function TargetDetail({
       <section className="action-block">
         <div>
           <h3>{t("detail.probeTitle")}</h3>
-          <p>
-            {t("detail.probeDescription", {
-              generation: number(target.spec.generation),
-            })}
-          </p>
+          <p>{t("detail.probeDescription")}</p>
         </div>
         <button
           className="button primary"
@@ -736,7 +739,12 @@ export function SchedulingConfirmation({
   const draining = preview.spec.desiredState === "drained";
   return (
     <section className="dialog" aria-labelledby="scheduling-title">
-      <SheetHeading id="scheduling-title" title={t("scheduling.confirmTitle")} subject={target.metadata.name} onClose={onClose} />
+      <SheetHeading
+        id="scheduling-title"
+        title={t("scheduling.confirmTitle")}
+        subject={target.metadata.name}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -753,14 +761,6 @@ export function SchedulingConfirmation({
           <div>
             <dt>{t("lease.target")}</dt>
             <dd className="mono">{target.metadata.uid}</dd>
-          </div>
-          <div>
-            <dt>{t("table.generation")}</dt>
-            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
-          </div>
-          <div>
-            <dt>{t("detail.resourceVersion")}</dt>
-            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
           </div>
         </dl>
         <div className="cleanup-preview" aria-label={t("detail.schedulingTitle")}>
@@ -830,7 +830,12 @@ export function CleanupConfirmation({
   );
   return (
     <section className="dialog" aria-labelledby="cleanup-title">
-      <SheetHeading id="cleanup-title" title={t("cleanup.confirmTitle")} subject={target.metadata.name} onClose={onClose} />
+      <SheetHeading
+        id="cleanup-title"
+        title={t("cleanup.confirmTitle")}
+        subject={target.metadata.name}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -850,14 +855,6 @@ export function CleanupConfirmation({
           <div>
             <dt>{t("lease.target")}</dt>
             <dd className="mono">{target.metadata.uid}</dd>
-          </div>
-          <div>
-            <dt>{t("table.generation")}</dt>
-            <dd className="mono">{number(preview.spec.expectedGeneration)}</dd>
-          </div>
-          <div>
-            <dt>{t("detail.resourceVersion")}</dt>
-            <dd className="mono">{preview.spec.expectedResourceVersion}</dd>
           </div>
         </dl>
         <div className="cleanup-preview" aria-label={t("detail.cleanupImpact")}>

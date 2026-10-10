@@ -8,7 +8,7 @@ import type {
   ProviderClientUpdate,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { AdminSheet, SheetHeading } from "./AdminSheet";
+import { AdminSheet, SheetHeading, SheetTrigger } from "./AdminSheet";
 import { adminErrorKey, identifierFromName, uniqueIdentifier } from "./admin";
 import { useI18n } from "./i18n";
 
@@ -131,21 +131,13 @@ export function ProviderManagement({
   sessionClient: BrowserSessionClient;
 }>) {
   const { t } = useI18n();
-  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   if (!session.user.displayRoles.includes("platform.admin")) return null;
   return (
-    <>
-      <button type="button" onClick={(event) => setTrigger(event.currentTarget)}>
-        {t("identity.providers")}
-      </button>
-      {trigger === null ? null : (
-        <ProviderSheet
-          sessionClient={sessionClient}
-          trigger={trigger}
-          onClose={() => setTrigger(null)}
-        />
+    <SheetTrigger label={t("identity.providers")}>
+      {(trigger, close) => (
+        <ProviderSheet sessionClient={sessionClient} trigger={trigger} onClose={close} />
       )}
-    </>
+    </SheetTrigger>
   );
 }
 
@@ -302,193 +294,200 @@ function ProviderSheet({
       feedback={null}
     >
       <section className="dialog" aria-labelledby="providers-title">
-<SheetHeading id="providers-title" title={t("identity.providers")} disabled={busy} onClose={onClose} />
-        <label>
-          <span>{t("identity.providerConfiguration")}</span>
-          <select
-            value={creating ? "new" : `${draft.providerId}\u0000${draft.application}`}
-            disabled={busy}
-            onChange={(event) => select(event.target.value)}
-          >
-            <option value="new">{t("identity.providerNew")}</option>
-            {providers.map((provider) => (
-              <option
-                key={`${provider.providerId}\u0000${provider.application}`}
-                value={`${provider.providerId}\u0000${provider.application}`}
-              >
-                {provider.displayName} · {provider.application}
-              </option>
-            ))}
-          </select>
-        </label>
-        <form className="resource-form" onSubmit={save} aria-busy={busy}>
+        <SheetHeading
+          id="providers-title"
+          title={t("identity.providers")}
+          disabled={busy}
+          onClose={onClose}
+        />
+        <div className="sheet-body">
           <label>
-            <span>{t("identity.providerApplication")}</span>
+            <span>{t("identity.providerConfiguration")}</span>
             <select
-              value={draft.application}
-              disabled={!creating || busy}
-              onChange={(event) =>
-                update("application", event.target.value as IdentityApplication)
-              }
+              value={creating ? "new" : `${draft.providerId}\u0000${draft.application}`}
+              disabled={busy}
+              onChange={(event) => select(event.target.value)}
             >
-              <option value="admin">{t("identity.serviceAccountApplication.admin")}</option>
-              <option value="user">{t("identity.serviceAccountApplication.user")}</option>
+              <option value="new">{t("identity.providerNew")}</option>
+              {providers.map((provider) => (
+                <option
+                  key={`${provider.providerId}\u0000${provider.application}`}
+                  value={`${provider.providerId}\u0000${provider.application}`}
+                >
+                  {provider.displayName} · {provider.application}
+                </option>
+              ))}
             </select>
           </label>
-          <div className="form-row">
+          <form className="resource-form" onSubmit={save} aria-busy={busy}>
             <label>
-              <span>{t("identity.providerDisplayName")}</span>
-              <input
-                value={draft.displayName}
-                required
-                maxLength={160}
-                onChange={(event) => update("displayName", event.target.value)}
-              />
-            </label>
-            <label>
-              <span>{t("identity.providerKind")}</span>
+              <span>{t("identity.providerApplication")}</span>
               <select
-                value={draft.providerKind}
-                disabled={busy}
-                onChange={(event) => {
-                  const providerKind = event.target.value as ProviderKind;
-                  const scopes = fixedScopes[providerKind];
-                  setDraft((current) =>
-                    Object.freeze({
-                      ...current,
-                      providerKind,
-                      scopes:
-                        scopes !== undefined
-                          ? scopes.join("\n")
-                          : fixedScopes[current.providerKind] !== undefined
-                            ? defaultScopes
-                            : current.scopes,
-                    }),
-                  );
-                }}
+                value={draft.application}
+                disabled={!creating || busy}
+                onChange={(event) =>
+                  update("application", event.target.value as IdentityApplication)
+                }
               >
-                {kinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind}
-                  </option>
-                ))}
+                <option value="admin">{t("identity.serviceAccountApplication.admin")}</option>
+                <option value="user">{t("identity.serviceAccountApplication.user")}</option>
               </select>
             </label>
-          </div>
-          <label>
-            <span>{t("identity.providerIssuer")}</span>
-            <input
-              type="url"
-              value={draft.issuer}
-              required
-              maxLength={512}
-              placeholder="https://id.example/realms/cloud-agents"
-              onChange={(event) => update("issuer", event.target.value)}
-            />
-          </label>
-          <label>
-            <span>{t("identity.providerClientId")}</span>
-            <input
-              value={draft.clientId}
-              required
-              maxLength={512}
-              onChange={(event) => update("clientId", event.target.value)}
-            />
-          </label>
-          {draft.application === "user" ? (
+            <div className="form-row">
+              <label>
+                <span>{t("identity.providerDisplayName")}</span>
+                <input
+                  value={draft.displayName}
+                  required
+                  maxLength={160}
+                  onChange={(event) => update("displayName", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>{t("identity.providerKind")}</span>
+                <select
+                  value={draft.providerKind}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const providerKind = event.target.value as ProviderKind;
+                    const scopes = fixedScopes[providerKind];
+                    setDraft((current) =>
+                      Object.freeze({
+                        ...current,
+                        providerKind,
+                        scopes:
+                          scopes !== undefined
+                            ? scopes.join("\n")
+                            : fixedScopes[current.providerKind] !== undefined
+                              ? defaultScopes
+                              : current.scopes,
+                      }),
+                    );
+                  }}
+                >
+                  {kinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kind}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <label>
-              <span>{t("identity.providerUserOrigin")}</span>
+              <span>{t("identity.providerIssuer")}</span>
               <input
                 type="url"
-                value={draft.userOrigin}
+                value={draft.issuer}
                 required
-                placeholder="https://user.example"
-                onChange={(event) => update("userOrigin", event.target.value)}
+                maxLength={512}
+                placeholder="https://id.example/realms/cloud-agents"
+                onChange={(event) => update("issuer", event.target.value)}
               />
             </label>
-          ) : null}
-          <label>
-            <span>{t("identity.providerCallback")}</span>
-            <input value={callback} readOnly aria-readonly="true" />
-          </label>
-          <label>
-            <span>{t("identity.providerSecretRef")}</span>
-            <input
-              aria-label={t("identity.providerSecretRef")}
-              value={draft.secretRef}
-              required
-              maxLength={128}
-              onChange={(event) => update("secretRef", event.target.value)}
-            />
-            <small>{t("identity.providerSecretRefHelp")}</small>
-          </label>
-          <label>
-            <span>{t("identity.providerRootCaRef")}</span>
-            <input
-              aria-label={t("identity.providerRootCaRef")}
-              value={draft.rootCaRef}
-              maxLength={128}
-              onChange={(event) => update("rootCaRef", event.target.value)}
-            />
-          </label>
-          {draft.providerKind === "wecom" ? (
             <label>
-              <span>{t("identity.providerAgentId")}</span>
+              <span>{t("identity.providerClientId")}</span>
               <input
-                value={draft.agentId}
+                value={draft.clientId}
                 required
-                maxLength={255}
-                onChange={(event) => update("agentId", event.target.value)}
+                maxLength={512}
+                onChange={(event) => update("clientId", event.target.value)}
               />
             </label>
-          ) : null}
-          <label>
-            <span>{t("identity.providerScopes")}</span>
-            <textarea
-              value={draft.scopes}
-              rows={4}
-              readOnly={fixedScopes[draft.providerKind] !== undefined}
-              onChange={(event) => update("scopes", event.target.value)}
-            />
-            <small>{t("identity.providerListHelp")}</small>
-          </label>
-          <label className="confirmation-check">
-            <input
-              type="checkbox"
-              checked={draft.trustProviderEmail}
-              onChange={(event) => update("trustProviderEmail", event.target.checked)}
-            />
-            <span>{t("identity.providerTrustEmail")}</span>
-          </label>
-          <small>{t("identity.providerTrustEmailHelp")}</small>
-          <label>
-            <span>{t("identity.providerOrganizations")}</span>
-            <textarea
-              value={draft.allowedOrganizationIds}
-              rows={3}
-              required={draft.trustProviderEmail}
-              onChange={(event) => update("allowedOrganizationIds", event.target.value)}
-            />
-            <small>{t("identity.providerListHelp")}</small>
-          </label>
-          <label className="confirmation-check">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) => update("enabled", event.target.checked)}
-            />
-            <span>{t("identity.providerEnabled")}</span>
-          </label>
-          {notice ? <p role="status">{notice}</p> : null}
-          {error ? (
-            <div className="error-banner" role="alert">
-              {error}
-            </div>
-          ) : null}
-          <button type="submit" className="button primary" disabled={busy || callback === ""}>
-            {t("identity.providerSave")}
-          </button>
-        </form>
+            {draft.application === "user" ? (
+              <label>
+                <span>{t("identity.providerUserOrigin")}</span>
+                <input
+                  type="url"
+                  value={draft.userOrigin}
+                  required
+                  placeholder="https://user.example"
+                  onChange={(event) => update("userOrigin", event.target.value)}
+                />
+              </label>
+            ) : null}
+            <label>
+              <span>{t("identity.providerCallback")}</span>
+              <input value={callback} readOnly aria-readonly="true" />
+            </label>
+            <label>
+              <span>{t("identity.providerSecretRef")}</span>
+              <input
+                aria-label={t("identity.providerSecretRef")}
+                value={draft.secretRef}
+                required
+                maxLength={128}
+                onChange={(event) => update("secretRef", event.target.value)}
+              />
+              <small>{t("identity.providerSecretRefHelp")}</small>
+            </label>
+            <label>
+              <span>{t("identity.providerRootCaRef")}</span>
+              <input
+                aria-label={t("identity.providerRootCaRef")}
+                value={draft.rootCaRef}
+                maxLength={128}
+                onChange={(event) => update("rootCaRef", event.target.value)}
+              />
+            </label>
+            {draft.providerKind === "wecom" ? (
+              <label>
+                <span>{t("identity.providerAgentId")}</span>
+                <input
+                  value={draft.agentId}
+                  required
+                  maxLength={255}
+                  onChange={(event) => update("agentId", event.target.value)}
+                />
+              </label>
+            ) : null}
+            <label>
+              <span>{t("identity.providerScopes")}</span>
+              <textarea
+                value={draft.scopes}
+                rows={4}
+                readOnly={fixedScopes[draft.providerKind] !== undefined}
+                onChange={(event) => update("scopes", event.target.value)}
+              />
+              <small>{t("identity.providerListHelp")}</small>
+            </label>
+            <label className="confirmation-check">
+              <input
+                type="checkbox"
+                checked={draft.trustProviderEmail}
+                onChange={(event) => update("trustProviderEmail", event.target.checked)}
+              />
+              <span>{t("identity.providerTrustEmail")}</span>
+            </label>
+            <small>{t("identity.providerTrustEmailHelp")}</small>
+            <label>
+              <span>{t("identity.providerOrganizations")}</span>
+              <textarea
+                value={draft.allowedOrganizationIds}
+                rows={3}
+                required={draft.trustProviderEmail}
+                onChange={(event) => update("allowedOrganizationIds", event.target.value)}
+              />
+              <small>{t("identity.providerListHelp")}</small>
+            </label>
+            <label className="confirmation-check">
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(event) => update("enabled", event.target.checked)}
+              />
+              <span>{t("identity.providerEnabled")}</span>
+            </label>
+            {notice ? <p role="status">{notice}</p> : null}
+            {error ? (
+              <div className="error-banner" role="alert">
+                {error}
+              </div>
+            ) : null}
+            <button type="submit" className="button primary" disabled={busy || callback === ""}>
+              {t("identity.providerSave")}
+            </button>
+          </form>
+        </div>
       </section>
     </AdminSheet>
   );

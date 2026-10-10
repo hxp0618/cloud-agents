@@ -11,7 +11,7 @@ import {
   type ServiceAccount,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 
-import { AdminSheet, SheetHeading } from "./AdminSheet";
+import { AdminSheet, SheetHeading, SheetTrigger } from "./AdminSheet";
 import { adminErrorKey } from "./admin";
 import { listAllAdminRoles } from "./MembershipManagement";
 import { listAllAdminOrganizations } from "./app/connection";
@@ -172,22 +172,18 @@ export function ServiceAccountManagement({
   projects: readonly Project[];
 }>) {
   const { t } = useI18n();
-  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   return (
-    <>
-      <button type="button" onClick={(event) => setTrigger(event.currentTarget)}>
-        {t("identity.serviceAccounts")}
-      </button>
-      {trigger === null ? null : (
+    <SheetTrigger label={t("identity.serviceAccounts")}>
+      {(trigger, close) => (
         <ServiceAccountSheet
           client={client}
           tenant={tenant}
           projects={projects}
           trigger={trigger}
-          onClose={() => setTrigger(null)}
+          onClose={close}
         />
       )}
-    </>
+    </SheetTrigger>
   );
 }
 
@@ -379,196 +375,198 @@ function ServiceAccountSheet({
         disabled={credential !== null}
         onClose={onClose}
       />
-      {error ? (
-        <div className="error-banner" role="alert">
-          {error}
-        </div>
-      ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      {credential === null ? null : (
-        <section className="resource-form" aria-live="polite">
-          <h3>
-            {t("identity.serviceAccountCredentialReady", { account: credential.accountName })}
-          </h3>
-          <p>{t("identity.serviceAccountCredentialHelp")}</p>
+      <div className="sheet-body">
+        {error ? (
+          <div className="error-banner" role="alert">
+            {error}
+          </div>
+        ) : null}
+        {notice ? <p role="status">{notice}</p> : null}
+        {credential === null ? null : (
+          <section className="resource-form" aria-live="polite">
+            <h3>
+              {t("identity.serviceAccountCredentialReady", { account: credential.accountName })}
+            </h3>
+            <p>{t("identity.serviceAccountCredentialHelp")}</p>
+            <label>
+              <span>{t("identity.serviceAccountCredential")}</span>
+              <textarea
+                aria-label={t("identity.serviceAccountCredential")}
+                readOnly
+                rows={4}
+                spellCheck={false}
+                value={credential.value}
+              />
+            </label>
+            <small>
+              {t("identity.serviceAccountCredentialExpires", {
+                value: dateTime(credential.expiresAt),
+              })}
+            </small>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="button outline"
+                onClick={() => void navigator.clipboard.writeText(credential.value)}
+              >
+                {t("identity.serviceAccountCopyCredential")}
+              </button>
+              <button type="button" className="button outline" onClick={downloadCredential}>
+                {t("identity.serviceAccountDownloadCredential")}
+              </button>
+              <button type="button" className="button primary" onClick={() => setCredential(null)}>
+                {t("identity.serviceAccountCredentialSaved")}
+              </button>
+            </div>
+          </section>
+        )}
+        <form className="resource-form" onSubmit={create}>
+          <h3>{t("identity.serviceAccountCreate")}</h3>
           <label>
-            <span>{t("identity.serviceAccountCredential")}</span>
-            <textarea
-              aria-label={t("identity.serviceAccountCredential")}
-              readOnly
-              rows={4}
-              spellCheck={false}
-              value={credential.value}
+            <span>{t("identity.serviceAccountDisplayName")}</span>
+            <input
+              data-sheet-autofocus
+              required
+              minLength={1}
+              maxLength={128}
+              value={displayName}
+              disabled={busy}
+              onChange={(event) => setDisplayName(event.target.value)}
             />
           </label>
-          <small>
-            {t("identity.serviceAccountCredentialExpires", {
-              value: dateTime(credential.expiresAt),
-            })}
-          </small>
-          <div className="form-actions">
-            <button
-              type="button"
-              className="button outline"
-              onClick={() => void navigator.clipboard.writeText(credential.value)}
+          <label>
+            <span>{t("identity.serviceAccountApplication")}</span>
+            <select
+              value={application}
+              disabled={busy}
+              onChange={(event) => setApplication(event.target.value as IdentityApplication)}
             >
-              {t("identity.serviceAccountCopyCredential")}
-            </button>
-            <button type="button" className="button outline" onClick={downloadCredential}>
-              {t("identity.serviceAccountDownloadCredential")}
-            </button>
-            <button type="button" className="button primary" onClick={() => setCredential(null)}>
-              {t("identity.serviceAccountCredentialSaved")}
-            </button>
-          </div>
-        </section>
-      )}
-      <form className="resource-form" onSubmit={create}>
-        <h3>{t("identity.serviceAccountCreate")}</h3>
-        <label>
-          <span>{t("identity.serviceAccountDisplayName")}</span>
-          <input
-            data-sheet-autofocus
-            required
-            minLength={1}
-            maxLength={128}
-            value={displayName}
-            disabled={busy}
-            onChange={(event) => setDisplayName(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>{t("identity.serviceAccountApplication")}</span>
-          <select
-            value={application}
-            disabled={busy}
-            onChange={(event) => setApplication(event.target.value as IdentityApplication)}
-          >
-            <option value="admin">{t("identity.serviceAccountApplication.admin")}</option>
-            <option value="user">{t("identity.serviceAccountApplication.user")}</option>
-          </select>
-        </label>
-        <label>
-          <span>{t("identity.serviceAccountRole")}</span>
-          <select
-            value={selectedRole?.spec.name ?? ""}
-            disabled={busy || data?.roles.length === 0}
-            onChange={(event) => {
-              setRoleName(event.target.value);
-              setScopeKey("");
-            }}
-          >
-            {data?.roles.map((role) => (
-              <option key={role.metadata.uid} value={role.spec.name}>
-                {role.spec.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t("identity.serviceAccountScope")}</span>
-          <select
-            value={selectedScope?.key ?? ""}
-            disabled={busy || choices.length === 0}
-            onChange={(event) => setScopeKey(event.target.value)}
-          >
-            {choices.length === 0 ? (
-              <option value="">{t("identity.noScope")}</option>
-            ) : (
-              choices.map((choice) => (
-                <option key={choice.key} value={choice.key}>
-                  {choice.label}
+              <option value="admin">{t("identity.serviceAccountApplication.admin")}</option>
+              <option value="user">{t("identity.serviceAccountApplication.user")}</option>
+            </select>
+          </label>
+          <label>
+            <span>{t("identity.serviceAccountRole")}</span>
+            <select
+              value={selectedRole?.spec.name ?? ""}
+              disabled={busy || data?.roles.length === 0}
+              onChange={(event) => {
+                setRoleName(event.target.value);
+                setScopeKey("");
+              }}
+            >
+              {data?.roles.map((role) => (
+                <option key={role.metadata.uid} value={role.spec.name}>
+                  {role.spec.name}
                 </option>
-              ))
-            )}
-          </select>
-        </label>
-        <button
-          type="submit"
-          className="button primary"
-          disabled={
-            busy ||
-            credential !== null ||
-            displayName.trim() === "" ||
-            selectedRole === undefined ||
-            selectedScope === undefined
-          }
-        >
-          {t("identity.serviceAccountCreate")}
-        </button>
-      </form>
-      <section className="resource-form" aria-busy={busy}>
-        <h3>{t("identity.serviceAccountList")}</h3>
-        {data === null && busy ? <p>{t("identity.serviceAccountLoading")}</p> : null}
-        {data?.accounts.length === 0 ? <p>{t("identity.serviceAccountEmpty")}</p> : null}
-        <ul className="identity-invitation-list">
-          {data?.accounts.map((account) => (
-            <li key={account.id}>
-              <div>
-                <strong>{account.displayName}</strong>
-                <small>{account.id}</small>
-                <small>
-                  {account.application} · {account.roleName} ·{" "}
-                  {scopeLabel(account, tenant, data.organizations, projects)}
-                </small>
-                <small>{t(`identity.serviceAccountState.${account.state}`)}</small>
-              </div>
-              {account.state === "active" ? (
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="button outline compact"
-                    disabled={busy || credential !== null}
-                    aria-label={t("identity.serviceAccountRotateLabel", {
-                      account: account.displayName,
-                    })}
-                    onClick={() => rotate(account)}
-                  >
-                    {t("identity.serviceAccountRotate")}
-                  </button>
-                  {disableId === account.id ? (
-                    <div>
-                      <p>
-                        {t("identity.serviceAccountDisableConfirm", {
-                          account: account.displayName,
-                        })}
-                      </p>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t("identity.serviceAccountScope")}</span>
+            <select
+              value={selectedScope?.key ?? ""}
+              disabled={busy || choices.length === 0}
+              onChange={(event) => setScopeKey(event.target.value)}
+            >
+              {choices.length === 0 ? (
+                <option value="">{t("identity.noScope")}</option>
+              ) : (
+                choices.map((choice) => (
+                  <option key={choice.key} value={choice.key}>
+                    {choice.label}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="button primary"
+            disabled={
+              busy ||
+              credential !== null ||
+              displayName.trim() === "" ||
+              selectedRole === undefined ||
+              selectedScope === undefined
+            }
+          >
+            {t("identity.serviceAccountCreate")}
+          </button>
+        </form>
+        <section className="resource-form" aria-busy={busy}>
+          <h3>{t("identity.serviceAccountList")}</h3>
+          {data === null && busy ? <p>{t("identity.serviceAccountLoading")}</p> : null}
+          {data?.accounts.length === 0 ? <p>{t("identity.serviceAccountEmpty")}</p> : null}
+          <ul className="identity-invitation-list">
+            {data?.accounts.map((account) => (
+              <li key={account.id}>
+                <div>
+                  <strong>{account.displayName}</strong>
+                  <small>{account.id}</small>
+                  <small>
+                    {account.application} · {account.roleName} ·{" "}
+                    {scopeLabel(account, tenant, data.organizations, projects)}
+                  </small>
+                  <small>{t(`identity.serviceAccountState.${account.state}`)}</small>
+                </div>
+                {account.state === "active" ? (
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="button outline compact"
+                      disabled={busy || credential !== null}
+                      aria-label={t("identity.serviceAccountRotateLabel", {
+                        account: account.displayName,
+                      })}
+                      onClick={() => rotate(account)}
+                    >
+                      {t("identity.serviceAccountRotate")}
+                    </button>
+                    {disableId === account.id ? (
+                      <div>
+                        <p>
+                          {t("identity.serviceAccountDisableConfirm", {
+                            account: account.displayName,
+                          })}
+                        </p>
+                        <button
+                          type="button"
+                          className="button danger compact"
+                          disabled={busy}
+                          onClick={() => disable(account)}
+                        >
+                          {t("identity.serviceAccountDisable")}
+                        </button>
+                        <button
+                          type="button"
+                          className="button outline compact"
+                          disabled={busy}
+                          onClick={() => setDisableId("")}
+                        >
+                          {t("identity.cancel")}
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
                         className="button danger compact"
                         disabled={busy}
-                        onClick={() => disable(account)}
+                        aria-label={t("identity.serviceAccountDisableLabel", {
+                          account: account.displayName,
+                        })}
+                        onClick={() => setDisableId(account.id)}
                       >
                         {t("identity.serviceAccountDisable")}
                       </button>
-                      <button
-                        type="button"
-                        className="button outline compact"
-                        disabled={busy}
-                        onClick={() => setDisableId("")}
-                      >
-                        {t("identity.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="button danger compact"
-                      disabled={busy}
-                      aria-label={t("identity.serviceAccountDisableLabel", {
-                        account: account.displayName,
-                      })}
-                      onClick={() => setDisableId(account.id)}
-                    >
-                      {t("identity.serviceAccountDisable")}
-                    </button>
-                  )}
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </section>
+                    )}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
     </AdminSheet>
   );
 }

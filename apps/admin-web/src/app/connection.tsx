@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { normalizeLocale, useI18n, type MessageKey } from "../i18n";
+import { LocaleSelect, useI18n, type MessageKey } from "../i18n";
 import { ProviderLogin } from "../../../user-web/src/ProviderLogin";
 import {
   ClientError,
@@ -146,7 +146,7 @@ export function LoginView({
   error: string;
   onSubmit: (email: string, password: string) => Promise<void>;
 }>) {
-  const { t, locale, setLocale } = useI18n();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [callbackFailed] = useState(() => window.location.hash === "#identity=failed");
@@ -162,6 +162,9 @@ export function LoginView({
 
   return (
     <main className="connect-view">
+      <div className="connect-preferences">
+        <LocaleSelect />
+      </div>
       <section className="connect-card" aria-labelledby="admin-login-title">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
@@ -172,20 +175,8 @@ export function LoginView({
             <small>{t("brand.adminConsole")}</small>
           </span>
         </div>
-        <div className="eyebrow">{t("auth.protected")}</div>
         <h1 id="admin-login-title">{t("auth.loginTitle")}</h1>
         <p className="lede">{t("auth.loginDescription")}</p>
-        <label className="locale-picker">
-          <span>{t("account.language")}</span>
-          <select
-            value={locale}
-            aria-label={t("account.language")}
-            onChange={(event) => setLocale(normalizeLocale(event.target.value))}
-          >
-            <option value="zh-CN">{t("locale.zhCN")}</option>
-            <option value="en-US">{t("locale.enUS")}</option>
-          </select>
-        </label>
         <form className="connect-form" onSubmit={submit}>
           <label>
             <span>{t("identity.email")}</span>
@@ -223,7 +214,6 @@ export function LoginView({
           disabled={busy}
           labels={{
             loading: t("identity.providerLoading"),
-            empty: t("identity.providerEmpty"),
             start: (provider) => t("identity.providerContinue", { provider }),
             failed: t("identity.providerFailed"),
           }}

@@ -57,7 +57,8 @@ function requireSecret(value, expression, label) {
 function writePrivate(path, value) {
   try {
     const current = lstatSync(path);
-    if (!current.isFile() || (current.mode & 0o077) !== 0) throw new Error("output secret is unsafe");
+    if (!current.isFile() || (current.mode & 0o077) !== 0)
+      throw new Error("output secret is unsafe");
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
@@ -81,7 +82,11 @@ async function exchange(origin, credentialFile, tenantId, outputPrefix, projectI
   });
   const result = await responseBody(response);
   expectStatus(response, 200, "automation token exchange");
-  requireSecret(result.value?.accessToken, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u, "automation access token");
+  requireSecret(
+    result.value?.accessToken,
+    /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u,
+    "automation access token",
+  );
   writePrivate(`${outputPrefix}.token`, `${result.value.accessToken}\n`);
   writePrivate(
     `${outputPrefix}.curl.conf`,
@@ -90,15 +95,37 @@ async function exchange(origin, credentialFile, tenantId, outputPrefix, projectI
 }
 
 async function create(args) {
-  const [originValue, accountFile, tenantId, serviceAccountId, application, roleName, scopeLevel, scopeId, credentialFile] = args;
-  if (!identifier.test(tenantId) || !identifier.test(serviceAccountId) || !identifier.test(roleName) || !identifier.test(scopeId))
+  const [
+    originValue,
+    accountFile,
+    tenantId,
+    serviceAccountId,
+    application,
+    roleName,
+    scopeLevel,
+    scopeId,
+    credentialFile,
+  ] = args;
+  if (
+    !identifier.test(tenantId) ||
+    !identifier.test(serviceAccountId) ||
+    !identifier.test(roleName) ||
+    !identifier.test(scopeId)
+  )
     throw new Error("service-account fixture identifiers are invalid");
-  if (!["admin", "user"].includes(application) || !["tenant", "organization", "project"].includes(scopeLevel))
+  if (
+    !["admin", "user"].includes(application) ||
+    !["tenant", "organization", "project"].includes(scopeLevel)
+  )
     throw new Error("service-account fixture authority is invalid");
   const origin = fixedHTTPSOrigin(originValue);
   const login = await fetch(new URL("/v1/identity/login/password", origin), {
     method: "POST",
-    headers: { Origin: origin.origin, "Content-Type": "application/json", "X-Request-ID": `automation-login-${crypto.randomUUID()}` },
+    headers: {
+      Origin: origin.origin,
+      "Content-Type": "application/json",
+      "X-Request-ID": `automation-login-${crypto.randomUUID()}`,
+    },
     body: JSON.stringify(privateAccount(accountFile)),
   });
   const loginResult = await responseBody(login);
@@ -117,7 +144,14 @@ async function create(args) {
         "X-CSRF-Token": loginResult.value.csrfToken,
         "X-Request-ID": `automation-create-${crypto.randomUUID()}`,
       },
-      body: JSON.stringify({ serviceAccountId, displayName: serviceAccountId, application, roleName, scopeLevel, scopeId }),
+      body: JSON.stringify({
+        serviceAccountId,
+        displayName: serviceAccountId,
+        application,
+        roleName,
+        scopeLevel,
+        scopeId,
+      }),
     },
   );
   const createdResult = await responseBody(created);
@@ -125,7 +159,11 @@ async function create(args) {
   if (createdResult.value?.serviceAccount?.id !== serviceAccountId) {
     throw new Error("service-account creation returned the wrong identifier");
   }
-  requireSecret(createdResult.value?.credential, /^[A-Za-z0-9_-]{43}$/u, "service-account credential");
+  requireSecret(
+    createdResult.value?.credential,
+    /^[A-Za-z0-9_-]{43}$/u,
+    "service-account credential",
+  );
   writePrivate(credentialFile, `${createdResult.value.credential}\n`);
 }
 
@@ -138,5 +176,7 @@ if (command === "create" && args.length === 9) {
     throw new Error("token scope is invalid");
   await exchange(fixedHTTPSOrigin(origin), credentialFile, tenantId, outputPrefix, projectId);
 } else {
-  throw new Error("usage: identity-automation-fixture.mjs create ADMIN_ORIGIN ADMIN_ACCOUNT TENANT ACCOUNT_ID APPLICATION ROLE SCOPE_LEVEL SCOPE_ID CREDENTIAL_FILE | exchange APPLICATION_ORIGIN CREDENTIAL TENANT OUTPUT_PREFIX [PROJECT]");
+  throw new Error(
+    "usage: identity-automation-fixture.mjs create ADMIN_ORIGIN ADMIN_ACCOUNT TENANT ACCOUNT_ID APPLICATION ROLE SCOPE_LEVEL SCOPE_ID CREDENTIAL_FILE | exchange APPLICATION_ORIGIN CREDENTIAL TENANT OUTPUT_PREFIX [PROJECT]",
+  );
 }

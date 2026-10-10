@@ -179,14 +179,14 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
   await screen.getByRole("button", "MCP & Skills").click();
   await expect(screen.getByRole("heading", "MCP & Skill capabilities")).toBeVisible();
-  await expect(screen.getByRole("heading", "Capability Operation / Audit")).toBeVisible();
+  await expect(screen.getByRole("heading", "Capability events")).toBeVisible();
   await initialLoadStarted;
   try {
     await expect(screen.getByRole("button", "Refresh")).toBeDisabled();
   } finally {
     releaseInitialLoad();
   }
-  await expect(screen.getByLabel("Audit Session")).toHaveValue("session-alpha");
+  await expect(screen.getByLabel("Session audit")).toHaveValue("session-alpha");
   await expect(screen.getByLabel("Session in current window")).toHaveValue("session-alpha");
   expect(sessionRequests.at(-1)).toBe(
     `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions?pageSize=64`,
@@ -221,7 +221,7 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
     `/v1/admin/tenants/${tenantId}/projects/${projectId}/sessions/session-alpha/events?cursor=cursor-alpha-64&limit=64`,
   );
 
-  await screen.getByLabel("Audit Session").selectOption({ value: "session-beta" });
+  await screen.getByLabel("Session audit").selectOption({ value: "session-beta" });
   await expect(
     screen.getByText(
       "Event history has not been loaded. Select a Session to read its audit stream.",
@@ -247,7 +247,7 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   );
   await screen.getByRole("button", "Next Session window").click();
   await expect(screen.getByLabel("Session in current window")).toHaveValue("session-gamma");
-  await expect(screen.getByLabel("Audit Session")).toHaveValue("session-gamma");
+  await expect(screen.getByLabel("Session audit")).toHaveValue("session-gamma");
   await expect(screen.getByRole("button", "Next Session window")).toBeDisabled();
   await expect(screen.getByText("server-session-beta-1", { exact: true })).not.toBeVisible();
   expect(sessionRequests.at(-1)).toBe(
@@ -262,9 +262,9 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   } finally {
     releaseRefresh();
   }
-  await expect(screen.getByText(/^mcpServers could not be loaded/u)).toBeVisible();
+  await expect(screen.getByText(/^MCP servers could not be loaded/u)).toBeVisible();
   await expect(screen.getByLabel("Session in current window")).toHaveValue("session-new");
-  await expect(screen.getByLabel("Audit Session")).toHaveValue("session-new");
+  await expect(screen.getByLabel("Session audit")).toHaveValue("session-new");
   await expect(screen.getByText("Authority refresh completed.")).not.toBeVisible();
   await expect(screen.getByRole("button", "Refresh")).toBeEnabled();
 });

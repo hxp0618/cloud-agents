@@ -14,8 +14,9 @@ import { useI18n } from "../i18n";
 import { ChoiceList, NameField, Suggestions } from "./form-fields";
 import {
   executableFoundationNetworkPolicy,
+  runtimeProfileTargetAllowed,
+  workloadTrusts,
   phaseLabel,
-  shortDigest,
   targetKindLabel,
   type WorkloadTrust,
 } from "./presentation";
@@ -103,7 +104,11 @@ export function EnvironmentProfileCreateForm({
   return (
     <AdminSheet feedback={feedback} label={t("profile.create.title")} onClose={onClose}>
       <section className="dialog" aria-labelledby="create-profile-title">
-        <SheetHeading id="create-profile-title" title={t("profile.create.title")} onClose={onClose} />
+        <SheetHeading
+          id="create-profile-title"
+          title={t("profile.create.title")}
+          onClose={onClose}
+        />
         <form className="resource-form" onSubmit={onSubmit}>
           <NameField
             label={t("profile.name")}
@@ -214,7 +219,6 @@ export function EnvironmentProfileCreateForm({
                 </option>
               ))}
             </select>
-            <small>{t("profile.storagePolicyHelp")}</small>
           </label>
           <label>
             <span>{t("profile.networkPolicyRef")}</span>
@@ -256,11 +260,10 @@ export function EnvironmentProfileCreateForm({
               </option>
               {releases.map((release) => (
                 <option key={release.metadata.uid} value={release.spec.releaseDigest}>
-                  {release.metadata.name} · {shortDigest(release.spec.releaseDigest)}
+                  {release.metadata.name}
                 </option>
               ))}
             </select>
-            <small>{t("profile.releaseDigestHelp")}</small>
           </label>
           <ChoiceList
             name="profile-target-refs"
@@ -406,7 +409,11 @@ export function RuntimeProfileCreateForm({
   return (
     <AdminSheet label={t("runtimeProfile.createTitle")} feedback={feedback} onClose={onClose}>
       <section className="dialog" aria-labelledby="create-runtime-profile-title">
-        <SheetHeading id="create-runtime-profile-title" title={t("runtimeProfile.createTitle")} onClose={onClose} />
+        <SheetHeading
+          id="create-runtime-profile-title"
+          title={t("runtimeProfile.createTitle")}
+          onClose={onClose}
+        />
         <form className="resource-form" onSubmit={onSubmit}>
           <NameField
             label={t("runtimeProfile.name")}
@@ -415,44 +422,33 @@ export function RuntimeProfileCreateForm({
             autoFocus
             onChange={(profileName) => onDraftChange({ ...draft, profileName })}
           />
-          <div className="form-row">
-            <label>
-              <span>{t("runtimeProfile.workloadTrust")}</span>
-              <select
-                value={draft.workloadTrust}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    workloadTrust: event.target.value as WorkloadTrust,
-                    targetId: "",
-                    networkPolicyRef: "",
-                  })
-                }
-              >
-                {(["trusted-single-tenant", "dedicated-node", "shared-untrusted"] as const).map(
-                  (value) => (
-                    <option key={value} value={value}>
-                      {t(`runtimeProfile.workloadTrust.${value}`)}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-            <label>
-              <span>{t("runtimeProfile.isolationRuntime")}</span>
-              <select
-                aria-readonly="true"
-                disabled
-                value={isolationRuntimeForTrust(draft.workloadTrust)}
-              >
-                <option value={isolationRuntimeForTrust(draft.workloadTrust)}>
-                  {t(
-                    `runtimeProfile.isolationRuntime.${isolationRuntimeForTrust(draft.workloadTrust)}`,
-                  )}
+          <label>
+            <span>{t("runtimeProfile.workloadTrust")}</span>
+            <select
+              value={draft.workloadTrust}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  workloadTrust: event.target.value as WorkloadTrust,
+                  targetId: "",
+                  networkPolicyRef: "",
+                })
+              }
+            >
+              {workloadTrusts.map((value) => (
+                <option key={value} value={value}>
+                  {t(`runtimeProfile.workloadTrust.${value}`)}
                 </option>
-              </select>
-            </label>
-          </div>
+              ))}
+            </select>
+            <small>
+              {t("runtimeProfile.isolationRuntimeValue", {
+                runtime: t(
+                  `runtimeProfile.isolationRuntime.${isolationRuntimeForTrust(draft.workloadTrust)}`,
+                ),
+              })}
+            </small>
+          </label>
           {draft.workloadTrust === "shared-untrusted" ? (
             <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
           ) : null}
@@ -472,28 +468,21 @@ export function RuntimeProfileCreateForm({
                 {t("runtimeProfile.selectTarget")}
               </option>
               {targets.some(
-                ({ spec }) =>
-                  spec.targetKind === "remote-worker" && spec.architecture === "arm64",
+                ({ spec }) => spec.targetKind === "remote-worker" && spec.architecture === "arm64",
               ) ? (
                 <option value="pool-remote-worker:arm64">
                   {t("runtimeProfile.remoteWorkerPoolArm64")}
                 </option>
               ) : null}
               {targets.some(
-                ({ spec }) =>
-                  spec.targetKind === "remote-worker" && spec.architecture === "amd64",
+                ({ spec }) => spec.targetKind === "remote-worker" && spec.architecture === "amd64",
               ) ? (
                 <option value="pool-remote-worker:amd64">
                   {t("runtimeProfile.remoteWorkerPoolAmd64")}
                 </option>
               ) : null}
               {targets
-                .filter(
-                  ({ spec }) =>
-                    spec.targetKind === "remote-worker" ||
-                    (draft.workloadTrust === "trusted-single-tenant" &&
-                      spec.targetKind === "docker"),
-                )
+                .filter((target) => runtimeProfileTargetAllowed(target, draft.workloadTrust))
                 .map((target) => (
                   <option key={target.metadata.uid} value={target.metadata.uid}>
                     {target.metadata.name} · {phaseLabel(target.spec.observedPhase, t)}
@@ -595,7 +584,6 @@ export function RuntimeProfileCreateForm({
               />
             </label>
           </div>
-          <p className="boundary-note">{t("runtimeProfile.boundary")}</p>
           <div className="dialog-actions">
             <button className="button ghost" type="button" onClick={() => onClose()}>
               {t("action.cancel")}

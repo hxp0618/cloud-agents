@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "./i18n";
 
 export function AdminSheet({
@@ -53,6 +53,38 @@ export function AdminSheet({
   );
 }
 
+// A menu button that opens a sheet and returns focus to itself when the sheet closes.
+export function SheetTrigger({
+  label,
+  openOnMount = false,
+  onClose,
+  children,
+}: Readonly<{
+  label: string;
+  openOnMount?: boolean;
+  onClose?: () => void;
+  children: (trigger: HTMLElement, close: () => void) => ReactNode;
+}>) {
+  const button = useRef<HTMLButtonElement>(null);
+  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (openOnMount) setTrigger(button.current);
+  }, []);
+  return (
+    <>
+      <button ref={button} type="button" onClick={(event) => setTrigger(event.currentTarget)}>
+        {label}
+      </button>
+      {trigger === null
+        ? null
+        : children(trigger, () => {
+            setTrigger(null);
+            onClose?.();
+          })}
+    </>
+  );
+}
+
 export function SheetHeading({
   id,
   title,
@@ -70,7 +102,10 @@ export function SheetHeading({
   return (
     <div className="sheet-heading">
       <h2 id={id}>{title}</h2>
-      <button className="icon-button" type="button" aria-label={t("action.close")}
+      <button
+        className="icon-button"
+        type="button"
+        aria-label={t("action.close")}
         disabled={disabled}
         onClick={onClose}
       >

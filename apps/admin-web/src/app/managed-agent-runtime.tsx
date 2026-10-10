@@ -303,7 +303,6 @@ export function ManagedAgentRuntimeSection({
           )
         }
       </AdminAgentEvents>
-      <p className="boundary-note">{t("agentRuntime.boundary")}</p>
     </section>
   );
 }

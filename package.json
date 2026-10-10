@@ -22,6 +22,7 @@
     "build": "bun run --filter '@cloud-agents/*' build",
     "check": "bun run fmt:check && sh test/scripts/test-cloud-agents-helm.sh && bun run lint && bun run platform:go:check && bun run platform:contracts:check && bun run platform:migrations:check && sh test/scripts/test-platform-go-products.sh && bun run typecheck && bun run build && bun run --filter '@cloud-agents/*' test && bunx vitest run test/scripts",
     "dev": "bash scripts/cloud-agents-dev.sh",
+    "deploy:dev": "bun scripts/deploy-dev.ts",
     "fmt": "bun scripts/run-oxfmt.ts --write",
     "fmt:check": "bun scripts/run-oxfmt.ts --check",
     "lint": "oxlint . --deny-warnings --ignore-pattern scripts/lib/platform-contract-lock.ts",

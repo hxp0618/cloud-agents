@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
+import { selectScope as selectAdminScope } from "./admin-scope.mjs";
+
 const [
   argumentOrigin,
   adminAccountFile,
@@ -280,35 +282,16 @@ try {
     await navigate(currentOrigin);
     await waitFor("document.querySelector('.connect-form') !== null", `${label} signed out`);
   };
-  const selectScope = async (tenantSelector, projectSelector, label) => {
-    const selected = await evaluate(`(() => {
-      const tenant = document.querySelector(${JSON.stringify(tenantSelector)});
-      const project = document.querySelector(${JSON.stringify(projectSelector)});
-      if (!tenant || !project) return false;
-      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-      set.call(tenant, ${JSON.stringify(tenantId)});
-      tenant.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    })()`);
-    assert.equal(selected, true, `${label} tenant selector`);
-    await waitFor(
-      `document.querySelector(${JSON.stringify(tenantSelector)})?.value === ${JSON.stringify(tenantId)}`,
-      `${label} tenant context`,
-    );
-    await waitFor(
-      `[...document.querySelectorAll(${JSON.stringify(projectSelector)} + ' option')].some(option => option.value === ${JSON.stringify(projectId)})`,
-      `${label} project option`,
-    );
-    await evaluate(`(() => {
-      const project = document.querySelector(${JSON.stringify(projectSelector)});
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(project, ${JSON.stringify(projectId)});
-      project.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
-    await waitFor(
-      `document.querySelector(${JSON.stringify(projectSelector)})?.value === ${JSON.stringify(projectId)}`,
-      `${label} project context`,
-    );
-  };
+  const selectScope = (tenantSelector, projectSelector, label) =>
+    selectAdminScope({
+      evaluate,
+      waitFor,
+      tenantSelector,
+      projectSelector,
+      tenantId,
+      projectId,
+      label,
+    });
 
   if (fullCapture) {
     const controlPlaneOrigin = new URL(process.env.CLOUD_AGENTS_ADMIN_CAPTURE_CONTROL_PLANE_URL)
@@ -424,11 +407,7 @@ try {
 
   await login(adminAccount, "administrator");
   await waitFor("document.querySelector('.app-shell') !== null", "connected Admin Web");
-  await selectScope(
-    ".scope-switchers label:first-child select",
-    ".scope-switchers label:last-child select",
-    "Admin",
-  );
+  await selectScope("select[data-scope=tenant]", "select[data-scope=project]", "Admin");
 
   let runtimeVisible = false;
   if (process.env.CLOUD_AGENTS_ADMIN_RUNTIME_SMOKE === "1") {
@@ -471,7 +450,7 @@ try {
 
   await evaluate("document.querySelector('.profile-menu summary').click()");
   await evaluate(
-    `(() => { const select = document.querySelector('.locale-picker select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'en-US'); select.dispatchEvent(new Event('change', { bubbles: true })); })()`,
+    `(() => { const select = document.querySelector('select[data-preference=locale]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'en-US'); select.dispatchEvent(new Event('change', { bubbles: true })); })()`,
   );
   await waitFor("document.documentElement.lang === 'en-US'", "English locale");
   const originalTheme = await evaluate("document.documentElement.dataset.theme");

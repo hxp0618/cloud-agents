@@ -40,7 +40,8 @@ export function nextProfileVersion(
 ): number {
   return (
     profiles.reduce(
-      (latest, { spec }) => (spec.profileId === profileId ? Math.max(latest, spec.version) : latest),
+      (latest, { spec }) =>
+        spec.profileId === profileId ? Math.max(latest, spec.version) : latest,
       0,
     ) + 1
   );

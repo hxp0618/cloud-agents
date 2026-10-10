@@ -52,8 +52,6 @@ export function StoragePolicyTable({
             <th>{t("table.name")}</th>
             <th>{t("storagePolicy.userSummary")}</th>
             <th>{t("table.capacity")}</th>
-            <th>{t("storagePolicy.lifecycle")}</th>
-            <th>{t("table.version")}</th>
             <th>{t("table.updated")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
@@ -73,8 +71,6 @@ export function StoragePolicyTable({
               </td>
               <td>{policy.spec.userSummary}</td>
               <td>{number(policy.spec.workspaceCapacityBytes / 1_073_741_824)} GiB</td>
-              <td>{t("storagePolicy.lifecycleImmediate")}</td>
-              <td className="mono">rv{policy.metadata.resourceVersion}</td>
               <td>{dateTime(policy.metadata.updatedAt)}</td>
               <td className="row-action-cell">
                 <button
@@ -164,7 +160,11 @@ export function ReleaseRegistrationForm({
   return (
     <AdminSheet label={t("release.register.title")} feedback={feedback} onClose={onClose}>
       <section className="dialog" aria-labelledby="register-release-title">
-        <SheetHeading id="register-release-title" title={t("release.register.title")} onClose={onClose} />
+        <SheetHeading
+          id="register-release-title"
+          title={t("release.register.title")}
+          onClose={onClose}
+        />
         <form className="resource-form" onSubmit={onSubmit}>
           <NameField
             label={t("release.name")}
@@ -323,7 +323,6 @@ export function ReleaseRegistrationForm({
               required
               spellCheck={false}
             />
-            <small>{t("release.evidenceDigestHelp")}</small>
           </label>
           <div className="dialog-actions">
             <button className="button ghost" type="button" onClick={() => onClose()}>

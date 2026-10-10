@@ -195,7 +195,6 @@ export function NetworkPolicyPanel({
                   <th>{t("table.name")}</th>
                   <th>{t("networkPolicy.userSummary")}</th>
                   <th>{t("networkPolicy.defaultEgress")}</th>
-                  <th>{t("table.version")}</th>
                   <th>{t("table.updated")}</th>
                   <th aria-label={t("table.actions")} />
                 </tr>
@@ -220,7 +219,6 @@ export function NetworkPolicyPanel({
                     <td>
                       {t(("networkPolicy.egress." + policy.spec.defaultEgress) as MessageKey)}
                     </td>
-                    <td className="mono">rv{policy.metadata.resourceVersion}</td>
                     <td>{dateTime(policy.metadata.updatedAt)}</td>
                     <td className="row-action-cell">
                       <button
@@ -332,7 +330,9 @@ export function NetworkPolicyPanel({
               </label>
             ))}
           </div>
-          {referenced && <p className="cluster-boundary">{t("networkPolicy.referencedBoundary")}</p>}
+          {referenced && (
+            <p className="cluster-boundary">{t("networkPolicy.referencedBoundary")}</p>
+          )}
           <button
             className="button primary"
             type="submit"

@@ -70,7 +70,10 @@ const durationUnits = Object.freeze([
 ] as const);
 
 export function formatDuration(locale: Locale, seconds: number): string {
-  const [unit, size] = durationUnits.find(([, unitSeconds]) => seconds % unitSeconds === 0) ?? ["second", 1];
+  const [unit, size] = durationUnits.find(([, unitSeconds]) => seconds % unitSeconds === 0) ?? [
+    "second",
+    1,
+  ];
   return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "long" }).format(
     seconds / size,
   );
@@ -129,4 +132,19 @@ export function useI18n(): I18nValue {
   const value = useContext(I18nContext);
   if (value === null) throw new Error("Admin Web i18n provider is missing");
   return value;
+}
+
+export function LocaleSelect() {
+  const { t, locale, setLocale } = useI18n();
+  return (
+    <select
+      data-preference="locale"
+      value={locale}
+      aria-label={t("account.language")}
+      onChange={(event) => setLocale(normalizeLocale(event.target.value))}
+    >
+      <option value="zh-CN">{t("locale.zhCN")}</option>
+      <option value="en-US">{t("locale.enUS")}</option>
+    </select>
+  );
 }

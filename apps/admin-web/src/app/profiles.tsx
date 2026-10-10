@@ -1,5 +1,6 @@
-import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
+import { DetailMore } from "./form-fields";
+import { SheetHeading } from "../AdminSheet";
 import {
   type AdminAuditEvent,
   type EnvironmentProfile,
@@ -222,19 +223,11 @@ export function RuntimeProfileDetail({
           <dd className="mono break">{profile.spec.imageUri}</dd>
         </div>
         <div>
-          <dt>{t("runtimeProfile.releaseDigest")}</dt>
-          <dd className="mono break">{profile.spec.releaseDigest}</dd>
-        </div>
-        <div>
           <dt>{t("profile.cpuMemory")}</dt>
           <dd>
             {number(profile.spec.cpuMillis)} mCPU /{" "}
             {number(Math.round(profile.spec.memoryBytes / 1_048_576))} MiB
           </dd>
-        </div>
-        <div>
-          <dt>{t("detail.resourceVersion")}</dt>
-          <dd className="mono">{profile.metadata.resourceVersion}</dd>
         </div>
         <div>
           <dt>{t("profile.created")}</dt>
@@ -257,6 +250,16 @@ export function RuntimeProfileDetail({
           </dd>
         </div>
       </dl>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("runtimeProfile.releaseDigest")}</dt>
+          <dd className="mono break">{profile.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{profile.metadata.resourceVersion}</dd>
+        </div>
+      </DetailMore>
       {profile.spec.isolationRuntime === "gvisor" ? (
         <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
       ) : null}
@@ -287,7 +290,6 @@ export function RuntimeProfileDetail({
           </button>
         </section>
       ) : null}
-      <p className="boundary-note">{t("runtimeProfile.boundary")}</p>
     </>
   );
 }
@@ -311,7 +313,16 @@ export function ProfileTransitionConfirmation({
   const actionLabel = t(publishing ? "profile.transition.publish" : "profile.transition.disable");
   return (
     <section className="dialog" aria-labelledby="profile-transition-title">
-      <SheetHeading id="profile-transition-title" title={t("profile.transition.title", { action: actionLabel })} subject={<>{profile.metadata.name} · v{number(profile.spec.version)}</>} onClose={onClose} />
+      <SheetHeading
+        id="profile-transition-title"
+        title={t("profile.transition.title", { action: actionLabel })}
+        subject={
+          <>
+            {profile.metadata.name} · v{number(profile.spec.version)}
+          </>
+        }
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -332,10 +343,6 @@ export function ProfileTransitionConfirmation({
           <div>
             <dt>{t("profile.version")}</dt>
             <dd className="mono">{number(profile.spec.version)}</dd>
-          </div>
-          <div>
-            <dt>{t("profile.expectedResourceVersion")}</dt>
-            <dd className="mono">{profile.metadata.resourceVersion}</dd>
           </div>
         </dl>
         <label className="confirmation-check">
@@ -399,10 +406,6 @@ export function ProfileDetail({
           <dd className="mono">{profile.spec.profileId}</dd>
         </div>
         <div>
-          <dt>{t("profile.versionResource")}</dt>
-          <dd className="mono break">{profile.metadata.uid}</dd>
-        </div>
-        <div>
           <dt>{t("profile.description")}</dt>
           <dd>{profile.spec.description}</dd>
         </div>
@@ -426,20 +429,12 @@ export function ProfileDetail({
           <dd className="mono">{profile.spec.networkPolicyRef}</dd>
         </div>
         <div>
-          <dt>{t("profile.releaseDigest")}</dt>
-          <dd className="mono break">{profile.spec.releaseDigest}</dd>
-        </div>
-        <div>
           <dt>{t("profile.targetRefs")}</dt>
           <dd className="mono break">{profile.spec.targetRefs.join(", ")}</dd>
         </div>
         <div>
           <dt>{t("profile.providerCredentialRef")}</dt>
           <dd className="mono break">{profile.spec.providerCredentialRef}</dd>
-        </div>
-        <div>
-          <dt>{t("detail.resourceVersion")}</dt>
-          <dd className="mono">{profile.metadata.resourceVersion}</dd>
         </div>
         <div>
           <dt>{t("profile.created")}</dt>
@@ -454,6 +449,20 @@ export function ProfileDetail({
           <dd>{dateTime(profile.spec.disabledAt)}</dd>
         </div>
       </dl>
+      <DetailMore title={t("detail.diagnostics")}>
+        <div>
+          <dt>{t("profile.versionResource")}</dt>
+          <dd className="mono break">{profile.metadata.uid}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimeProfile.releaseDigest")}</dt>
+          <dd className="mono break">{profile.spec.releaseDigest}</dd>
+        </div>
+        <div>
+          <dt>{t("detail.resourceVersion")}</dt>
+          <dd className="mono">{profile.metadata.resourceVersion}</dd>
+        </div>
+      </DetailMore>
       {profile.spec.status !== "disabled" ? (
         <section className="action-block">
           <div>

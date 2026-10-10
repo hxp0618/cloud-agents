@@ -95,7 +95,14 @@ function nextSchedulingState(
 export function RemoteWorkerEnrollmentPanel({
   client,
   connection,
-}: Readonly<{ client: AdminClient; connection: SavedAdminConnection }>) {
+  creating,
+  onCreatingChange,
+}: Readonly<{
+  client: AdminClient;
+  connection: SavedAdminConnection;
+  creating: boolean;
+  onCreatingChange: (creating: boolean) => void;
+}>) {
   const { t, number, bytes, dateTime } = useI18n();
   const [enrollments, setEnrollments] = useState<readonly RemoteWorkerEnrollment[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -104,7 +111,6 @@ export function RemoteWorkerEnrollmentPanel({
   const [schedulingPreview, setSchedulingPreview] =
     useState<RemoteWorkerNodeSchedulingPreview | null>(null);
   const [schedulingConfirmation, setSchedulingConfirmation] = useState("");
-  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ReturnType<typeof adminFailure> | null>(null);
   const [notice, setNotice] = useState<MessageKey | null>(null);
@@ -121,9 +127,7 @@ export function RemoteWorkerEnrollmentPanel({
     form.workerName.trim() !== "" &&
     enrollments.some(
       ({ spec }) =>
-        spec.workerId === derivedWorkerId &&
-        spec.state !== "revoked" &&
-        spec.state !== "expired",
+        spec.workerId === derivedWorkerId && spec.state !== "revoked" && spec.state !== "expired",
     );
   const foundationSupport = selected?.spec.node
     ? remoteWorkerFoundationSupport(selected.spec.node)
@@ -230,7 +234,7 @@ export function RemoteWorkerEnrollmentPanel({
           body,
           signal,
         );
-        setCreating(false);
+        onCreatingChange(false);
         setForm({ workerName: "", ttlSeconds: "900", token: newIdentifierSuffix() });
         await load(signal, result.value.metadata.uid);
       },
@@ -330,16 +334,6 @@ export function RemoteWorkerEnrollmentPanel({
 
   return (
     <section className="resource-list">
-      <div className="list-toolbar">
-        <button
-          className="button primary"
-          type="button"
-          disabled={busy}
-          onClick={() => setCreating((value) => !value)}
-        >
-          {t(creating ? "action.cancel" : "remoteWorkerEnrollment.create")}
-        </button>
-      </div>
       {error ? (
         <div className="banner danger" role="alert">
           {error.code ? <code>{error.code}</code> : null}
@@ -373,9 +367,14 @@ export function RemoteWorkerEnrollmentPanel({
               onChange={(ttlSeconds) => setForm({ ...form, ttlSeconds })}
             />
           </div>
-          <button className="button primary" type="submit" disabled={busy || workerNameTaken}>
-            {t("remoteWorkerEnrollment.create")}
-          </button>
+          <div className="form-actions">
+            <button className="button primary" type="submit" disabled={busy || workerNameTaken}>
+              {t("remoteWorkerEnrollment.create")}
+            </button>
+            <button className="button ghost" type="button" onClick={() => onCreatingChange(false)}>
+              {t("action.cancel")}
+            </button>
+          </div>
         </form>
       ) : null}
       <div className="panel target-list-panel">
@@ -450,10 +449,12 @@ export function RemoteWorkerEnrollmentPanel({
             </div>
           </div>
           <dl className="detail-grid">
-            <div>
-              <dt>{t("remoteWorkerEnrollment.workerId")}</dt>
-              <dd className="mono">{selected.spec.workerId}</dd>
-            </div>
+            {selected.spec.workerId === selected.metadata.name ? null : (
+              <div>
+                <dt>{t("remoteWorkerEnrollment.workerId")}</dt>
+                <dd className="mono">{selected.spec.workerId}</dd>
+              </div>
+            )}
             <div>
               <dt>{t("remoteWorkerEnrollment.state")}</dt>
               <dd>{t(enrollmentStateKey(selected))}</dd>

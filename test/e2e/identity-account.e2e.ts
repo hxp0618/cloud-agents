@@ -1,5 +1,6 @@
 import { test, type Browser } from "@e2e-dev/web";
 import { expect, type Screen } from "e2e";
+import { openAccountMenu } from "./admin-account-menu";
 
 function required(name: string) {
   const value = process.env[name];
@@ -52,7 +53,7 @@ test("account password change, admin reset, and disable revoke existing sessions
   await expect(screen.getByRole("heading", "Sign in to your tenants")).toBeVisible();
   await login(browser, screen, "platform-admin@identity.test", password);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Account").tap();
   await expect(screen.getByRole("heading", "Platform accounts")).toBeVisible();
   const resetButton = screen.getByRole("button", `Create reset link · ${email}`);
@@ -97,7 +98,7 @@ test("account password change, admin reset, and disable revoke existing sessions
 
   await browser.goto(adminURL);
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
-  await browser.locator("details.profile-menu summary").tap();
+  await openAccountMenu(browser);
   await screen.getByRole("button", "Account").tap();
   const disable = screen.getByRole("button", `Disable account · ${email}`);
   await expect(disable).toBeEnabled();

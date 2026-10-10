@@ -7,14 +7,12 @@ import type {
 
 export type ProviderLoginLabels = Readonly<{
   loading: string;
-  empty: string;
   start: (provider: string) => string;
   failed: string;
 }>;
 
 const defaultLabels: ProviderLoginLabels = Object.freeze({
   loading: "Loading sign-in providers…",
-  empty: "No external sign-in providers are available.",
   start: (provider) => `Continue with ${provider}`,
   failed: "External sign-in could not be started. Try again.",
 });
@@ -96,10 +94,12 @@ export function ProviderLogin({
     }
   }
 
+  // Password sign-in stays available, so an empty provider list needs no message.
+  if (!loading && providers.length === 0 && error === "") return null;
+
   return (
     <section className="provider-login" aria-busy={loading || activeProvider !== ""}>
       {loading ? <p role="status">{labels.loading}</p> : null}
-      {!loading && providers.length === 0 && error === "" ? <p>{labels.empty}</p> : null}
       {providers.map((provider) => (
         <button
           key={provider.id}
