@@ -65,13 +65,13 @@ V1 必须覆盖四个 Provider × 三类环境；跨节点接管先在同一 Reg
 底座无 Agent 的默认安装继续可用。执行切片见 [04](04-extraction-and-migration.md#anywhere-runtime-plan)，
 完成条件见 [05](05-gates-and-acceptance.md#anywhere-runtime-v1)，当前支持程度只看 [06](06-status-tracker.md)。
 
-### 1.4 内置身份与登录（IDENTITY-V1，P0 提案）
+### 1.4 内置身份与登录（IDENTITY-V1）
 
-[ADR-0033](../adr/0033-built-in-identity-service.md) 提议将账号、密码与 OIDC/OAuth 登录、关联身份、服务端会话、管理员邀请和租户邮箱策略纳入公共产品。用户登录后发现受权租户和项目，Admin/User Web 移除手填 ID/token。该范围待用户批准 P0 后实施，不改变既有 BASE、Runtime 或正式 Gate 的完成结论。
+[ADR-0033](../adr/0033-built-in-identity-service.md) 提议将账号、密码与 OIDC/OAuth 登录、关联身份、服务端会话、管理员邀请和租户邮箱策略纳入公共产品。用户登录后发现受权租户和项目，Admin/User Web 移除手填 ID/token。该范围已由用户批准 P0 并要求作为 Goal 推进，不改变既有 BASE、Runtime 或正式 Gate 的完成结论。
 
 身份服务持有稳定内部 user ID，签发单租户短期 token；CP subject 始终为 `(user, 身份服务 issuer, user-<id>)`，密码与不同外部登录共用同一主体。新增身份存储与 `platform.admin` 绑定位于 tenant 数据之外，由有限数据库函数访问；平台管理员可列出全部租户，业务请求仍执行单租户 RLS 与当前 RBAC。`tenant.admin` 只管理其有效授权的租户，User Web 只列 active membership。
 
-账号仅通过管理员邀请建立；外部 IdP 和邮箱后缀都不自动创建账号、membership 或角色。邮箱列表为空允许任意已验证邮箱，非空则按规范化邮箱域精确匹配；多租户可共享同一域。平台管理员仅自身管理访问豁免。租户管理员只能停用本租户成员；全局账号禁用、管理员密码重置和登录提供方配置属于平台管理员。具体身份/权限 owner 与验收见 ADR-0033、[05](05-gates-and-acceptance.md#identity-v1) 和 [07](07-admin-web-requirements-and-design.md#identity-v1)。
+除受控的首个平台管理员初始化外，账号仅通过管理员邀请建立；外部 IdP 和邮箱后缀都不自动创建账号、membership 或角色。邮箱列表为空允许任意已验证邮箱，非空则按规范化邮箱域精确匹配；多租户可共享同一域。平台管理员本人豁免邮箱域限制，加入 User Web 租户仍须邀请、邮箱验证和显式 membership，不能替他人豁免。租户管理员只能停用本租户成员；全局账号禁用、管理员密码重置和登录提供方配置属于平台管理员。具体身份/权限 owner 与验收见 ADR-0033、[05](05-gates-and-acceptance.md#identity-v1) 和 [07](07-admin-web-requirements-and-design.md#identity-v1)。
 
 ## 2. 三种运行模式
 
@@ -144,7 +144,7 @@ workspace/project。两者使用 namespace-qualified ref 显式映射，但不�
 - 公共 CP 是 management/admission plane 的 PEP，也是 public membership/RBAC 的 durable writer；
 - lease 内 T3 auth service 是该环境 HTTP/RPC/WebSocket 的 data-plane PEP；它必须把 public membership
   version、lease generation、subject 和 scope 当作上游约束，并在 stale/revoke 状态 fail closed；
-- 外部 IdP/provisioning 只提供受验证身份或约束，membership/RBAC 仍由 CP 写入；IDENTITY-V1 获批后由内置身份服务处理登录和邀请，通过 CP 受限写入口创建成员，禁止登录时自动 provision；SCIM 留待后续；
+- 外部 IdP/provisioning 只提供受验证身份或约束，membership/RBAC 仍由 CP 写入；IDENTITY-V1 由内置身份服务处理登录和邀请，通过 CP 受限写入口创建成员，禁止登录时自动 provision；SCIM 留待后续；
 - Synara enterprise entitlement 可作为版本化外部 PDP 约束，最终允许条件是 public RBAC 与 PDP constraint
   的交集；timeout/error fail closed；
 - suspension/deprovision 在公共 CP 本地事务中禁用 membership、递增 `revocationEpoch` 并写入 revoke outbox；
@@ -190,7 +190,7 @@ encoding、permission vocabulary 和 policy fixture 的正式冻结由 ADR-0007 
 - Workspace/Artifact/Credential 的通用 contract 与服务；
 - Postgres schema/migration、outbox、leader/reconciler；
 - OIDC/JWT、basic tenant/organization/project/RBAC；
-- IDENTITY-V1 提议的内置账号、邀请制登录、会话与身份管理，待 P0 批准；
+- IDENTITY-V1 批准的内置账号、邀请制登录、会话与身份管理；
 - local/container/Kubernetes、filesystem/S3 等公开 deployment adapters；
 - SDK、CLI、Compose、Helm、SBOM/provenance、conformance。
 

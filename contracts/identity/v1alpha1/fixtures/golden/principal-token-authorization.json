@@ -1,0 +1,15 @@
+{
+  "principalId": "service-ci-alpha",
+  "subject": {
+    "kind": "serviceAccount",
+    "issuer": "https://identity.example.test",
+    "subject": "service-service-ci-alpha"
+  },
+  "issuer": "https://identity.example.test",
+  "tenantId": "tenant-alpha",
+  "projectId": "project-alpha",
+  "application": "admin",
+  "scopes": [
+    "projects.get"
+  ]
+}

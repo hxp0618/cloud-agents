@@ -10,7 +10,7 @@ trap 'rm -f -- "$rendered"' EXIT HUP INT TERM
 
 helm lint "$chart"
 helm template cloud-agents "$chart" >"$rendered"
-for image in control-plane migrate access-gateway admin-web user-web; do
+for image in control-plane identity migrate access-gateway admin-web user-web; do
   grep -Fq "image: \"cloud-agents/$image:0.2.0\"" "$rendered"
 done
 if grep -Eq 'component: worker|CLOUD_AGENTS_PLATFORM_(WORKER|ADMISSION)|provider-credentials|mountPath: /workspace' "$rendered"; then
@@ -21,10 +21,94 @@ grep -A1 -F -- "- --max-concurrent-requests" "$rendered" | grep -Fq -- '- "128"'
 grep -Fq "name: install-access-grant-key" "$rendered"
 grep -Fq "name: install-ssh-host-key" "$rendered"
 grep -Fq "value: /run/cloud-agents/secrets/access-grant.key" "$rendered"
-grep -Fq "value: https://cloud-agents-cloud-agents-control-plane:8080" "$rendered"
-grep -Fq "value: /run/cloud-agents/control-plane-ca.crt" "$rendered"
-test "$(grep -Fc "automountServiceAccountToken: false" "$rendered")" -ge 5
-test "$(grep -Fc "readOnlyRootFilesystem: true" "$rendered")" -ge 6
+grep -Fq "https://cloud-agents-cloud-agents-control-plane:8080" "$rendered"
+grep -Fq "/run/cloud-agents/web-secrets/control-plane-ca.crt" "$rendered"
+grep -Fq "name: install-identity-client-secrets" "$rendered"
+grep -Fq "install -m 0400 /source/config/run.json /target/run.json" "$rendered"
+grep -Fq "/run/cloud-agents/identity/secrets/run.json" "$rendered"
+grep -Fq "name: install-web-secrets" "$rendered"
+test "$(grep -Fc '{ name: Host, value: "admin.cloud-agents.example" }' "$rendered")" -eq 2
+test "$(grep -Fc '{ name: Host, value: "user.cloud-agents.example" }' "$rendered")" -eq 2
+grep -Fq "identityBaseUrl" "$rendered"
+test "$(grep -Fc "automountServiceAccountToken: false" "$rendered")" -ge 6
+test "$(grep -Fc "readOnlyRootFilesystem: true" "$rendered")" -ge 10
+
+if grep -Fq "CLOUD_AGENTS_PLATFORM_TARGET_CREDENTIAL_KEY_FILE" "$rendered"; then
+  echo "default Helm release enabled kubeconfig target credentials without a key Secret" >&2
+  exit 1
+fi
+helm template cloud-agents "$chart" --show-only templates/control-plane.yaml \
+  --set deploymentTargets.credentialKeySecretName=cloud-agents-target-credential-key >"$rendered"
+grep -Fq "name: install-target-credential-key" "$rendered"
+grep -Fq "value: /run/cloud-agents/secrets/target-credential.key" "$rendered"
+grep -Fq "secretName: cloud-agents-target-credential-key" "$rendered"
+if helm template cloud-agents "$chart" --set deploymentTargets.credentialKeySecretName=cloud-agents-target-credential-key \
+  --set deploymentTargets.kubernetesCredentialSecretName= >/dev/null 2>&1; then
+  echo "Helm accepted a target credential key without Kubernetes target credentials" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" --show-only templates/admin-web.yaml >"$rendered"
+test "$(grep -c '^[[:space:]]*items:$' "$rendered")" -eq 4
+grep -Fq "key: admin-web.proof" "$rendered"
+if grep -Eq 'key: (user-web|control-plane|identity-control-plane)\.proof' "$rendered"; then
+  echo "Admin Web received another Identity service proof" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" --show-only templates/user-web.yaml >"$rendered"
+test "$(grep -c '^[[:space:]]*items:$' "$rendered")" -eq 4
+grep -Fq "key: user-web.proof" "$rendered"
+if grep -Eq 'key: (admin-web|control-plane|identity-control-plane)\.proof' "$rendered"; then
+  echo "User Web received another Identity service proof" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" --show-only templates/identity.yaml >"$rendered"
+test "$(grep -c '^[[:space:]]*items:$' "$rendered")" -eq 8
+grep -Fq "key: identity-service-url" "$rendered"
+if grep -Eq 'key: (runtime|migration|tenant-bootstrap|identity-bootstrap)-url' "$rendered"; then
+  echo "Identity runtime received a non-service database credential" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" \
+  --set identityBootstrap.enabled=true \
+  --set-string identityBootstrap.keyNotBefore=2026-10-09T00:00:00Z \
+  --set-string identityBootstrap.keyNotAfter=2026-10-10T00:00:00Z \
+  --show-only templates/identity-bootstrap-job.yaml >"$rendered"
+test "$(grep -c '^[[:space:]]*items:$' "$rendered")" -eq 3
+grep -Fq "key: identity-bootstrap-url" "$rendered"
+if grep -Eq 'key: (runtime|migration|tenant-bootstrap|identity-service)-url' "$rendered"; then
+  echo "Identity bootstrap received an unrelated database credential" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" --show-only templates/control-plane.yaml >"$rendered"
+test "$(grep -c '^[[:space:]]*items:$' "$rendered")" -eq 5
+grep -Fq "key: control-plane.proof" "$rendered"
+grep -Fq "key: identity-control-plane.proof" "$rendered"
+if grep -Eq 'key: (admin-web|user-web)\.proof' "$rendered"; then
+  echo "Control Plane received a Web service proof" >&2
+  exit 1
+fi
+
+helm template cloud-agents "$chart" \
+  --set-string identity.providers.secretName=identity-provider-materials \
+  --set-string identity.providers.clientSecrets.keycloak=keycloak-secret \
+  --set-string identity.providers.rootCAs.private-root=provider-ca.crt >"$rendered"
+grep -Fq "providerFlowKeyFile" "$rendered"
+grep -Fq "/run/cloud-agents/identity/secrets/provider-keycloak-secret" "$rendered"
+grep -Fq "install -m 0400 /source/providers/provider-ca.crt" "$rendered"
+test "$(grep -Fc "mountPath: /source/providers" "$rendered")" -eq 1
+if helm template cloud-agents "$chart" --set-string identity.providers.clientSecrets.keycloak=keycloak-secret >/dev/null 2>&1; then
+  echo "provider material references without a Secret passed Helm validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set-string identity.providers.secretName=identity-providers --set-string identity.providers.clientSecrets.keycloak=../escaped >/dev/null 2>&1; then
+  echo "provider material filename traversal passed Helm validation" >&2
+  exit 1
+fi
 
 helm template cloud-agents "$chart" --set worker.enabled=true >"$rendered"
 grep -Fq 'image: "cloud-agents/worker:0.2.0"' "$rendered"
@@ -34,8 +118,8 @@ grep -A1 -F -- "- --runtime-directory" "$rendered" | grep -Fq -- '- /workspace'
 grep -Fq "mountPath: /tmp" "$rendered"
 grep -Fq "emptyDir: {}" "$rendered"
 grep -A1 -F -- "- --runtime-max-sessions" "$rendered" | grep -Fq -- '- "4"'
-test "$(grep -Fc "automountServiceAccountToken: false" "$rendered")" -ge 6
-test "$(grep -Fc "readOnlyRootFilesystem: true" "$rendered")" -ge 7
+test "$(grep -Fc "automountServiceAccountToken: false" "$rendered")" -ge 7
+test "$(grep -Fc "readOnlyRootFilesystem: true" "$rendered")" -ge 11
 if grep -Fq "/var/run/docker.sock" "$rendered"; then
   echo "Helm workloads received direct Docker authority" >&2
   exit 1
@@ -53,12 +137,13 @@ test "$(grep -Fc "secretName: cloud-agents-capabilities" "$rendered")" -eq 2
 helm template cloud-agents "$chart" \
   --set worker.enabled=true \
   --set-string images.controlPlane.digest="$digest" \
+  --set-string images.identity.digest="$digest" \
   --set-string images.worker.digest="$digest" \
   --set-string images.migrate.digest="$digest" \
   --set-string images.accessGateway.digest="$digest" \
   --set-string images.adminWeb.digest="$digest" >"$rendered"
 
-for image in control-plane worker migrate access-gateway admin-web; do
+for image in control-plane identity worker migrate access-gateway admin-web; do
   grep -Fq "image: \"cloud-agents/$image@$digest\"" "$rendered"
 done
 
@@ -80,6 +165,10 @@ if helm template cloud-agents "$chart" --set runtime.maxSessions=0 >/dev/null 2>
 fi
 if helm template cloud-agents "$chart" --set controlPlane.maxConcurrentRequests=0 >/dev/null 2>&1; then
   echo "invalid Control Plane max concurrent requests passed Helm values validation" >&2
+  exit 1
+fi
+if helm template cloud-agents "$chart" --set-string identity.userAudience=https://admin.cloud-agents.example >/dev/null 2>&1; then
+  echo "equal Admin and User Identity audiences passed Helm validation" >&2
   exit 1
 fi
 if helm template cloud-agents "$chart" --set accessGateway.replicas=2 >/dev/null 2>&1; then

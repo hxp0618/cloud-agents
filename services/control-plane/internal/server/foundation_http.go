@@ -86,12 +86,12 @@ func (server *FoundationHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, projectPermission)
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission)
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, permission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -869,8 +869,8 @@ func foundationMutationBody(writer http.ResponseWriter, request *http.Request) (
 	return key, body, true
 }
 
-func (server *FoundationHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *FoundationHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func writeFoundationError(writer http.ResponseWriter, err error) {

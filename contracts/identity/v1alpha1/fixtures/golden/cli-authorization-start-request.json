@@ -1,0 +1,6 @@
+{
+  "application": "admin",
+  "callbackPort": 49152,
+  "state": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "codeChallenge": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+}

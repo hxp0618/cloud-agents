@@ -12,3 +12,6 @@ node_modules/
 .idea/
 *.tsbuildinfo
 provider-credentials/
+/release/
+__pycache__/
+*.py[cod]

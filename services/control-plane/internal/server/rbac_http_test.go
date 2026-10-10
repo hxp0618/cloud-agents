@@ -300,7 +300,7 @@ func TestRBACHTTPServerCreatesMembershipWithScopedMutationContract(t *testing.T)
 	if verifier.seen.RequiredPermission != "memberships.create" || verifier.seen.ResourceLevel != "tenant" || verifier.seen.ResourceID != "tenant-alpha" {
 		t.Fatalf("verification=%#v", verifier.seen)
 	}
-	if mutator.created.ExpectedTenantRevision != 7 || mutator.created.Scope != scope || mutator.created.Subject.Subject != "user-alpha" {
+	if mutator.created.CorrelationID != "request-alpha" || mutator.created.ExpectedTenantRevision != 7 || mutator.created.Scope != scope || mutator.created.Subject.Subject != "user-alpha" {
 		t.Fatalf("mutation input=%#v", mutator.created)
 	}
 }
@@ -351,7 +351,7 @@ func TestRBACHTTPServerBindsRoleWithScopedMutationContract(t *testing.T) {
 	if verifier.seen.RequiredPermission != "role-bindings.bind" || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
 		t.Fatalf("verification=%#v", verifier.seen)
 	}
-	if mutator.bound.RoleBindingUID != "binding-new" || mutator.bound.RoleName != "project.operator" || mutator.bound.Scope != scope {
+	if mutator.bound.CorrelationID != "request-alpha" || mutator.bound.RoleBindingUID != "binding-new" || mutator.bound.RoleName != "project.operator" || mutator.bound.Scope != scope {
 		t.Fatalf("mutation input=%#v", mutator.bound)
 	}
 }
@@ -384,7 +384,7 @@ func TestRBACHTTPServerTransitionsMembershipUsingStoredScope(t *testing.T) {
 			if verifier.seen.RequiredPermission != test.permission || verifier.seen.ResourceLevel != "project" || verifier.seen.ResourceID != "project-alpha" {
 				t.Fatalf("verification=%#v", verifier.seen)
 			}
-			if mutator.transitioned.MembershipUID != "membership-alpha" || mutator.transitioned.ExpectedResourceVersion != 7 {
+			if mutator.transitioned.CorrelationID != "request-alpha" || mutator.transitioned.MembershipUID != "membership-alpha" || mutator.transitioned.ExpectedResourceVersion != 7 {
 				t.Fatalf("transition=%#v", mutator.transitioned)
 			}
 		})

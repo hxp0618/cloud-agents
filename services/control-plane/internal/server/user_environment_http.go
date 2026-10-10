@@ -65,12 +65,12 @@ func (server *UserEnvironmentHTTPServer) ServeHTTP(writer http.ResponseWriter, r
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: environmentPermission}); err != nil {
+	if _, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: environmentPermission}); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -150,7 +150,7 @@ func (server *UserEnvironmentHTTPServer) terminate(writer http.ResponseWriter, r
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return

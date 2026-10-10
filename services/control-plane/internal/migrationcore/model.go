@@ -24,6 +24,10 @@ const (
 	AdvisoryLockDomain        = "cloud-agents-platform:migrations:v1"
 	AdvisoryLockDerivation    = "sha256-first-8-bytes-signed-big-endian-int64"
 	MigrationOwnerRole        = "cloud_agents_migration_owner"
+	CatalogProfileV1          = "cloud-agents-platform-catalog/v1"
+	CatalogProfileV2          = "cloud-agents-platform-catalog/v2"
+	AuthorityContractV1Path   = "services/control-plane/migrations/catalog/authority-v1.json"
+	AuthorityContractV2Path   = "services/control-plane/migrations/catalog/authority-v2.json"
 
 	historicalV1MaxMigrations = 5
 )
@@ -340,8 +344,22 @@ func (manifest *Manifest) Validate(value JSONValue) error {
 	if manifest.FormatVersion == ManifestFormatVersion && len(manifest.SchemaBundle.Migrations) > historicalV1MaxMigrations {
 		return fail(CodeInvalidManifest, "schema_bundle.migrations", "v1 manifests cannot extend the historical five-entry bundle", nil)
 	}
-	if len(manifest.BootstrapBundle.Artifacts) != 2 || manifest.BootstrapBundle.Artifacts[0].Path != "services/control-plane/migrations/bootstrap/database.sql" || manifest.BootstrapBundle.Artifacts[1].Path != "services/control-plane/migrations/bootstrap/roles.sql" {
-		return fail(CodeInvalidManifest, "bootstrap_bundle", "manifest v1 requires exactly database.sql then roles.sql", nil)
+	expectedBootstrapPaths := []string{
+		"services/control-plane/migrations/bootstrap/database.sql",
+		"services/control-plane/migrations/bootstrap/roles.sql",
+	}
+	if manifest.ExecutionPolicy.CatalogProfile == CatalogProfileV2 {
+		expectedBootstrapPaths = append(expectedBootstrapPaths,
+			"services/control-plane/migrations/bootstrap/roles_identity_service.sql",
+		)
+	}
+	if len(manifest.BootstrapBundle.Artifacts) != len(expectedBootstrapPaths) {
+		return fail(CodeInvalidManifest, "bootstrap_bundle", "bootstrap artifacts differ from the selected catalog profile", nil)
+	}
+	for index, expectedPath := range expectedBootstrapPaths {
+		if manifest.BootstrapBundle.Artifacts[index].Path != expectedPath {
+			return fail(CodeInvalidManifest, "bootstrap_bundle", "bootstrap artifacts differ from the selected catalog profile", nil)
+		}
 	}
 	if err := validateArtifacts(manifest.BootstrapBundle.Artifacts, true); err != nil {
 		return err
@@ -481,14 +499,18 @@ func validInitialACL(acls []ACLProjection) bool {
 }
 
 func (policy ExecutionPolicy) Validate() error {
-	if policy.StatementProfile != "postgresql-ddl-v1" || policy.CatalogProfile != "cloud-agents-platform-catalog/v1" || policy.IsolationLevel != "serializable" || policy.AccessMode != "read_write" {
+	if policy.StatementProfile != "postgresql-ddl-v1" || policy.IsolationLevel != "serializable" || policy.AccessMode != "read_write" {
 		return fail(CodeUnsupported, "execution_policy", "unsupported execution profile", nil)
+	}
+	if (policy.CatalogProfile != CatalogProfileV1 || policy.AuthorityContract.Path != AuthorityContractV1Path) &&
+		(policy.CatalogProfile != CatalogProfileV2 || policy.AuthorityContract.Path != AuthorityContractV2Path) {
+		return fail(CodeUnsupported, "execution_policy", "unsupported catalog and authority profile pair", nil)
 	}
 	if policy.LineageQuotaProfile != "" && policy.LineageQuotaProfile != LineageQuotaProfileV2 && policy.LineageQuotaProfile != LineageQuotaProfileV3 && policy.LineageQuotaProfile != LineageQuotaProfileV4 {
 		return fail(CodeUnsupported, "execution_policy.lineage_quota_profile", "unsupported lineage quota profile", nil)
 	}
-	if policy.AuthorityContract.Path != "services/control-plane/migrations/catalog/authority-v1.json" || policy.PostgresMajorMin != 15 || policy.PostgresMajorMax != 17 || policy.StatementTimeoutMS != 300000 || policy.LockTimeoutMS != 30000 || policy.IdleInTransactionSessionTimeoutMS != 60000 || policy.MaxAttempts != 3 {
-		return fail(CodeInvalidManifest, "execution_policy", "manifest v1 authority, PostgreSQL range, timeout, or retry policy differs from the fixed profile", nil)
+	if policy.PostgresMajorMin != 15 || policy.PostgresMajorMax != 17 || policy.StatementTimeoutMS != 300000 || policy.LockTimeoutMS != 30000 || policy.IdleInTransactionSessionTimeoutMS != 60000 || policy.MaxAttempts != 3 {
+		return fail(CodeInvalidManifest, "execution_policy", "PostgreSQL range, timeout, or retry policy differs from the fixed profile", nil)
 	}
 	return policy.AuthorityContract.Validate()
 }

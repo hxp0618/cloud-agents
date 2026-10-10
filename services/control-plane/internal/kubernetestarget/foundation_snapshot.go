@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -258,7 +257,7 @@ func execSnapshotPod(ctx context.Context, directory *CredentialDirectory, endpoi
 	if len(command) == 0 {
 		return nil, ErrDeploymentConfigInvalid
 	}
-	roots, token, err := directory.credentials(credentialRef)
+	access, err := directory.connection(credentialRef)
 	if err != nil {
 		return nil, err
 	}
@@ -278,8 +277,8 @@ func execSnapshotPod(ctx context.Context, directory *CredentialDirectory, endpoi
 	query.Set("tty", "0")
 	query.Set("container", "workspace")
 	parsed.RawQuery = query.Encode()
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second, ReadBufferSize: snapshotExecBufferSize + 1024, WriteBufferSize: snapshotExecBufferSize + 1024, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, Subprotocols: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
-	connection, response, err := dialer.DialContext(ctx, parsed.String(), http.Header{"Authorization": []string{"Bearer " + token}})
+	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second, ReadBufferSize: snapshotExecBufferSize + 1024, WriteBufferSize: snapshotExecBufferSize + 1024, TLSClientConfig: access.tls, Subprotocols: []string{"v5.channel.k8s.io", "v4.channel.k8s.io"}}
+	connection, response, err := dialer.DialContext(ctx, parsed.String(), access.header())
 	if err != nil {
 		status := ""
 		if response != nil {

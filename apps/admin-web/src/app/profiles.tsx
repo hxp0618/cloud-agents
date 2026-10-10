@@ -1,3 +1,4 @@
+import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
 import {
   type AdminAuditEvent,
@@ -178,7 +179,9 @@ export function RuntimeProfileDetail({
     <>
       <div className="detail-heading">
         <div>
-          <div className="eyebrow">no-Agent · v{number(profile.spec.version)}</div>
+          <div className="eyebrow">
+            {t("runtimeProfile.eyebrow", { version: number(profile.spec.version) })}
+          </div>
           <h2>{profile.metadata.name}</h2>
           <span className={`phase ${phaseTone(profile.spec.status)}`}>
             <i /> {phaseLabel(profile.spec.status, t)}
@@ -308,25 +311,7 @@ export function ProfileTransitionConfirmation({
   const actionLabel = t(publishing ? "profile.transition.publish" : "profile.transition.disable");
   return (
     <section className="dialog" aria-labelledby="profile-transition-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">{t("profile.transition.eyebrow")}</div>
-          <h2 id="profile-transition-title">
-            {t("profile.transition.title", { action: actionLabel })}
-          </h2>
-          <p>
-            {profile.metadata.name} · v{number(profile.spec.version)}
-          </p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="profile-transition-title" title={t("profile.transition.title", { action: actionLabel })} subject={<>{profile.metadata.name} · v{number(profile.spec.version)}</>} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -498,7 +483,6 @@ export function ProfileDetail({
       <section className="activity-block" aria-labelledby="profile-audit-title">
         <div className="activity-heading">
           <h3 id="profile-audit-title">{t("detail.audit")}</h3>
-          <span className="scope-chip">audit.list · {number(audit.length)}</span>
         </div>
         {audit.length === 0 ? (
           <p className="activity-empty">{t("profile.noAudit")}</p>

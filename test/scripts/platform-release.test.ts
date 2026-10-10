@@ -397,6 +397,7 @@ describe("platform release", () => {
       readFileSync(CLOUD_AGENT_RUNTIME_NOTICES_SOURCE_PATH),
     );
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-access-gateway");
+    expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-identity");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agents-remote-worker");
     expect(PLATFORM_RELEASE_GO_COMMANDS).toContain("cloud-agentsctl");
     expect(expectedArtifactIdentities()).toContainEqual({
@@ -645,8 +646,8 @@ ${recoveryTail}`,
 
   it("uses the unique Compose run identity as the business Project name", () => {
     const source = readFileSync("test/e2e/test-platform-compose.sh", "utf8");
-    const start = source.indexOf("project_output=$(cloud_agentsctl_user");
-    const end = source.indexOf("\n\nremote_target_id=", start);
+    const start = source.indexOf("project_output=$(cloud_agentsctl");
+    const end = source.indexOf("\nNODE_EXTRA_CA_CERTS=", start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     const projectCreation = source.slice(start, end);
@@ -658,7 +659,7 @@ ${recoveryTail}`,
         [
           "-c",
           `set -eu
-cloud_agentsctl_user() {
+cloud_agentsctl() {
   project_name=
   while [ "$#" -gt 0 ]; do
     if [ "$1" = --name ]; then
@@ -882,13 +883,19 @@ ${action}`,
     }
   });
 
-  it("keeps the local dev Go toolchain pinned without auto-download", () => {
+  it("keeps local development on production identity and the pinned Go toolchain", () => {
     const devLauncher = readFileSync("scripts/cloud-agents-dev.sh", "utf8");
     const mise = readFileSync(".mise.toml", "utf8");
     expect(devLauncher).toContain("export GOTOOLCHAIN=local");
     expect(devLauncher).toContain("go version go1.26.6 ");
     expect(devLauncher).not.toContain("GOTOOLCHAIN=go1.26.6");
     expect(mise).toContain('GOTOOLCHAIN = "local"');
+    expect(devLauncher).not.toContain("--local-token-file");
+    expect(devLauncher).not.toContain("--token-file");
+    expect(devLauncher).not.toContain("-tags=localdev");
+    expect(devLauncher).toContain("roles_identity_service.sql");
+    expect(devLauncher).toContain("cloud-agents-identity");
+    expect(devLauncher).toContain("--client-ca");
   });
 
   it("packages opt-in Compose RemoteWorker authority", () => {
@@ -947,11 +954,18 @@ ${action}`,
     expect(userDockerfile).toMatch(/^ARG BASE_IMAGE=\S+@sha256:[0-9a-f]{64}$/mu);
     expect(adminDockerfile).toContain("USER 1000:1000");
     expect(userDockerfile).toContain("USER 1000:1000");
-    expect(compose).toContain("CLOUD_AGENTS_ADMIN_WEB_UPSTREAM: https://control-plane:8080");
-    expect(compose).toContain("CLOUD_AGENTS_WEB_UPSTREAM: https://control-plane:8080");
-    expect(compose).toContain("CLOUD_AGENTS_CONTROL_PLANE_CA");
-    expect(server).toContain("/^\\/v1\\/admin(?:\\/|$)/u");
-    expect(server).toContain('scope === "user"');
+    expect(compose).toContain("CLOUD_AGENTS_WEB_CONTROL_PLANE_URL: https://control-plane:8080");
+    expect(compose).toContain("CLOUD_AGENTS_WEB_IDENTITY_URL: https://identity:8443");
+    expect(compose).toContain("CLOUD_AGENTS_WEB_TLS_CERT_FILE");
+    expect(compose).toContain("CLOUD_AGENTS_WEB_IDENTITY_CREDENTIAL_FILE");
+    expect(server).toContain('parts[1] === "admin"');
+    expect(server).toContain('scope !== "user"');
+    expect(server).toContain("IdentityServiceClient");
+    expect(server).toContain('minVersion: "TLSv1.2"');
+    expect(adminDockerfile).toContain("COPY web/platform.mjs");
+    expect(userDockerfile).toContain("COPY web/platform.mjs");
+    expect(adminDockerfile).toContain("COPY web/index.mjs");
+    expect(userDockerfile).toContain("COPY web/index.mjs");
     expect(compose).not.toContain("/var/run/docker.sock");
   });
 
@@ -995,7 +1009,7 @@ ${action}`,
       "utf8",
     );
     expect(bootstrap).toContain('"helm.sh/hook": pre-install');
-    expect(bootstrap).toContain('"helm.sh/hook-weight": "-4"');
+    expect(bootstrap).toContain('"helm.sh/hook-weight": "-3"');
     expect(bootstrap).toContain('.Files.Get "files/tenant-bootstrap.sql"');
     expect(bootstrap).toContain(".Values.database.tenantBootstrapURLKey");
     expect(bootstrap).toContain(".Values.tenantBootstrap.secretName");
@@ -1007,6 +1021,7 @@ ${action}`,
       "access-gateway": "USER 65532:65532",
       "admin-web": "USER 1000:1000",
       "control-plane": "USER 65532:65532",
+      identity: "USER 65532:65532",
       worker: "USER 1000:1000",
       migrate: "USER 999:999",
       "user-web": "USER 1000:1000",
@@ -1015,6 +1030,7 @@ ${action}`,
       "access-gateway",
       "admin-web",
       "control-plane",
+      "identity",
       "worker",
       "migrate",
       "user-web",
@@ -1038,7 +1054,7 @@ ${action}`,
     expect(migrationJob).toContain("drop: [ALL]");
     const compose = readFileSync("deploy/compose/docker-compose.yml", "utf8");
     const managedAgent = readFileSync("deploy/compose/docker-compose.managed-agent.yml", "utf8");
-    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(5);
+    expect(compose.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu)).toHaveLength(7);
     expect(
       managedAgent.match(/platform: \$\{CLOUD_AGENTS_PLATFORM:-linux\/amd64\}/gu),
     ).toHaveLength(1);
@@ -1061,9 +1077,22 @@ ${action}`,
         "LICENSE",
         "NOTICE",
         "SOURCE_PROVENANCE.md",
+        "deploy/web/platform.mjs",
+        "deploy/web/index.mjs",
+        "deploy/docker/identity.Dockerfile",
+        "deploy/compose/identity-run.json.example",
+        "deploy/compose/identity-initialize.json.example",
+        "deploy/compose/control-plane-identity.json.example",
+        "deploy/bootstrap/roles_identity_service.sql",
+        "test/e2e/identity-automation-fixture.mjs",
         "services/control-plane/THIRD_PARTY_NOTICES.md",
       ]),
     );
+    expect(
+      Buffer.from(deployment.find(({ path }) => path === "deploy/web/server.mjs")!.data).toString(
+        "utf8",
+      ),
+    ).toContain('from "./platform.mjs";');
     for (const path of [
       "NOTICE",
       "SOURCE_PROVENANCE.md",
@@ -1537,6 +1566,7 @@ ${action}`,
     const paths = entries.map(({ path }) => path);
     expect(paths).toContain("LICENSE");
     expect(paths).toContain("contracts/managed-agent/v1alpha1/openapi.json");
+    expect(paths).toContain("contracts/identity/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/managed-host/v1alpha1/openapi.json");
     expect(paths).toContain("contracts/worker/runtime/v1alpha1/runtime.proto");
     expect(paths).toContain("contracts/platform/v1alpha1/schemas/project.schema.json");

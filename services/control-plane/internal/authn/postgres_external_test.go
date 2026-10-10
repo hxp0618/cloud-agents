@@ -154,7 +154,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 	}
 
 	actor := "user-admin"
-	target := authz.SubjectRef{Kind: "user", Issuer: externalIdentityIssuer, Subject: "user-external-" + mode}
+	target := authz.SubjectRef{Kind: "serviceAccount", Issuer: externalIdentityIssuer, Subject: "service-external-" + mode}
 	scope := authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}
 	membershipUID := "membership-external-" + mode
 	bindingUID := "role-binding-external-" + mode
@@ -162,6 +162,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 
 	createPrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.create", actor)
 	created, err := service.CreateMembership(environment.ctx, tenantID, createPrincipal.Principal, postgres.CreateMembershipInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, MembershipUID: membershipUID, MembershipName: membershipUID,
 		Subject: target, Scope: scope, AuditFactUID: "audit-external-" + mode + "-membership-create", ReasonCode: "conformance",
 	})
@@ -173,6 +174,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 
 	bindPrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "role-bindings.bind", actor)
 	bound, err := service.BindRole(environment.ctx, tenantID, bindPrincipal.Principal, postgres.BindRoleInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, RoleBindingUID: bindingUID, RoleBindingName: bindingUID,
 		Subject: target, RoleName: "tenant.admin", RoleVersion: 1, Scope: scope,
 		AuditFactUID: "audit-external-" + mode + "-role-bind", ReasonCode: "conformance",
@@ -184,6 +186,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 
 	suspendPrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.update", actor)
 	suspended, err := service.SuspendMembership(environment.ctx, tenantID, suspendPrincipal.Principal, postgres.MembershipTransitionInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: created.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-membership-suspend", ReasonCode: "conformance",
 	})
@@ -191,13 +194,17 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 		t.Fatalf("public SuspendMembership result/error = %#v/%v", suspended, err)
 	}
 	revision = suspended.ResourceVersion
-	suspendedReader := newExternalPrincipal(t, tenantID, "tenant", tenantID, "tenants.get", target.Subject)
+	suspendedReader := authn.NewTestVerifiedPrincipal(t, authn.TestPrincipalFixture{
+		SubjectKind: target.Kind, SubjectIssuer: target.Issuer, SubjectValue: target.Subject,
+		TenantID: tenantID, ResourceLevel: "tenant", ResourceID: tenantID, Permission: "tenants.get",
+	})
 	if _, err := readService.GetPlatformTenant(environment.ctx, suspendedReader.Principal, tenantID); !errors.Is(err, postgres.ErrMutationDenied) {
 		t.Fatalf("suspended membership authorization error = %v", err)
 	}
 
 	resumePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.update", actor)
 	resumed, err := service.ResumeMembership(environment.ctx, tenantID, resumePrincipal.Principal, postgres.MembershipTransitionInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: suspended.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-membership-resume", ReasonCode: "conformance",
 	})
@@ -205,13 +212,17 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 		t.Fatalf("public ResumeMembership result/error = %#v/%v", resumed, err)
 	}
 	revision = resumed.ResourceVersion
-	resumedReader := newExternalPrincipal(t, tenantID, "tenant", tenantID, "tenants.get", target.Subject)
+	resumedReader := authn.NewTestVerifiedPrincipal(t, authn.TestPrincipalFixture{
+		SubjectKind: target.Kind, SubjectIssuer: target.Issuer, SubjectValue: target.Subject,
+		TenantID: tenantID, ResourceLevel: "tenant", ResourceID: tenantID, Permission: "tenants.get",
+	})
 	if tenant, err := readService.GetPlatformTenant(environment.ctx, resumedReader.Principal, tenantID); err != nil || tenant.TenantID != tenantID {
 		t.Fatalf("resumed membership tenant read = %#v/%v", tenant, err)
 	}
 
 	revokePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.delete", actor)
 	revoked, err := service.RevokeMembership(environment.ctx, tenantID, revokePrincipal.Principal, postgres.MembershipTransitionInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: resumed.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-membership-revoke", ReasonCode: "conformance",
 	})
@@ -221,6 +232,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 	revision = revoked.ResourceVersion
 	revokedResumePrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.update", actor)
 	if _, err := service.ResumeMembership(environment.ctx, tenantID, revokedResumePrincipal.Principal, postgres.MembershipTransitionInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, MembershipUID: membershipUID, ExpectedResourceVersion: revoked.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-membership-resume-revoked", ReasonCode: "conformance",
 	}); !errors.Is(err, postgres.ErrMutationConflict) {
@@ -232,6 +244,7 @@ func TestPostgresExternalVerifiedPrincipalRBACConformance(t *testing.T) {
 
 	revokeBindingPrincipal := newExternalPrincipal(t, tenantID, "tenant", tenantID, "role-bindings.delete", actor)
 	revokedBinding, err := service.RevokeRoleBinding(environment.ctx, tenantID, revokeBindingPrincipal.Principal, postgres.RevokeRoleBindingInput{
+		CorrelationID:          "request-rbac-audit",
 		ExpectedTenantRevision: revision, RoleBindingUID: bindingUID, ExpectedResourceVersion: bound.ResourceVersion,
 		AuditFactUID: "audit-external-" + mode + "-role-revoke", ReasonCode: "conformance",
 	})
@@ -296,8 +309,9 @@ func assertRBACRejectedPathsDoNotWrite(
 	input := func(suffix string) postgres.CreateMembershipInput {
 		uid := "membership-external-" + mode + "-" + suffix
 		return postgres.CreateMembershipInput{
+			CorrelationID:          "request-rbac-audit",
 			ExpectedTenantRevision: revision, MembershipUID: uid, MembershipName: uid,
-			Subject: authz.SubjectRef{Kind: "user", Issuer: externalIdentityIssuer, Subject: "target-" + suffix}, Scope: scope,
+			Subject: authz.SubjectRef{Kind: "serviceAccount", Issuer: externalIdentityIssuer, Subject: "target-" + suffix}, Scope: scope,
 			AuditFactUID: "audit-external-" + mode + "-" + suffix, ReasonCode: "conformance",
 		}
 	}
@@ -404,11 +418,11 @@ func waitForExternalRuntimeLock(
     SELECT 1
     FROM pg_catalog.pg_stat_activity AS activity
     WHERE activity.datname = pg_catalog.current_database()
-      AND activity.usename = 'cag_runtime'
+      AND activity.usename = $2
       AND activity.application_name = $1
       AND activity.state = 'active'
       AND activity.wait_event_type = 'Lock'
-)`, environment.applicationName).Scan(&waiting)
+)`, environment.applicationName, environment.runtimePool.Config().ConnConfig.User).Scan(&waiting)
 		if err != nil {
 			t.Fatalf("observe external runtime lock wait: %v", err)
 		}
@@ -449,11 +463,12 @@ func TestPostgresExternalVerifiedPrincipalLeaseThroughCommitAndCancelRollback(t 
 
 	lockTransaction, revision := lockExternalTenantRevision(t, environment, tenantID)
 	leaseUID := "membership-external-lease-" + mode
-	leaseSubject := authz.SubjectRef{Kind: "user", Issuer: externalIdentityIssuer, Subject: "user-external-lease-" + mode}
+	leaseSubject := authz.SubjectRef{Kind: "serviceAccount", Issuer: externalIdentityIssuer, Subject: "service-external-lease-" + mode}
 	handle := newExternalPrincipal(t, tenantID, "tenant", tenantID, "memberships.create", "user-admin")
 	mutationDone := make(chan externalMutationOutcome, 1)
 	go func() {
 		result, mutationErr := service.CreateMembership(environment.ctx, tenantID, handle.Principal, postgres.CreateMembershipInput{
+			CorrelationID:          "request-rbac-audit",
 			ExpectedTenantRevision: revision, MembershipUID: leaseUID, MembershipName: leaseUID,
 			Subject: leaseSubject, Scope: scope,
 			AuditFactUID: "audit-external-lease-" + mode, ReasonCode: "conformance",
@@ -504,8 +519,9 @@ func TestPostgresExternalVerifiedPrincipalLeaseThroughCommitAndCancelRollback(t 
 	cancelDone := make(chan externalMutationOutcome, 1)
 	go func() {
 		result, mutationErr := service.CreateMembership(cancelContext, tenantID, cancelHandle.Principal, postgres.CreateMembershipInput{
+			CorrelationID:          "request-rbac-audit",
 			ExpectedTenantRevision: cancelRevision, MembershipUID: cancelUID, MembershipName: cancelUID,
-			Subject: authz.SubjectRef{Kind: "user", Issuer: externalIdentityIssuer, Subject: "user-external-cancel-" + mode}, Scope: scope,
+			Subject: authz.SubjectRef{Kind: "serviceAccount", Issuer: externalIdentityIssuer, Subject: "service-external-cancel-" + mode}, Scope: scope,
 			AuditFactUID: "audit-external-cancel-" + mode, ReasonCode: "conformance",
 		})
 		cancelDone <- externalMutationOutcome{result: result, err: mutationErr}

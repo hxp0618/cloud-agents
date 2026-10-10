@@ -11,9 +11,9 @@ spec:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: admin-web
   ports:
-    - name: http
+    - name: https
       port: {{ .Values.adminWeb.service.port }}
-      targetPort: http
+      targetPort: https
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -39,28 +39,65 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: install-web-secrets
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.adminWebKey }} /target/identity.proof
+              install -m 0400 /source/web-tls/{{ .Values.adminWeb.tlsCertificateKey }} /target/tls.crt
+              install -m 0400 /source/web-tls/{{ .Values.adminWeb.tlsPrivateKeyKey }} /target/tls.key
+              install -m 0400 /source/identity-ca/{{ .Values.identity.tls.caKey }} /target/identity-ca.crt
+              install -m 0400 /source/control-plane-ca/{{ .Values.adminWeb.controlPlaneCAKey }} /target/control-plane-ca.crt
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: identity-credentials, mountPath: /source/credentials, readOnly: true }
+            - { name: web-tls, mountPath: /source/web-tls, readOnly: true }
+            - { name: identity-ca, mountPath: /source/identity-ca, readOnly: true }
+            - { name: control-plane-ca, mountPath: /source/control-plane-ca, readOnly: true }
+            - { name: web-secrets, mountPath: /target }
       containers:
         - name: admin-web
           image: {{ include "cloud-agents.image" .Values.images.adminWeb | quote }}
           imagePullPolicy: {{ .Values.images.adminWeb.pullPolicy }}
           env:
-            - name: CLOUD_AGENTS_ADMIN_WEB_UPSTREAM
-              value: https://{{ include "cloud-agents.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}
-            - name: NODE_EXTRA_CA_CERTS
-              value: /run/cloud-agents/control-plane-ca.crt
+            - { name: CLOUD_AGENTS_WEB_ORIGIN, value: {{ .Values.identity.adminAudience | quote }} }
+            - { name: CLOUD_AGENTS_WEB_PEER_ORIGIN, value: {{ .Values.identity.userAudience | quote }} }
+            - { name: CLOUD_AGENTS_WEB_TLS_CERT_FILE, value: /run/cloud-agents/web-secrets/tls.crt }
+            - { name: CLOUD_AGENTS_WEB_TLS_KEY_FILE, value: /run/cloud-agents/web-secrets/tls.key }
+            - { name: CLOUD_AGENTS_WEB_IDENTITY_URL, value: {{ printf "https://%s-identity:%v" (include "cloud-agents.fullname" .) .Values.identity.service.port | quote }} }
+            - { name: CLOUD_AGENTS_WEB_IDENTITY_CA_FILE, value: /run/cloud-agents/web-secrets/identity-ca.crt }
+            - { name: CLOUD_AGENTS_WEB_IDENTITY_CREDENTIAL_FILE, value: /run/cloud-agents/web-secrets/identity.proof }
+            - { name: CLOUD_AGENTS_WEB_CONTROL_PLANE_URL, value: {{ printf "https://%s-control-plane:%v" (include "cloud-agents.fullname" .) .Values.controlPlane.service.port | quote }} }
+            - { name: CLOUD_AGENTS_WEB_CONTROL_PLANE_CA_FILE, value: /run/cloud-agents/web-secrets/control-plane-ca.crt }
+            {{- if .Values.adminWeb.trustedProxyIP }}
+            - { name: CLOUD_AGENTS_WEB_TRUSTED_PROXY_IP, value: {{ .Values.adminWeb.trustedProxyIP | quote }} }
+            {{- end }}
           ports:
-            - name: http
-              containerPort: 4174
+            - { name: https, containerPort: 4174 }
           readinessProbe:
             httpGet:
+              scheme: HTTPS
               path: /healthz
-              port: http
+              port: https
+              httpHeaders:
+                - { name: Host, value: {{ (urlParse .Values.identity.adminAudience).host | quote }} }
           livenessProbe:
             httpGet:
+              scheme: HTTPS
               path: /healthz
-              port: http
+              port: https
+              httpHeaders:
+                - { name: Host, value: {{ (urlParse .Values.identity.adminAudience).host | quote }} }
           resources:
             {{- toYaml .Values.adminWeb.resources | nindent 12 }}
           securityContext:
@@ -69,14 +106,32 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            - name: control-plane-ca
-              mountPath: /run/cloud-agents/control-plane-ca.crt
-              subPath: control-plane-ca.crt
-              readOnly: true
+            - { name: web-secrets, mountPath: /run/cloud-agents/web-secrets, readOnly: true }
       volumes:
+        - name: identity-credentials
+          secret:
+            secretName: {{ .Values.identity.credentials.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.credentials.adminWebKey }}, path: {{ .Values.identity.credentials.adminWebKey }} }
+        - name: web-tls
+          secret:
+            secretName: {{ .Values.adminWeb.tlsSecretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.adminWeb.tlsCertificateKey }}, path: {{ .Values.adminWeb.tlsCertificateKey }} }
+              - { key: {{ .Values.adminWeb.tlsPrivateKeyKey }}, path: {{ .Values.adminWeb.tlsPrivateKeyKey }} }
+        - name: identity-ca
+          secret:
+            secretName: {{ .Values.identity.tls.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.tls.caKey }}, path: {{ .Values.identity.tls.caKey }} }
         - name: control-plane-ca
           secret:
             secretName: {{ .Values.adminWeb.controlPlaneCASecretName }}
+            defaultMode: 0440
             items:
-              - key: {{ .Values.adminWeb.controlPlaneCAKey }}
-                path: control-plane-ca.crt
+              - { key: {{ .Values.adminWeb.controlPlaneCAKey }}, path: {{ .Values.adminWeb.controlPlaneCAKey }} }
+        - name: web-secrets
+          emptyDir: { medium: Memory }

@@ -1,0 +1,18 @@
+{
+  "application": "admin",
+  "user": {
+    "id": "user-alpha",
+    "email": "admin@example.com",
+    "displayName": "Admin Alpha",
+    "displayRoles": ["platform.admin"]
+  },
+  "tenants": [
+    {
+      "id": "tenant-alpha",
+      "name": "Tenant Alpha",
+      "displayRoles": []
+    }
+  ],
+  "nextPageToken": "tenant-page-token-2",
+  "csrfToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

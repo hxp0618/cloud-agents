@@ -3,17 +3,37 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { ClientError, createHTTPClient } from "../../sdk/typescript/src/platform";
 
+import { readPrivateAutomationToken } from "./private-automation-token";
+
 // Acceptance probe for an owned disposable dev project, using real HTTP and PostgreSQL authority.
-// Registers one unprobed Target; the ordinary-user Probe must never reach the actuator.
-const [endpoint, userTokenFile, adminTokenFile, tenant, project] = process.argv.slice(2);
+// Registers one unprobed Target; the Admin viewer Probe must never reach the actuator.
+// Each Admin token is scoped to its named project so cross-project cursor replay reaches cursor validation.
+const [
+  endpoint,
+  deniedAdminTokenFile,
+  adminTokenFile,
+  otherProjectAdminTokenFile,
+  tenant,
+  project,
+  otherProject,
+] = process.argv.slice(2);
 assert.ok(
-  endpoint && userTokenFile && adminTokenFile && tenant && project,
-  "usage: bun test/e2e/test-admin-denied-write-audit.ts LOCAL_ENDPOINT USER_TOKEN_FILE ADMIN_TOKEN_FILE TENANT EMPTY_PROJECT",
+  endpoint &&
+    deniedAdminTokenFile &&
+    adminTokenFile &&
+    otherProjectAdminTokenFile &&
+    tenant &&
+    project &&
+    otherProject,
+  "usage: bun test/e2e/test-admin-denied-write-audit.ts HTTPS_ENDPOINT ADMIN_VIEWER_AUTOMATION_TOKEN_FILE ADMIN_AUTOMATION_TOKEN_FILE OTHER_PROJECT_ADMIN_TOKEN_FILE TENANT EMPTY_PROJECT OTHER_PROJECT",
 );
+assert.notEqual(project, otherProject, "Cursor replay requires two distinct projects");
 const url = new URL(endpoint);
 assert.ok(
-  url.protocol === "http:" &&
-    url.hostname === "127.0.0.1" &&
+  url.protocol === "https:" &&
+    (url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname.endsWith(".localhost")) &&
     url.pathname === "/" &&
     !url.search &&
     !url.hash &&
@@ -21,10 +41,16 @@ assert.ok(
     !url.password,
   "Requires an owned loopback dev stack",
 );
-const user = createHTTPClient(endpoint, readFileSync(userTokenFile, "utf8").trim());
-const admin = createHTTPClient(endpoint, readFileSync(adminTokenFile, "utf8").trim());
+const deniedAdminToken = readPrivateAutomationToken(deniedAdminTokenFile);
+const deniedAdmin = createHTTPClient(endpoint, deniedAdminToken);
+const admin = createHTTPClient(endpoint, readPrivateAutomationToken(adminTokenFile));
+const otherAdmin = createHTTPClient(
+  endpoint,
+  readPrivateAutomationToken(otherProjectAdminTokenFile),
+);
 const signal = () => AbortSignal.timeout(10_000);
-await user.getProject(tenant, project, randomUUID(), signal());
+await deniedAdmin.getAdminProject(tenant, project, randomUUID(), signal());
+await otherAdmin.getAdminProject(tenant, otherProject, randomUUID(), signal());
 const initial = (
   await admin.listAdminDeploymentTargets(tenant, project, randomUUID(), 1, undefined, signal())
 ).value;
@@ -64,7 +90,7 @@ assert.equal(before.events[0].action, "target.register");
 assert.equal(before.events[0].result, "succeeded");
 const deniedRequestId = randomUUID();
 await assert.rejects(
-  user.probeAdminDeploymentTarget(
+  deniedAdmin.probeAdminDeploymentTarget(
     tenant,
     project,
     targetId,
@@ -111,9 +137,21 @@ assert.equal(matching[0].resourceId, targetId);
 assert.equal(matching[0].result, "denied");
 assert.match(matching[0].actor, /^sha256:[0-9a-f]{64}$/);
 assert.ok(!("operationId" in matching[0]) && !("resourceGeneration" in matching[0]));
-await assert.rejects(
-  user.listAdminDeniedWriteEvents(tenant, project, randomUUID(), 1, undefined, signal()),
-  (error: unknown) => error instanceof ClientError && error.status === 403,
+const viewerDenied = (
+  await deniedAdmin.listAdminDeniedWriteEvents(
+    tenant,
+    project,
+    randomUUID(),
+    200,
+    undefined,
+    signal(),
+  )
+).value;
+assert.equal(viewerDenied.nextPageToken, undefined);
+assert.deepEqual(
+  viewerDenied.events.filter((event) => event.requestId === deniedRequestId),
+  matching,
+  "Admin viewer must read the project-scoped denial Audit event",
 );
 
 const contract = JSON.parse(
@@ -122,45 +160,49 @@ const contract = JSON.parse(
     "utf8",
   ),
 );
+const adminWriteOperations = Object.entries(
+  contract.paths as Record<string, Record<string, { operationId?: string }>>,
+).flatMap(([path, item]) => {
+  if (!path.startsWith("/v1/admin/")) return [];
+  return Object.entries(item).flatMap(([method, operation]) => {
+    if (method !== "post" && method !== "put") return [];
+    assert.ok(operation.operationId);
+    return [{ method, operationId: operation.operationId, path }];
+  });
+});
+assert.ok(adminWriteOperations.length > 0, "No Admin write contracts found");
 const expected = new Map<string, string>();
 for (let repeat = 0; repeat < 2; repeat++) {
-  for (const [path, item] of Object.entries(
-    contract.paths as Record<string, Record<string, { operationId?: string }>>,
-  )) {
-    if (!path.startsWith("/v1/admin/")) continue;
-    for (const [method, operation] of Object.entries(item)) {
-      if (method !== "post" && method !== "put") continue;
-      assert.ok(operation.operationId);
-      const requestId = randomUUID();
-      expected.set(requestId, operation.operationId);
-      const parameters: Record<string, string> = {
-        tenantId: tenant,
-        projectId: project,
-        profileVersion: "2",
-      };
-      const route = path.replace(
-        /\{([^}]+)\}/g,
-        (_, key: string) => parameters[key] ?? "audit-nonexistent",
-      );
-      const response = await fetch(new URL(route, endpoint), {
-        method: method.toUpperCase(),
-        redirect: "error",
-        signal: signal(),
-        headers: {
-          Authorization: `Bearer ${readFileSync(userTokenFile, "utf8").trim()}`,
-          "X-Request-ID": requestId,
-          "Idempotency-Key": randomUUID(),
-          "Content-Type": "application/json",
-        },
-        // Invalid JSON proves denial routing never needs request-body decoding or business execution.
-        body: '{"credentialRef":"do-not-store-audit-secret-canary"',
-      });
-      assert.equal(response.status, 403, operation.operationId);
-      assert.equal((await response.json()).error.code, "AUTHORIZATION_DENIED");
-    }
+  for (const { method, operationId, path } of adminWriteOperations) {
+    const requestId = randomUUID();
+    expected.set(requestId, operationId);
+    const parameters: Record<string, string> = {
+      tenantId: tenant,
+      projectId: project,
+      profileVersion: "2",
+    };
+    const route = path.replace(
+      /\{([^}]+)\}/g,
+      (_, key: string) => parameters[key] ?? "audit-nonexistent",
+    );
+    const response = await fetch(new URL(route, endpoint), {
+      method: method.toUpperCase(),
+      redirect: "error",
+      signal: signal(),
+      headers: {
+        Authorization: `Bearer ${deniedAdminToken}`,
+        "X-Request-ID": requestId,
+        "Idempotency-Key": randomUUID(),
+        "Content-Type": "application/json",
+      },
+      // Invalid JSON proves denial routing never needs request-body decoding or business execution.
+      body: '{"credentialRef":"do-not-store-audit-secret-canary"',
+    });
+    assert.equal(response.status, 403, operationId);
+    assert.equal((await response.json()).error.code, "AUTHORIZATION_DENIED");
   }
 }
-assert.equal(expected.size, 26, "Review coverage when Admin write contracts change");
+assert.equal(expected.size, adminWriteOperations.length * 2);
 const collected = [];
 let next: string | undefined;
 let pages = 0;
@@ -188,9 +230,9 @@ const replayToken = (
 ).value.nextPageToken;
 assert.ok(replayToken);
 await assert.rejects(
-  admin.listAdminDeniedWriteEvents(
+  otherAdmin.listAdminDeniedWriteEvents(
     tenant,
-    "audit-other-project",
+    otherProject,
     randomUUID(),
     1,
     replayToken,
@@ -212,7 +254,7 @@ const malformedCorrelation = await fetch(
     redirect: "error",
     signal: signal(),
     headers: {
-      Authorization: `Bearer ${readFileSync(userTokenFile, "utf8").trim()}`,
+      Authorization: `Bearer ${deniedAdminToken}`,
       "X-Request-ID": "invalid/correlation",
       "Idempotency-Key": randomUUID(),
       "Content-Type": "application/json",
@@ -233,10 +275,10 @@ assert.equal(correlationEvents[0].resourceId, targetId);
 process.stdout.write(
   JSON.stringify({
     result: "passed",
-    writeRoutes: expected.size / 2,
+    writeRoutes: adminWriteOperations.length,
     persistedEvents: collected.length,
     pages,
-    deniedQueryStatus: 403,
+    deniedQueryStatus: 200,
     scopedCursorReplayStatus: 400,
     targetUnchanged: true,
     secretCanaryAbsent: true,

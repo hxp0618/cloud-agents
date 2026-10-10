@@ -275,13 +275,77 @@ func TestRBACMutationVerifiedOperationCallGraphIsClosed(t *testing.T) {
 	storedOperation := requireOneCall(t, storedExecuteCallback.Body, "operation")
 	requirePositionOrder(t, "stored-scope authorization transaction", storedTransaction, readScope, storedBind, storedExecute, storedOperation)
 
-	requireCallerClosure(t, tree, "createMembershipInTransaction", "*RBACMutationService.CreateMembership")
+	requireCallerClosure(t, tree, "createMembershipInTransaction", "*RBACMutationService.CreateMembership", "*ServiceAccountStore.createInTransaction")
 	requireCallerClosure(t, tree, "transitionMembershipInTransaction", "*RBACMutationService.transitionMembership")
-	requireCallerClosure(t, tree, "bindRoleInTransaction", "*RBACMutationService.BindRole")
+	requireCallerClosure(t, tree, "bindRoleInTransaction", "*RBACMutationService.BindRole", "*ServiceAccountStore.createInTransaction")
 	requireCallerClosure(t, tree, "revokeRoleBindingInTransaction", "*RBACMutationService.RevokeRoleBinding")
 	requireCallerClosure(t, tree, "withKnownScopeMutation", "*RBACMutationService.BindRole", "*RBACMutationService.CreateMembership")
 	requireCallerClosure(t, tree, "withStoredScopeMutation", "*RBACMutationService.RevokeRoleBinding", "*RBACMutationService.transitionMembership")
 	requireCallerClosure(t, tree, "transitionMembership", "*RBACMutationService.ResumeMembership", "*RBACMutationService.RevokeMembership", "*RBACMutationService.SuspendMembership")
+}
+
+func TestServiceAccountVerifiedOperationPathsAreClosed(t *testing.T) {
+	tree := parseAllProductionAST(t)
+	create := tree.functions["*ServiceAccountStore.Create"]
+	createOperations := callsNamed(create.Body, "WithVerifiedOperation")
+	if len(createOperations) != 2 {
+		t.Fatalf("ServiceAccountStore.Create verified operation count = %d, want 2", len(createOperations))
+	}
+	outerCallback := requireCallbackArgument(t, createOperations[0], 1)
+	innerOperation := requireOneCall(t, outerCallback.Body, "WithVerifiedOperation")
+	innerCallback := requireCallbackArgument(t, innerOperation, 1)
+	createTransaction := requireOneCall(t, innerCallback.Body, "withTenantMutation")
+	createTransactionCallback := requireCallbackArgument(t, createTransaction, 2)
+	createExecute := requireOneCall(t, createTransactionCallback.Body, "executeServiceAccountCreate")
+	createExecuteCallback := requireCallbackArgument(t, createExecute, len(createExecute.Args)-1)
+	createKernel := requireOneCall(t, createExecuteCallback.Body, "createInTransaction")
+	requirePositionOrder(t, "service account create", createOperations[0], innerOperation, createTransaction, createExecute, createKernel)
+	if len(callsNamed(create.Body, "executeVerifiedRBACOperation")) != 0 {
+		t.Fatal("ServiceAccountStore.Create bypasses its dual-operation executor")
+	}
+
+	for _, name := range []string{"Rotate", "Disable"} {
+		method := tree.functions["*ServiceAccountStore."+name]
+		outer := requireOneCall(t, method.Body, "WithVerifiedOperation")
+		callback := requireCallbackArgument(t, outer, 1)
+		transaction := requireOneCall(t, callback.Body, "withTenantMutation")
+		transactionCallback := requireCallbackArgument(t, transaction, 2)
+		readScope := requireOneCall(t, transactionCallback.Body, "readServiceAccountManagement")
+		bind := requireOneCall(t, transactionCallback.Body, "Bind")
+		actor := requireOneCall(t, transactionCallback.Body, "Actor")
+		execute := requireOneCall(t, transactionCallback.Body, "executeVerifiedRBACOperation")
+		requirePositionOrder(t, "service account "+name, outer, transaction, readScope, bind, actor, execute)
+	}
+
+	list := tree.functions["*ServiceAccountStore.List"]
+	listOuter := requireOneCall(t, list.Body, "WithVerifiedOperation")
+	listCallback := requireCallbackArgument(t, listOuter, 1)
+	listBind := requireOneCall(t, listCallback.Body, "Bind")
+	listTransaction := requireOneCall(t, listCallback.Body, "withTenantReadBinder")
+	listTransactionCallback := requireCallbackArgument(t, listTransaction, 2)
+	listExecute := requireOneCall(t, listTransactionCallback.Body, "executeVerifiedRBACOperation")
+	requirePositionOrder(t, "service account list", listOuter, listBind, listTransaction, listExecute)
+
+	denial := tree.functions["*ServiceAccountStore.RecordPermissionDenial"]
+	consume := requireOneCall(t, denial.Body, "ConsumeVerifiedPrincipal")
+	consumeCallback := requireCallbackArgument(t, consume, 1)
+	record := requireOneCall(t, consumeCallback.Body, "recordManagementDenial")
+	requirePositionOrder(t, "service account permission denial", consume, record)
+	if len(callsNamed(denial.Body, "WithVerifiedOperation")) != 0 ||
+		len(callsNamed(denial.Body, "executeVerifiedRBACOperation")) != 0 ||
+		len(callsNamed(denial.Body, "createMembershipInTransaction")) != 0 ||
+		len(callsNamed(denial.Body, "bindRoleInTransaction")) != 0 {
+		t.Fatal("ServiceAccountStore.RecordPermissionDenial escapes its evidence-only path")
+	}
+
+	requireCallerClosure(t, tree, "executeServiceAccountCreate", "*ServiceAccountStore.Create")
+	requireCallerClosure(t, tree, "createInTransaction", "*ServiceAccountStore.Create")
+	requireCallerClosure(t, tree, "recordManagementDenial",
+		"*ServiceAccountStore.Create",
+		"*ServiceAccountStore.Disable",
+		"*ServiceAccountStore.RecordPermissionDenial",
+		"*ServiceAccountStore.Rotate",
+	)
 }
 
 func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing.T) {
@@ -414,6 +478,7 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.ListSkillBundles",
 		"*DurableCoordinationService.ListManagedAgentSessions",
 		"*DurableCoordinationService.ListProjects",
+		"*DurableCoordinationService.ListMyProjects",
 		"*DurableCoordinationService.GetRole",
 		"*DurableCoordinationService.ListRoles",
 		"*DurableCoordinationService.RegisterDeploymentTarget",
@@ -435,6 +500,10 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*RBACMutationService.CreateMembership",
 		"*RBACMutationService.RevokeRoleBinding",
 		"*RBACMutationService.transitionMembership",
+		"*ServiceAccountStore.Create",
+		"*ServiceAccountStore.Disable",
+		"*ServiceAccountStore.List",
+		"*ServiceAccountStore.Rotate",
 		"withManagedAgentProjectMutation",
 	)
 	requireCallerClosure(t, tree, "executeVerifiedRBACOperation",
@@ -518,6 +587,9 @@ func TestJWTUserDurableCoordinationVerifiedOperationCallGraphIsClosed(t *testing
 		"*DurableCoordinationService.withFoundationOperation",
 		"*RBACMutationService.withKnownScopeMutation",
 		"*RBACMutationService.withStoredScopeMutation",
+		"*ServiceAccountStore.Disable",
+		"*ServiceAccountStore.List",
+		"*ServiceAccountStore.Rotate",
 		"withManagedAgentProjectMutation",
 	)
 	for _, forbidden := range []string{"authorizeMutation", "bindAuthorizedProfile"} {
@@ -601,9 +673,9 @@ func TestProtectedTransactionKernelProductionCallerSetIsExact(t *testing.T) {
 		"completeIdempotencySuccessTransaction": {"*DurableCoordinationService.CompleteIdempotencySuccess"},
 		"completeIdempotencyFailureTransaction": {"*DurableCoordinationService.CompleteIdempotencyFailure"},
 		"createDurableProjectTransaction":       {"*DurableCoordinationService.CreateProjectDurable"},
-		"createMembershipInTransaction":         {"*RBACMutationService.CreateMembership"},
+		"createMembershipInTransaction":         {"*RBACMutationService.CreateMembership", "*ServiceAccountStore.createInTransaction"},
 		"transitionMembershipInTransaction":     {"*RBACMutationService.transitionMembership"},
-		"bindRoleInTransaction":                 {"*RBACMutationService.BindRole"},
+		"bindRoleInTransaction":                 {"*RBACMutationService.BindRole", "*ServiceAccountStore.createInTransaction"},
 		"revokeRoleBindingInTransaction":        {"*RBACMutationService.RevokeRoleBinding"},
 	}
 	for kernel, callers := range want {

@@ -5,6 +5,7 @@ export type JsonRecord = Record<string, unknown>;
 export type SemanticErrorCode =
   | "BUILTIN_ROLE_CATALOG_ORDER_MISMATCH"
   | "BUILTIN_ROLE_PERMISSION_SET_MISMATCH"
+  | "BUILTIN_ROLE_VERSION_MISMATCH"
   | "CANONICAL_IDEMPOTENCY_REQUEST_DIGEST_MISMATCH"
   | "CANONICAL_IDEMPOTENCY_REQUEST_MISMATCH"
   | "CANONICAL_NAMESPACE_REF_DIGEST_MISMATCH"
@@ -312,6 +313,53 @@ const BUILTIN_ROLE_CATALOG_V1 = new Map<
     },
   ],
 ]);
+const PLATFORM_ADMIN_V2_PERMISSIONS = [
+  "memberships.bind",
+  "memberships.create",
+  "memberships.delete",
+  "memberships.get",
+  "memberships.list",
+  "memberships.update",
+  "memberships.watch",
+  "operations.get",
+  "operations.list",
+  "operations.watch",
+  "organizations.create",
+  "organizations.delete",
+  "organizations.get",
+  "organizations.list",
+  "organizations.update",
+  "organizations.watch",
+  "projects.act",
+  "projects.create",
+  "projects.delete",
+  "projects.get",
+  "projects.list",
+  "projects.update",
+  "projects.watch",
+  "role-bindings.bind",
+  "role-bindings.create",
+  "role-bindings.delete",
+  "role-bindings.get",
+  "role-bindings.list",
+  "role-bindings.watch",
+  "roles.get",
+  "roles.list",
+  "roles.watch",
+  "tenants.get",
+  "tenants.update",
+] as const;
+const BUILTIN_ROLE_CATALOG_V2 = new Map(
+  [...BUILTIN_ROLE_CATALOG_V1].map(
+    ([name, role]) =>
+      [
+        name,
+        name === "platform.admin"
+          ? { scope: role.scope, permissions: PLATFORM_ADMIN_V2_PERMISSIONS }
+          : role,
+      ] as const,
+  ),
+);
 
 /**
  * RFC 8785/JCS canonicalization deliberately scoped to NamespaceRef.
@@ -634,7 +682,9 @@ export function validatePlatformSemantics(
 
 function validateBuiltinRoleCatalog(instance: JsonRecord, errors: SemanticError[]): void {
   if (!Array.isArray(instance.roles)) return;
-  const expectedNames = [...BUILTIN_ROLE_CATALOG_V1.keys()];
+  const revision = instance.catalogRevision;
+  const expectedCatalog = revision === "2" ? BUILTIN_ROLE_CATALOG_V2 : BUILTIN_ROLE_CATALOG_V1;
+  const expectedNames = [...expectedCatalog.keys()];
   const actualNames = instance.roles.map((role) =>
     isRecord(role) && typeof role.name === "string" ? role.name : "",
   );
@@ -646,8 +696,12 @@ function validateBuiltinRoleCatalog(instance: JsonRecord, errors: SemanticError[
   }
   instance.roles.forEach((value, index) => {
     if (!isRecord(value) || typeof value.name !== "string") return;
-    const expected = BUILTIN_ROLE_CATALOG_V1.get(value.name);
+    const expected = expectedCatalog.get(value.name);
     if (!expected) return;
+    const expectedVersion = revision === "2" && value.name === "platform.admin" ? 2 : 1;
+    if (value.version !== expectedVersion) {
+      errors.push({ code: "BUILTIN_ROLE_VERSION_MISMATCH", path: `/roles/${index}/version` });
+    }
     if (value.scopeLevel !== expected.scope) {
       errors.push({ code: "ROLE_SCOPE_MISMATCH", path: `/roles/${index}/scopeLevel` });
     }

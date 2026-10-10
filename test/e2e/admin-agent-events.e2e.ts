@@ -1,5 +1,6 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
+import { adminScopePage, mockAdminSession } from "./admin-session-fixture";
 
 const tenantId = "tenant-test";
 const projectId = "project-test";
@@ -50,6 +51,7 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   browser,
   screen,
 }) => {
+  await mockAdminSession(browser);
   const eventRequests: string[] = [];
   const sessionRequests: string[] = [];
   const executionRequests: string[] = [];
@@ -81,6 +83,8 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   await browser.route("**/v1/admin/**", async (route) => {
     const url = new URL(route.request.url);
     const path = url.pathname;
+    const scope = adminScopePage(path);
+    if (scope !== undefined) return route.fulfill({ json: scope });
     const eventMatch = path.match(/\/sessions\/(session-[a-z]+)\/events$/u);
     if (eventMatch) {
       eventRequests.push(`${path}${url.search}`);
@@ -169,10 +173,9 @@ test("Admin pages Session, Execution and event windows and awaits refreshed meta
   });
 
   await app.open();
-  await screen.getByLabel("Tenant ID").fill(tenantId);
-  await screen.getByLabel("Project ID").fill(projectId);
-  await screen.getByLabel(/^Admin bearer token/).fill("test-only");
-  await screen.getByRole("button", "Connect to Admin API").click();
+  await screen.getByLabel("Email").fill("admin@example.test");
+  await screen.getByLabel("Password", { exact: true }).fill("fixture password value");
+  await screen.getByRole("button", "Sign in").click();
   await expect(screen.getByRole("heading", "Operations overview")).toBeVisible();
   await screen.getByRole("button", "MCP & Skills").click();
   await expect(screen.getByRole("heading", "MCP & Skill capabilities")).toBeVisible();

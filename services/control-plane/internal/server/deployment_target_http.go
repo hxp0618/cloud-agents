@@ -128,11 +128,11 @@ func (server *DeploymentTargetHTTPServer) ServeHTTP(writer http.ResponseWriter, 
 	if request.Method != http.MethodGet {
 		projectPermission = "projects.act"
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, permission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -196,7 +196,7 @@ func (server *DeploymentTargetHTTPServer) listOperations(writer http.ResponseWri
 			return
 		}
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -257,7 +257,7 @@ func (server *DeploymentTargetHTTPServer) listAuditEvents(writer http.ResponseWr
 			return
 		}
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -307,7 +307,7 @@ func (server *DeploymentTargetHTTPServer) list(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, validated.TenantID, validated.ProjectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -336,11 +336,11 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	if _, err = server.verify(bearer, tenantID, projectID, "projects.act"); err != nil {
+	if _, err = server.verify(request.Context(), bearer, tenantID, projectID, "projects.act"); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -363,7 +363,7 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 	}
 	orphans := make([]managedDeploymentTargetWorker, 0, len(workers))
 	for _, worker := range workers {
-		principal, err = server.verify(bearer, tenantID, projectID, "projects.get")
+		principal, err = server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 		if err != nil {
 			writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 			return
@@ -379,7 +379,7 @@ func (server *DeploymentTargetHTTPServer) cleanup(writer http.ResponseWriter, re
 		}
 		orphans = append(orphans, worker)
 	}
-	if _, err = server.verify(bearer, tenantID, projectID, "projects.act"); err != nil {
+	if _, err = server.verify(request.Context(), bearer, tenantID, projectID, "projects.act"); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
@@ -413,12 +413,12 @@ func (server *DeploymentTargetHTTPServer) cleanupAdmin(writer http.ResponseWrite
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	readPrincipal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	readPrincipal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -441,7 +441,7 @@ func (server *DeploymentTargetHTTPServer) cleanupAdmin(writer http.ResponseWrite
 	complete := func(succeeded bool, stableErrorCode, impactSummary string) (internaldeploymenttarget.Operation, error) {
 		completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 		defer cancel()
-		completionPrincipal, verifyErr := server.verify(bearer, tenantID, projectID, "projects.act")
+		completionPrincipal, verifyErr := server.verify(completionContext, bearer, tenantID, projectID, "projects.act")
 		if verifyErr != nil {
 			return internaldeploymenttarget.Operation{}, verifyErr
 		}
@@ -525,7 +525,11 @@ func (server *DeploymentTargetHTTPServer) listManagedDeploymentTargetWorkers(ctx
 		if server.kubernetesProber == nil {
 			return nil, errDeploymentTargetCleanupUnavailable
 		}
-		listed, err := server.kubernetesProber.ListManagedWorkers(ctx, target.Endpoint, target.CredentialRef, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID, target.Generation)
+		kubernetes, err := server.kubernetesProber.ForTarget(ctx, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		listed, err := kubernetes.ListManagedWorkers(ctx, target.Endpoint, target.CredentialRef, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID, target.Generation)
 		if err != nil {
 			return nil, err
 		}
@@ -539,7 +543,7 @@ func (server *DeploymentTargetHTTPServer) listManagedDeploymentTargetWorkers(ctx
 				targetGeneration: request.TargetGeneration, leaseGeneration: request.LeaseGeneration,
 				resources: []platformv1alpha1.DeploymentTargetCleanupResource{{ResourceKind: "deployment", ResourceName: resourceName}, {ResourceKind: "pods", ResourceName: namespace + "/cloud-agents.dev/worker=" + name}, {ResourceKind: "service", ResourceName: resourceName}, {ResourceKind: "workspace-volume", ResourceName: resourceName}},
 				cleanup: func(ctx context.Context) error {
-					return server.kubernetesProber.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
+					return kubernetes.CleanupManagedWorker(ctx, target.Endpoint, target.CredentialRef, worker)
 				},
 			})
 		}
@@ -580,7 +584,7 @@ func (server *DeploymentTargetHTTPServer) inspectDeploymentTargetCleanup(ctx con
 	}
 	plan := deploymentTargetCleanupPlan{workers: workers, previewWorkers: make([]platformv1alpha1.DeploymentTargetCleanupWorker, 0, len(workers)), canCleanup: true}
 	for _, worker := range workers {
-		principal, verifyErr := server.verify(bearer, target.Scope.TenantID, target.Scope.ProjectID, "projects.get")
+		principal, verifyErr := server.verify(ctx, bearer, target.Scope.TenantID, target.Scope.ProjectID, "projects.get")
 		if verifyErr != nil {
 			return deploymentTargetCleanupPlan{}, verifyErr
 		}
@@ -616,7 +620,7 @@ func (server *DeploymentTargetHTTPServer) cleanupPreview(writer http.ResponseWri
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, validated.TenantID, validated.ProjectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -657,7 +661,7 @@ func (server *DeploymentTargetHTTPServer) schedulingPreview(writer http.Response
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, validated.TenantID, validated.ProjectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, validated.TenantID, validated.ProjectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -710,7 +714,7 @@ func (server *DeploymentTargetHTTPServer) transitionScheduling(writer http.Respo
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -825,16 +829,30 @@ func (server *DeploymentTargetHTTPServer) register(writer http.ResponseWriter, r
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	result, err := server.store.RegisterDeploymentTarget(request.Context(), tenantID, principal, internaldeploymenttarget.RegisterInput{
+	input := internaldeploymenttarget.RegisterInput{
 		Scope: internaldeploymenttarget.Scope{TenantID: tenantID, ProjectID: projectID}, TargetID: validated.Body.TargetID,
 		TargetName: validated.Body.TargetName, Kind: validated.Body.TargetKind, Endpoint: validated.Body.Endpoint,
 		CredentialRef: validated.Body.CredentialRef, Mutation: internaldeploymenttarget.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey},
-	})
+	}
+	if credential := validated.Body.KubernetesCredential; credential != nil {
+		stored, credentialErr := kubernetestarget.NewStoredCredential(credential.CertificateAuthorityData, credential.Token, credential.ClientCertificateData, credential.ClientKeyData)
+		if credentialErr != nil {
+			writePublicProblem(writer, http.StatusBadRequest, "invalid_kubernetes_credential")
+			return
+		}
+		sealed, sealErr := server.kubernetesProber.Seal(tenantID, projectID, validated.Body.TargetID, stored)
+		if sealErr != nil {
+			writePublicProblem(writer, http.StatusServiceUnavailable, "target_credential_unavailable")
+			return
+		}
+		input.SealedCredential = &sealed
+	}
+	result, err := server.store.RegisterDeploymentTarget(request.Context(), tenantID, principal, input)
 	if err != nil {
 		writeDeploymentTargetError(writer, err)
 		return
@@ -847,7 +865,7 @@ func (server *DeploymentTargetHTTPServer) get(writer http.ResponseWriter, reques
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -877,7 +895,7 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 		return
 	}
 	input := internaldeploymenttarget.ProbeInput{Scope: internaldeploymenttarget.Scope{TenantID: tenantID, ProjectID: projectID}, TargetID: targetID, ExpectedGeneration: validated.Body.ExpectedGeneration, Mutation: internaldeploymenttarget.Mutation{RequestID: requestID, IdempotencyKey: idempotencyKey}}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -905,7 +923,7 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 	case "kubernetes":
 		if server.kubernetesProber == nil {
 			completion.StableErrorCode = "kubernetes-probe-unconfigured"
-		} else if result, probeErr := server.kubernetesProber.Probe(request.Context(), started.Target.Endpoint, started.Target.CredentialRef); probeErr != nil {
+		} else if result, probeErr := probeKubernetesTarget(request.Context(), server.kubernetesProber, started.Target); probeErr != nil {
 			completion.StableErrorCode = kubernetesTargetProbeErrorCode(probeErr)
 		} else {
 			completion.Succeeded, completion.APIVersion, completion.EngineVersion = true, result.APIVersion, result.EngineVersion
@@ -923,7 +941,7 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 	}
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
-	principal, err = server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err = server.verify(completionContext, bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -936,8 +954,8 @@ func (server *DeploymentTargetHTTPServer) probe(writer http.ResponseWriter, requ
 	writeDeploymentTarget(writer, http.StatusOK, requestID, result)
 }
 
-func (server *DeploymentTargetHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *DeploymentTargetHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func dockerTargetProbeErrorCode(err error) string {
@@ -953,6 +971,14 @@ func dockerTargetProbeErrorCode(err error) string {
 	default:
 		return "docker-target-unavailable"
 	}
+}
+
+func probeKubernetesTarget(ctx context.Context, prober *kubernetestarget.CredentialDirectory, target internaldeploymenttarget.Snapshot) (kubernetestarget.ProbeResult, error) {
+	bound, err := prober.ForTarget(ctx, target.Scope.TenantID, target.Scope.ProjectID, target.TargetID)
+	if err != nil {
+		return kubernetestarget.ProbeResult{}, err
+	}
+	return bound.Probe(ctx, target.Endpoint, target.CredentialRef)
 }
 
 func kubernetesTargetProbeErrorCode(err error) string {

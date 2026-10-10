@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/cli-grant.schema.json",
+  "title": "CliGrant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "credential",
+    "application",
+    "expiresAt"
+  ],
+  "properties": {
+    "credential": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "application": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

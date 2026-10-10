@@ -80,7 +80,7 @@ func (server *OrganizationHTTPServer) ServeHTTP(writer http.ResponseWriter, requ
 		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: tenantID, ResourceLevel: "organization", ResourceID: organizationID, RequiredPermission: "organizations.get",
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func (server *OrganizationHTTPServer) list(writer http.ResponseWriter, request *
 		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "organizations.list",
 	})
 	if err != nil {
@@ -171,7 +171,7 @@ func (server *OrganizationHTTPServer) create(writer http.ResponseWriter, request
 		writeOrganizationError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "organizations.create",
 	})
 	if err != nil {

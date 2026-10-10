@@ -7,7 +7,7 @@ metadata:
     {{- include "cloud-agents.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-install
-    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-weight": "-3"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 0
@@ -37,7 +37,7 @@ spec:
                 -v cloud_agents_organization_uid="$CLOUD_AGENTS_ORGANIZATION_UID" \
                 -v cloud_agents_organization_name="$CLOUD_AGENTS_ORGANIZATION_NAME" \
                 -v cloud_agents_organization_display_name="$CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME" \
-                -v cloud_agents_admin_subject_kind="$CLOUD_AGENTS_ADMIN_SUBJECT_KIND" \
+                -v cloud_agents_admin_subject_kind=user \
                 -v cloud_agents_admin_subject_issuer="$CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER" \
                 -v cloud_agents_admin_subject_value="$CLOUD_AGENTS_ADMIN_SUBJECT_VALUE" \
                 -v cloud_agents_admin_membership_uid="$CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID" \
@@ -56,6 +56,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: {{ .Values.database.tenantBootstrapURLKey }}
+            - name: CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER
+              value: {{ .Values.identity.issuer | quote }}
+            - name: CLOUD_AGENTS_ADMIN_SUBJECT_VALUE
+              value: {{ printf "user-%s" .Values.identityBootstrap.userId | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.tenantBootstrap.secretName }}

@@ -75,11 +75,11 @@ func (server *EnvironmentProfileHTTPServer) ServeHTTP(writer http.ResponseWriter
 	if request.Method == http.MethodPost {
 		projectPermission = "projects.act"
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, permission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, permission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -131,7 +131,7 @@ func (server *EnvironmentProfileHTTPServer) transition(writer http.ResponseWrite
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -164,7 +164,7 @@ func (server *EnvironmentProfileHTTPServer) create(writer http.ResponseWriter, r
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -203,7 +203,7 @@ func (server *EnvironmentProfileHTTPServer) list(writer http.ResponseWriter, req
 			return
 		}
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -237,7 +237,7 @@ func (server *EnvironmentProfileHTTPServer) get(writer http.ResponseWriter, requ
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -261,7 +261,7 @@ func (server *EnvironmentProfileHTTPServer) listAuditEvents(writer http.Response
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -271,7 +271,7 @@ func (server *EnvironmentProfileHTTPServer) listAuditEvents(writer http.Response
 		writeEnvironmentProfileError(writer, err)
 		return
 	}
-	principal, err = server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err = server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -308,8 +308,8 @@ func (server *EnvironmentProfileHTTPServer) listAuditEvents(writer http.Response
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
-func (server *EnvironmentProfileHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *EnvironmentProfileHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func writeEnvironmentProfile(writer http.ResponseWriter, status int, requestID string, snapshot internalenvironmentprofile.Snapshot) {

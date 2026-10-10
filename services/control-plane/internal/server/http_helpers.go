@@ -1,13 +1,27 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"mime"
 	"net/http"
 	"strings"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 )
 
 const publicFallbackRequestID = "request-unknown"
+
+type contextAccessTokenVerifier interface {
+	VerifyContext(context.Context, string, authn.VerificationRequest) (*authn.VerifiedPrincipal, error)
+}
+
+func verifyHTTPRequestAccessToken(ctx context.Context, verifier AccessTokenVerifier, token string, request authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	if contextual, ok := verifier.(contextAccessTokenVerifier); ok {
+		return contextual.VerifyContext(ctx, token, request)
+	}
+	return verifier.Verify(token, request)
+}
 
 func JSONContentTypeHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

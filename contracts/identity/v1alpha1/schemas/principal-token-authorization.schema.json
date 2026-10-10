@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/principal-token-authorization.schema.json",
+  "title": "PrincipalTokenAuthorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "principalId",
+    "subject",
+    "issuer",
+    "tenantId",
+    "application",
+    "scopes"
+  ],
+  "properties": {
+    "principalId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "subject": {
+      "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json"
+    },
+    "issuer": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 512
+    },
+    "tenantId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "projectId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "application": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*\\.(create|get|list|watch|update|delete|act|bind)$"
+      }
+    }
+  }
+}

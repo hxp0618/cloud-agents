@@ -3500,11 +3500,13 @@ function legacyIdentityToTyped(value: string): JsonObject {
   if (kind === "schema") return { kind: "schema", name: stripLegacyName(payload) };
   const parts = payload.split("/unquoted:");
   const schema = stripLegacyName(parts[0]!);
-  const nameWithSignature = parts[1]!;
+  const nameWithSignature = parts.at(-1)!;
   if (kind === "table") {
+    if (parts.length !== 2) throw new MigrationValidationError("OBJECT_IDENTITY", value);
     return { kind: "relation", identity: { schema, name: nameWithSignature } };
   }
   if (kind === "function") {
+    if (parts.length !== 2) throw new MigrationValidationError("OBJECT_IDENTITY", value);
     const match = /^(?<name>[a-z0-9_]+)\((?<arguments>.*)\)$/u.exec(nameWithSignature);
     if (!match?.groups) throw new MigrationValidationError("OBJECT_IDENTITY", value);
     const argumentsText = match.groups.arguments!;
@@ -3524,7 +3526,11 @@ function legacyIdentityToTyped(value: string): JsonObject {
     };
   }
   if (kind === "index") {
-    const relation = indexOwningRelation(nameWithSignature);
+    if (parts.length !== 2 && parts.length !== 3) {
+      throw new MigrationValidationError("OBJECT_IDENTITY", value);
+    }
+    const relation =
+      parts.length === 3 ? stripLegacyName(parts[1]!) : indexOwningRelation(nameWithSignature);
     return {
       kind: "index",
       identity: { schema, name: nameWithSignature },
@@ -3532,6 +3538,7 @@ function legacyIdentityToTyped(value: string): JsonObject {
     };
   }
   if (kind === "policy") {
+    if (parts.length !== 2) throw new MigrationValidationError("OBJECT_IDENTITY", value);
     const relation = nameWithSignature.replace(/_(?:runtime_tenant|migration_owner|tenant)$/u, "");
     return { kind: "policy", relation: { schema, name: relation }, name: nameWithSignature };
   }

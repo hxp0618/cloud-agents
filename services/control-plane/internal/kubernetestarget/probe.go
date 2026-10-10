@@ -15,6 +15,7 @@ import (
 	"time"
 
 	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/targetcredential"
 )
 
 const (
@@ -32,7 +33,12 @@ var (
 	versionPartPattern       = regexp.MustCompile(`^[0-9]+$`)
 )
 
-type CredentialDirectory struct{ path string }
+type CredentialDirectory struct {
+	path        string
+	stored      *StoredCredential
+	sealedStore SealedCredentialStore
+	keyring     *targetcredential.Keyring
+}
 
 type ProbeResult struct {
 	APIVersion    string
@@ -102,41 +108,58 @@ func (directory *CredentialDirectory) client(endpoint, credentialRef string) (*h
 	if directory == nil || !validEndpoint(endpoint) || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
 		return nil, nil, "", ErrInvalidEndpoint
 	}
-	roots, token, err := directory.credentials(credentialRef)
+	connection, err := directory.connection(credentialRef)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	transport := &http.Transport{
-		DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second,
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
+	transport := &http.Transport{DisableCompression: true, ResponseHeaderTimeout: 10 * time.Second, TLSClientConfig: connection.tls}
+	var roundTripper http.RoundTripper = transport
+	if connection.token != "" {
+		roundTripper = bearerTransport{base: transport, token: connection.token}
 	}
-	client := &http.Client{Transport: bearerTransport{base: transport, token: token}, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
+	client := &http.Client{Transport: roundTripper, CheckRedirect: func(*http.Request, []*http.Request) error { return ErrInvalidResponse }}
 	return client, transport, strings.TrimSuffix(endpoint, "/"), nil
 }
 
-func (directory *CredentialDirectory) credentials(credentialRef string) (*x509.CertPool, string, error) {
+type connection struct {
+	tls *tls.Config
+	// token is empty when the TLS client certificate authenticates.
+	token string
+}
+
+func (directory *CredentialDirectory) connection(credentialRef string) (connection, error) {
 	if directory == nil || commonv1alpha1.ValidateIdentifier(credentialRef, "/credentialRef") != nil {
-		return nil, "", ErrInvalidEndpoint
+		return connection{}, ErrInvalidEndpoint
+	}
+	if directory.stored != nil {
+		return directory.stored.connection()
 	}
 	root, err := os.OpenRoot(directory.path)
 	if err != nil {
-		return nil, "", ErrCredentialUnavailable
+		return connection{}, ErrCredentialUnavailable
 	}
 	defer root.Close()
 	caPEM, err := readCredential(root, credentialRef+".ca.crt")
 	if err != nil {
-		return nil, "", err
+		return connection{}, err
 	}
 	tokenBytes, err := readCredential(root, credentialRef+".token")
 	if err != nil {
-		return nil, "", err
+		return connection{}, err
 	}
 	token := strings.TrimSuffix(strings.TrimSuffix(string(tokenBytes), "\n"), "\r")
 	roots := x509.NewCertPool()
 	if token == "" || strings.TrimSpace(token) != token || !roots.AppendCertsFromPEM(caPEM) {
-		return nil, "", ErrCredentialInvalid
+		return connection{}, ErrCredentialInvalid
 	}
-	return roots, token, nil
+	return connection{tls: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, token: token}, nil
+}
+
+func (value connection) header() http.Header {
+	if value.token == "" {
+		return http.Header{}
+	}
+	return http.Header{"Authorization": []string{"Bearer " + value.token}}
 }
 
 type bearerTransport struct {

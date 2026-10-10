@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/cli-login.schema.json",
+  "title": "CliLogin",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorizationId",
+    "verificationUrl",
+    "expiresAt"
+  ],
+  "properties": {
+    "authorizationId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "verificationUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -115,6 +115,7 @@ body {
 button,
 input,
 select,
+textarea,
 summary {
   font: inherit;
 }
@@ -137,6 +138,7 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid color-mix(in oklch, var(--ring) 50%, transparent);
   outline-offset: 0;
@@ -215,14 +217,16 @@ p {
   padding-inline: 10px;
 }
 
-input,
-select {
+input:not([type="checkbox"], [type="radio"], [type="file"]),
+select,
+textarea {
   width: 100%;
   min-width: 0;
   height: 32px;
   padding: 0 12px;
   color: var(--foreground);
-  background: transparent;
+  font-weight: 400;
+  background-color: transparent;
   border: 1px solid var(--input);
   border-radius: 6px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
@@ -232,12 +236,55 @@ select {
     box-shadow 150ms ease-out;
 }
 
-:root[data-theme="dark"] input,
-:root[data-theme="dark"] select {
-  background: color-mix(in oklch, var(--input) 30%, transparent);
+:root[data-theme="dark"] input:not([type="checkbox"], [type="radio"], [type="file"]),
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background-color: color-mix(in oklch, var(--input) 30%, transparent);
 }
 
-input::placeholder {
+select {
+  padding-right: 32px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 14px;
+}
+
+select[multiple] {
+  height: auto;
+  padding: 4px 8px;
+  background-image: none;
+}
+
+textarea {
+  height: auto;
+  min-height: 96px;
+  padding: 8px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+input[type="file"] {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+input[type="file"]::file-selector-button {
+  height: 32px;
+  margin-right: 12px;
+  padding: 0 12px;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+input::placeholder,
+textarea::placeholder {
   color: var(--muted-foreground);
 }
 
@@ -376,6 +423,12 @@ label > small,
   gap: 16px;
 }
 
+/* Inline editors sit in wide panels; keep fields at a readable width. */
+.panel > .resource-form > *,
+.panel.resource-form > :not(.panel-heading) {
+  max-width: 760px;
+}
+
 .connection-state {
   display: flex;
   align-items: center;
@@ -383,6 +436,16 @@ label > small,
   margin-top: 16px;
   color: var(--muted-foreground);
   font-size: 12px;
+}
+
+.error-banner {
+  padding: 12px 14px;
+  color: var(--danger);
+  background: var(--danger-background);
+  border: 1px solid var(--danger-separator);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .status-dot,
@@ -559,25 +622,6 @@ label > small,
   text-align: right;
 }
 
-.sidebar-boundary {
-  margin-top: auto;
-  padding: 16px;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.sidebar-boundary small {
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.sidebar-boundary p {
-  margin: 6px 0 0;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
 @media (min-width: 768px) {
   .sidebar-collapsed .sidebar-brand {
     justify-content: center;
@@ -587,8 +631,7 @@ label > small,
   .sidebar-collapsed .sidebar-brand .brand-mark,
   .sidebar-collapsed .sidebar-brand > span:nth-child(2),
   .sidebar-collapsed .nav-label,
-  .sidebar-collapsed .sidebar nav button b,
-  .sidebar-collapsed .sidebar-boundary {
+  .sidebar-collapsed .sidebar nav button b {
     display: none;
   }
 
@@ -636,6 +679,46 @@ label > small,
   padding: 15px 16px;
   background: var(--background);
   border-bottom: 1px solid var(--border);
+}
+
+.scope-switchers {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope-switchers label {
+  display: grid;
+  min-width: 160px;
+  gap: 3px;
+}
+
+.scope-switchers label > span {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.scope-switchers select {
+  width: 100%;
+  min-height: 32px;
+}
+
+.email-domain-form {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.email-domain-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.email-domain-form textarea {
+  min-height: 104px;
+  resize: vertical;
 }
 
 .breadcrumbs {
@@ -1766,7 +1849,7 @@ tbody tr.selected td {
   background: var(--table-cell-active);
 }
 
-td > button:not(.row-action) {
+td > button:not(.row-action, .button) {
   display: grid;
   gap: 2px;
   padding: 0;
@@ -1847,7 +1930,7 @@ td > button small {
 
 .table-empty {
   display: grid;
-  min-height: 196px;
+  min-height: 120px;
   place-items: center;
   padding: 24px;
   font-size: 14px;
@@ -1998,6 +2081,32 @@ td > button small {
   text-align: right;
 }
 
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px 24px;
+  margin: 0;
+  padding: 20px;
+}
+
+.detail-grid > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+}
+
+.detail-grid dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.detail-grid dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 .break {
   overflow-wrap: anywhere;
 }
@@ -2015,8 +2124,35 @@ td > button small {
   line-height: 1.5;
 }
 
+.panel-heading + .boundary-note {
+  margin-top: 20px;
+}
+
 .danger-text {
   color: var(--danger) !important;
+}
+
+.button-row,
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-zone {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--danger-separator);
+  border-radius: 8px;
+}
+
+.danger-zone p {
+  margin: 4px 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
 }
 
 .action-block {
@@ -2166,6 +2302,56 @@ td > button small {
   font-weight: 500;
 }
 
+.choice-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice-list legend {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.choice-list .field-help,
+.choice-list > small {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.choice-list .confirmation-check > span {
+  display: grid;
+  gap: 2px;
+}
+
+.choice-list .confirmation-check small {
+  color: var(--muted-foreground);
+}
+
+.form-advanced {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.form-advanced > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-advanced > .resource-form-group {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
 .cleanup-worker {
   padding: 12px;
   background: var(--background);
@@ -2204,13 +2390,34 @@ td > button small {
   flex-direction: column;
 }
 
-.dialog > .panel-heading {
-  min-height: 72px;
+.sheet-heading {
+  display: grid;
   flex: 0 0 auto;
-  padding: 14px 56px 14px 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 16px 14px 16px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
-.dialog > .panel-heading h2 {
+.sheet-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.sheet-heading p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.sheet-heading .icon-button {
   font-size: 20px;
 }
 
@@ -2222,8 +2429,12 @@ td > button small {
   padding: 20px;
 }
 
-.resource-form .form-row {
+.dialog > .resource-form .form-row {
   grid-template-columns: 1fr;
+}
+
+.resource-form > .button {
+  justify-self: start;
 }
 
 .dialog > .resource-form {
@@ -2271,31 +2482,14 @@ td > button small {
   overflow: visible;
 }
 
-.confirmation-dialog .panel-heading {
-  min-height: 0;
-  padding: 0 24px 0 0;
+.confirmation-dialog .sheet-heading {
+  padding: 0;
   border: 0;
-}
-
-.confirmation-dialog .panel-heading h2 {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .confirmation-dialog p,
 .confirmation-dialog .confirmation-check {
   font-size: 14px;
-}
-
-.confirmation-dialog .panel-heading p {
-  margin-top: 8px;
-}
-
-.confirmation-dialog .panel-heading .icon-button {
-  position: absolute;
-  top: -8px;
-  right: -8px;
 }
 
 .confirmation-dialog .resource-form {
@@ -2318,14 +2512,6 @@ td > button small {
 }
 
 @media (max-width: 639px) {
-  .confirmation-dialog .panel-heading {
-    text-align: center;
-  }
-
-  .confirmation-dialog .panel-heading > div {
-    width: 100%;
-  }
-
   .admin-sheet .dialog-actions {
     flex-direction: column-reverse;
     align-items: stretch;
@@ -2382,8 +2568,7 @@ td > button small {
   }
 
   .sidebar .nav-label,
-  .sidebar nav button b,
-  .sidebar .sidebar-boundary {
+  .sidebar nav button b {
     display: initial;
   }
 
@@ -2523,5 +2708,27 @@ td > button small {
 
 .denied-write-table code {
   white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.identity-invitation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.identity-invitation-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.identity-invitation-list li div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
   overflow-wrap: anywhere;
 }

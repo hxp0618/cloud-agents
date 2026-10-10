@@ -2,11 +2,53 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 )
+
+type contextHTTPVerifier struct {
+	contextCalls int
+	legacyCalls  int
+}
+
+func (verifier *contextHTTPVerifier) Verify(string, authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	verifier.legacyCalls++
+	return nil, errors.New("legacy verifier called")
+}
+
+func (verifier *contextHTTPVerifier) VerifyContext(ctx context.Context, _ string, _ authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	verifier.contextCalls++
+	return nil, ctx.Err()
+}
+
+type legacyHTTPVerifier struct{ calls int }
+
+func (verifier *legacyHTTPVerifier) Verify(string, authn.VerificationRequest) (*authn.VerifiedPrincipal, error) {
+	verifier.calls++
+	return &authn.VerifiedPrincipal{}, nil
+}
+
+func TestVerifyAccessTokenUsesRequestContextAndPreservesLegacyVerifier(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	contextual := &contextHTTPVerifier{}
+	if principal, err := verifyHTTPRequestAccessToken(ctx, contextual, "token", authn.VerificationRequest{}); principal != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("context verification principal=%#v error=%v", principal, err)
+	}
+	if contextual.contextCalls != 1 || contextual.legacyCalls != 0 {
+		t.Fatalf("context calls=%d legacy calls=%d", contextual.contextCalls, contextual.legacyCalls)
+	}
+	legacy := &legacyHTTPVerifier{}
+	if principal, err := verifyHTTPRequestAccessToken(ctx, legacy, "token", authn.VerificationRequest{}); principal == nil || err != nil || legacy.calls != 1 {
+		t.Fatalf("legacy verification principal=%#v error=%v calls=%d", principal, err, legacy.calls)
+	}
+}
 
 func TestJSONContentTypeHandlerEnforcesOnlyNonEmptyPOSTBodies(t *testing.T) {
 	tests := []struct {

@@ -73,11 +73,11 @@ func (actuator environmentActuator) completeEnvironmentDeployment(ctx context.Co
 		}
 		request := kubernetesDeployRequest(tenantID, projectID, snapshot, snapshot.Generation)
 		var deployed kubernetestarget.DeployResult
-		var err error
-		if upgrade {
-			deployed, err = actuator.kubernetesCredentials.DeployWorkerUpgrade(ctx, target.Endpoint, target.CredentialRef, request, actuator.kubernetesWorkerTrust)
-		} else {
-			deployed, err = actuator.kubernetesCredentials.DeployWorker(ctx, target.Endpoint, target.CredentialRef, request, actuator.kubernetesWorkerTrust)
+		kubernetes, err := actuator.kubernetesCredentials.ForTarget(ctx, tenantID, projectID, target.TargetID)
+		if err == nil && upgrade {
+			deployed, err = kubernetes.DeployWorkerUpgrade(ctx, target.Endpoint, target.CredentialRef, request, actuator.kubernetesWorkerTrust)
+		} else if err == nil {
+			deployed, err = kubernetes.DeployWorker(ctx, target.Endpoint, target.CredentialRef, request, actuator.kubernetesWorkerTrust)
 		}
 		if err != nil {
 			completion.StableErrorCode = kubernetesDeploymentErrorCode(err)

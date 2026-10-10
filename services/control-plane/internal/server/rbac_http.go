@@ -98,7 +98,7 @@ func (server *RBACHTTPServer) ServeHTTP(writer http.ResponseWriter, request *htt
 		writeRBACError(writer, http.StatusInternalServerError, "internal_error")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: string(scope.Level), ResourceID: scope.ID, RequiredPermission: rbacPermission(kind),
 	})
 	if err != nil {
@@ -165,7 +165,7 @@ func (server *RBACHTTPServer) listMemberships(writer http.ResponseWriter, reques
 		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "memberships.list",
 	})
 	if err != nil {
@@ -233,7 +233,7 @@ func (server *RBACHTTPServer) listRoleBindings(writer http.ResponseWriter, reque
 		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "role-bindings.list",
 	})
 	if err != nil {

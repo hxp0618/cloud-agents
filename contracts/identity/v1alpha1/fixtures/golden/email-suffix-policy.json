@@ -1,0 +1,5 @@
+{
+  "tenantId": "tenant-alpha",
+  "resourceVersion": "2",
+  "allowedDomains": ["example.com", "xn--bcher-kva.example"]
+}

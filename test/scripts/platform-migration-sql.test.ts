@@ -14,6 +14,7 @@ const productCatalogs = readProductCatalogs(root, [
   ...Array.from({ length: 12 }, (_, index) => String(index + 25).padStart(6, "0")),
   "000100",
   "000101",
+  "000105",
 ]);
 const productCatalog = (version: string) =>
   JSON.parse(productCatalogs.get(version)!.toString("utf8"));
@@ -39,6 +40,55 @@ describe("postgresql-lex-v1 bootstrap", () => {
       ])
         expect(() => classify(changed)).toThrow();
     }
+  });
+
+  it("admits bounded identity after-update triggers only after identity introduction", () => {
+    const trigger = splitPostgresStatements(
+      new TextEncoder().encode(
+        "CREATE TRIGGER users_revoke_cli_grants AFTER UPDATE OF disabled_at ON cloud_agents_identity.users FOR EACH ROW EXECUTE FUNCTION cloud_agents_identity.revoke_cli_grants_after_account_disable();",
+      ),
+    )[0]!;
+    expect(classifyMigrationStatement(trigger, "000118")).toMatchObject({
+      command: "CREATE",
+      object_kind: "TRIGGER",
+      target_identity:
+        "trigger:unquoted:cloud_agents_identity/unquoted:users_revoke_cli_grants",
+    });
+    expect(() => classifyMigrationStatement(trigger, "000104")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+    const crossSchema = splitPostgresStatements(
+      new TextEncoder().encode(
+        "CREATE TRIGGER users_revoke_cli_grants AFTER UPDATE OF disabled_at ON cloud_agents_identity.users FOR EACH ROW EXECUTE FUNCTION cloud_agents.revoke_cli_grants_after_account_disable();",
+      ),
+    )[0]!;
+    expect(() => classifyMigrationStatement(crossSchema, "000118")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+  });
+  it("admits only the exact 000118 denied-write constraint successor drop", () => {
+    const classify = (source: string, version = "000118") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(source))[0]!,
+        version,
+      );
+    const exact =
+      "ALTER TABLE cloud_agents.admin_denied_writes DROP CONSTRAINT admin_denied_writes_action_check;";
+    expect(classify(exact)).toMatchObject({
+      command: "ALTER",
+      object_kind: "TABLE",
+      target_identity:
+        "table:unquoted:cloud_agents/unquoted:admin_denied_writes",
+    });
+    expect(() => classify(exact, "000117")).toThrow(
+      /SQL_STATEMENT_PROFILE_REJECTED/u,
+    );
+    for (const changed of [
+      exact.replace("admin_denied_writes_action_check", "other_constraint"),
+      exact.replace(";", " CASCADE;"),
+      exact.replace("admin_denied_writes", "audit_facts"),
+    ])
+      expect(() => classify(changed)).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
   });
   it("splits and classifies every current exact SQL statement", () => {
     const counts: number[] = [];
@@ -156,8 +206,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[0]!.target_identity).toContain("bootstrap_tenant_administrator_v1");
 
     const catalog = productCatalog("000025") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000025",
@@ -173,7 +230,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "bootstrap_tenant_administrator_v1" }),
+        identity: expect.objectContaining({
+          name: "bootstrap_tenant_administrator_v1",
+        }),
       }),
     );
   });
@@ -200,8 +259,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[2]!.target_identity).toContain("settle_managed_agent_execution_v3");
 
     const catalog = productCatalog("000026") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000026",
@@ -217,7 +283,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "settle_managed_agent_execution_v3" }),
+        identity: expect.objectContaining({
+          name: "settle_managed_agent_execution_v3",
+        }),
       }),
     );
   });
@@ -244,8 +312,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[6]!.target_identity).toContain("create_organization");
 
     const catalog = productCatalog("000027") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000027",
@@ -286,8 +361,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[3]!.target_identity).toContain("resume_membership");
 
     const catalog = productCatalog("000028") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000028",
@@ -330,8 +412,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(classifications[2]!.target_identity).toContain("settle_managed_agent_execution_v4");
 
     const catalog = productCatalog("000029") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000029",
@@ -347,7 +436,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "settle_managed_agent_execution_v4" }),
+        identity: expect.objectContaining({
+          name: "settle_managed_agent_execution_v4",
+        }),
       }),
     );
   });
@@ -391,8 +482,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000030") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000030",
@@ -408,7 +506,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "complete_deployment_target_probe_v1" }),
+        identity: expect.objectContaining({
+          name: "complete_deployment_target_probe_v1",
+        }),
       }),
     );
   });
@@ -442,8 +542,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000031") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000031",
@@ -459,7 +566,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "create_managed_host_environment_lease_v2" }),
+        identity: expect.objectContaining({
+          name: "create_managed_host_environment_lease_v2",
+        }),
       }),
     );
   });
@@ -499,8 +608,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000032") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000032",
@@ -518,7 +634,10 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "complete_managed_host_environment_lease_deployment_v1",
     ]) {
       expect(catalog.declared_object_identities).toContainEqual(
-        expect.objectContaining({ kind: "function", identity: expect.objectContaining({ name }) }),
+        expect.objectContaining({
+          kind: "function",
+          identity: expect.objectContaining({ name }),
+        }),
       );
     }
   });
@@ -554,8 +673,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000033") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000033",
@@ -573,7 +699,10 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "create_managed_agent_session_v2",
     ]) {
       expect(catalog.declared_object_identities).toContainEqual(
-        expect.objectContaining({ kind: "function", identity: expect.objectContaining({ name }) }),
+        expect.objectContaining({
+          kind: "function",
+          identity: expect.objectContaining({ name }),
+        }),
       );
     }
   });
@@ -602,8 +731,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000034") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000034",
@@ -621,7 +757,10 @@ describe("postgresql-lex-v1 bootstrap", () => {
       "complete_managed_host_environment_lease_termination_v1",
     ]) {
       expect(catalog.declared_object_identities).toContainEqual(
-        expect.objectContaining({ kind: "function", identity: expect.objectContaining({ name }) }),
+        expect.objectContaining({
+          kind: "function",
+          identity: expect.objectContaining({ name }),
+        }),
       );
     }
   });
@@ -647,8 +786,15 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000035") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
-      declared_object_identities: Array<{ kind: string; identity?: { name?: string } }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
+      declared_object_identities: Array<{
+        kind: string;
+        identity?: { name?: string };
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000035",
@@ -664,7 +810,9 @@ describe("postgresql-lex-v1 bootstrap", () => {
     expect(catalog.declared_object_identities).toContainEqual(
       expect.objectContaining({
         kind: "function",
-        identity: expect.objectContaining({ name: "register_deployment_target_v2" }),
+        identity: expect.objectContaining({
+          name: "register_deployment_target_v2",
+        }),
       }),
     );
   });
@@ -687,7 +835,11 @@ describe("postgresql-lex-v1 bootstrap", () => {
     ]);
 
     const catalog = productCatalog("000036") as {
-      source_descriptors: Array<{ migration_id: string; sql_sha256: string; statements: unknown }>;
+      source_descriptors: Array<{
+        migration_id: string;
+        sql_sha256: string;
+        statements: unknown;
+      }>;
     };
     expect(catalog.source_descriptors.at(-1)).toEqual({
       migration_id: "000036",
@@ -1319,6 +1471,38 @@ describe("postgresql-lex-v1 bootstrap", () => {
       classifyMigrationStatement(splitPostgresStatements(mutatedSeed)[0]!, "000003"),
     ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/);
 
+    const platformAdminV2 = splitPostgresStatements(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/000108_identity_platform_role.sql"),
+      ),
+    );
+    expect(classifyMigrationStatement(platformAdminV2[0]!, "000108").command).toBe("INSERT");
+    expect(classifyMigrationStatement(platformAdminV2[1]!, "000108").command).toBe("INSERT");
+    const roleCatalog = JSON.parse(
+      readFileSync(
+        resolve(root, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v2.json"),
+        "utf8",
+      ),
+    ) as { roles: Array<{ name: string; permissions: string[] }> };
+    const seededPermissions = [
+      ...new TextDecoder()
+        .decode(platformAdminV2[1]!.bytes)
+        .matchAll(/'([a-z][a-z0-9-]*\.[a-z]+)'/gu),
+    ]
+      .map((match) => match[1]!)
+      .filter((permission) => permission !== "platform.admin");
+    expect(seededPermissions).toEqual(
+      roleCatalog.roles.find((role) => role.name === "platform.admin")?.permissions,
+    );
+    const expandedPlatformAdmin = new TextEncoder().encode(
+      new TextDecoder()
+        .decode(platformAdminV2[1]!.bytes)
+        .replace("'tenants.update'", "'secrets.get'"),
+    );
+    expect(() =>
+      classifyMigrationStatement(splitPostgresStatements(expandedPlatformAdmin)[0]!, "000108"),
+    ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/);
+
     const wrongDrop = splitPostgresStatements(
       new TextEncoder().encode(
         "ALTER TABLE cloud_agents.resource_changes DROP CONSTRAINT resource_changes_tenant_fk;",
@@ -1633,6 +1817,297 @@ describe("postgresql-lex-v1 bootstrap", () => {
         ),
       ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/);
     }
+  });
+
+  it("admits only the bounded identity schema ownership and execute-only service ACL", () => {
+    const classify = (sql: string, migrationId = "000105") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        migrationId,
+      );
+    const admitted = [
+      "CREATE SCHEMA cloud_agents_identity AUTHORIZATION cloud_agents_migration_owner;",
+      "GRANT USAGE ON SCHEMA cloud_agents_identity TO cloud_agents_identity_service;",
+      "REVOKE ALL ON SCHEMA cloud_agents_identity FROM PUBLIC;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE cloud_agents_migration_owner IN SCHEMA cloud_agents_identity REVOKE ALL ON TABLES FROM PUBLIC;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE cloud_agents_migration_owner IN SCHEMA cloud_agents_identity REVOKE ALL ON SEQUENCES FROM PUBLIC;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE cloud_agents_migration_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;",
+      "CREATE TABLE cloud_agents_identity.users (user_id text PRIMARY KEY);",
+      "CREATE TABLE cloud_agents_identity.sessions (session_id text PRIMARY KEY, tenant_id text NOT NULL, tenant_uid text NOT NULL, user_id text NOT NULL, CONSTRAINT sessions_tenant_fk FOREIGN KEY (tenant_id, tenant_uid) REFERENCES cloud_agents.platform_tenants (tenant_id, tenant_uid), CONSTRAINT sessions_user_fk FOREIGN KEY (user_id) REFERENCES cloud_agents_identity.users (user_id));",
+      "ALTER TABLE cloud_agents_identity.users OWNER TO cloud_agents_migration_owner;",
+      "REVOKE ALL ON TABLE cloud_agents_identity.users FROM PUBLIC;",
+      "REVOKE ALL ON TABLE cloud_agents_identity.users FROM cloud_agents_identity_service;",
+      "CREATE FUNCTION cloud_agents_identity.session_is_active(candidate text) RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, cloud_agents_identity AS $identity$ SELECT false $identity$;",
+      "ALTER FUNCTION cloud_agents_identity.session_is_active(text) OWNER TO cloud_agents_migration_owner;",
+      "REVOKE ALL ON FUNCTION cloud_agents_identity.session_is_active(text) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.session_is_active(text) TO cloud_agents_identity_service;",
+    ];
+    const expectedCommands = [
+      "CREATE",
+      "GRANT",
+      "REVOKE",
+      "ALTER",
+      "ALTER",
+      "ALTER",
+      "CREATE",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "REVOKE",
+      "CREATE",
+      "ALTER",
+      "REVOKE",
+      "GRANT",
+    ];
+    for (const migrationId of ["000105", "000106"]) {
+      expect(admitted.map((sql) => classify(sql, migrationId).command)).toEqual(expectedCommands);
+    }
+    expect(classify(admitted.at(-1)!)).toMatchObject({
+      object_kind: "FUNCTION",
+      target_identity:
+        "function:unquoted:cloud_agents_identity/unquoted:session_is_active(unquoted:text)",
+      grantee: "CLOUD_AGENTS_IDENTITY_SERVICE",
+    });
+    expect(
+      classify("GRANT SELECT ON TABLE cloud_agents.platform_tenants TO cloud_agents_runtime;"),
+    ).toMatchObject({ object_kind: "TABLE", grantee: "CLOUD_AGENTS_RUNTIME" });
+    expect(
+      classify("GRANT USAGE ON SCHEMA cloud_agents_identity TO cloud_agents_bootstrap_admin;"),
+    ).toMatchObject({ grantee: "CLOUD_AGENTS_BOOTSTRAP_ADMIN" });
+    expect(
+      classify(
+        "GRANT EXECUTE ON FUNCTION cloud_agents_identity.initialize_realm(text, bytea, text, text, text, text, text, text) TO cloud_agents_bootstrap_admin;",
+      ),
+    ).toMatchObject({ grantee: "CLOUD_AGENTS_BOOTSTRAP_ADMIN" });
+
+    expect(
+      classify(
+        "GRANT EXECUTE ON FUNCTION cloud_agents_identity.initialize_signing_authority(text, bytea, text, text, bigint, bigint) TO cloud_agents_bootstrap_admin;",
+      ),
+    ).toMatchObject({ grantee: "CLOUD_AGENTS_BOOTSTRAP_ADMIN" });
+
+    for (const signature of [
+      "load_trust_checkpoint(text)",
+      "compare_trust_checkpoint(text, text, text, bytea)",
+      "read_platform_admin(text, text, text)",
+      "read_session_subject(bytea, text)",
+    ]) {
+      expect(
+        classify(
+          `GRANT EXECUTE ON FUNCTION cloud_agents_identity.${signature} TO cloud_agents_runtime;`,
+        ),
+      ).toMatchObject({ grantee: "CLOUD_AGENTS_RUNTIME" });
+    }
+    expect(
+      classify("GRANT USAGE ON SCHEMA cloud_agents_identity TO cloud_agents_runtime;"),
+    ).toMatchObject({ grantee: "CLOUD_AGENTS_RUNTIME" });
+
+    const rejected = [
+      "CREATE SCHEMA other AUTHORIZATION cloud_agents_migration_owner;",
+      "CREATE SCHEMA cloud_agents_identity AUTHORIZATION cloud_agents_identity_owner;",
+      "CREATE SCHEMA cloud_agents_identity AUTHORIZATION other_owner;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE cloud_agents_identity_owner IN SCHEMA cloud_agents_identity REVOKE ALL ON TABLES FROM PUBLIC;",
+      "CREATE TABLE other.users (user_id text PRIMARY KEY);",
+      "CREATE TABLE cloud_agents_identity.sessions (user_id text REFERENCES other.users (user_id));",
+      "CREATE FUNCTION cloud_agents_identity.session_is_active(candidate text) RETURNS boolean LANGUAGE sql SET search_path = pg_catalog, cloud_agents_identity AS $identity$ SELECT false $identity$;",
+      "CREATE FUNCTION cloud_agents_identity.session_is_active(candidate text) RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $identity$ SELECT false $identity$;",
+      "ALTER TABLE cloud_agents_identity.users OWNER TO cloud_agents_identity_owner;",
+      "ALTER TABLE cloud_agents_identity.users OWNER TO other_owner;",
+      "GRANT ALL ON SCHEMA cloud_agents_identity TO cloud_agents_identity_service;",
+      "GRANT SELECT ON TABLE cloud_agents_identity.users TO cloud_agents_identity_service;",
+      "GRANT SELECT ON TABLE cloud_agents_identity.users TO PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.session_is_active(text) TO other_service;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.prepare_password_login(text, bytea, bytea) TO cloud_agents_bootstrap_admin;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.prepare_password_login(text, bytea, bytea) TO cloud_agents_runtime;",
+      "GRANT SELECT ON TABLE cloud_agents_identity.trust_checkpoints TO cloud_agents_runtime;",
+    ];
+    for (const sql of rejected) {
+      expect(() => classify(sql), sql).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+    for (const migrationId of ["000104", "105", "00010A", "1000105"]) {
+      expect(() => classify(admitted[0]!, migrationId), migrationId).toThrow(
+        /SQL_STATEMENT_PROFILE_REJECTED/u,
+      );
+    }
+
+    const identityCatalog = productCatalog("000105");
+    expect(identityCatalog).toMatchObject({
+      format_version: "cloud-agents-platform-catalog/v2",
+      schema_head: "000105",
+      runtime_introspection_status: "NOT_IMPLEMENTED",
+      executable_expected_projection_status: "NOT_IMPLEMENTED_A2_1B_REQUIRED",
+    });
+    expect(identityCatalog.source_descriptors.at(-1).migration_id).toBe("000105");
+    expect(identityCatalog.source_descriptors.at(-1).statements[0]).toMatchObject({
+      classification: {
+        target_identity: "schema:unquoted:cloud_agents_identity",
+      },
+    });
+    expect(identityCatalog.declared_object_identities).toContainEqual({
+      kind: "schema",
+      name: "cloud_agents_identity",
+    });
+  });
+
+  it("admits only the named identity audit CHECK constraint replacements", () => {
+    const classify = (sql: string, migrationId = "000111") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        migrationId,
+      );
+    const admitted = [
+      "ALTER TABLE cloud_agents_identity.audit_events DROP CONSTRAINT audit_events_event_kind_check;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_event_kind_check CHECK (event_kind IN ('login_succeeded', 'token_issued'));",
+      "ALTER TABLE cloud_agents_identity.audit_events DROP CONSTRAINT audit_events_reason_code_check;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_reason_code_check CHECK (reason_code IN ('ok', 'issued'));",
+    ];
+    for (const sql of admitted) {
+      expect(classify(sql)).toMatchObject({
+        command: "ALTER",
+        object_kind: "TABLE",
+        target_identity: "table:unquoted:cloud_agents_identity/unquoted:audit_events",
+      });
+      expect(() => classify(sql, "000110")).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+
+    for (const sql of [
+      "ALTER TABLE cloud_agents_identity.users DROP CONSTRAINT audit_events_event_kind_check;",
+      "ALTER TABLE cloud_agents.audit_events DROP CONSTRAINT audit_events_event_kind_check;",
+      "ALTER TABLE cloud_agents_identity.audit_events DROP CONSTRAINT other_check;",
+      "ALTER TABLE cloud_agents_identity.audit_events DROP CONSTRAINT audit_events_event_kind_check CASCADE;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_event_kind_check FOREIGN KEY (actor_user_id) REFERENCES cloud_agents_identity.users (user_id);",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CHECK (event_kind IN ('token_issued'));",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT other_check CHECK (event_kind IN ('token_issued'));",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_event_kind_check CHECK (event_kind IN ('token_issued')), DROP COLUMN actor_user_id;",
+    ]) {
+      expect(() => classify(sql), sql).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+  });
+
+  it("admits only the service-account audit columns and constraints after 000118", () => {
+    const classify = (sql: string, migrationId = "000118") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        migrationId,
+      );
+    const admitted = [
+      "ALTER TABLE cloud_agents_identity.audit_events ADD COLUMN actor_service_account_id text;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD COLUMN target_service_account_id text;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_actor_service_account_fk FOREIGN KEY (tenant_id, actor_service_account_id) REFERENCES cloud_agents_identity.service_accounts (tenant_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_target_service_account_fk FOREIGN KEY (tenant_id, target_service_account_id) REFERENCES cloud_agents_identity.service_accounts (tenant_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_actor_identity_check CHECK (actor_user_id IS NULL OR actor_service_account_id IS NULL);",
+    ];
+    for (const sql of admitted) {
+      expect(classify(sql)).toMatchObject({
+        command: "ALTER",
+        object_kind: "TABLE",
+        target_identity: "table:unquoted:cloud_agents_identity/unquoted:audit_events",
+      });
+      expect(() => classify(sql, "000117")).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+    for (const sql of [
+      "ALTER TABLE cloud_agents_identity.audit_events ADD COLUMN raw_credential text;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD COLUMN actor_service_account_id text, DROP COLUMN actor_user_id;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_actor_service_account_fk FOREIGN KEY (actor_service_account_id) REFERENCES cloud_agents_identity.service_accounts (id) ON DELETE CASCADE;",
+      "ALTER TABLE cloud_agents_identity.audit_events ADD CONSTRAINT audit_events_actor_identity_check CHECK (true);",
+      "ALTER TABLE cloud_agents_identity.users ADD COLUMN actor_service_account_id text;",
+    ]) {
+      expect(() => classify(sql), sql).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+  });
+
+  it("keeps identity runtime service-account grants closed", () => {
+    const classify = (sql: string, migrationId = "000118") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        migrationId,
+      );
+    const admitted = [
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.read_service_account_subject(bytea, text, text) TO cloud_agents_runtime;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.lock_service_account_tenant_revision(text) TO cloud_agents_runtime;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.record_service_account_management_denial(text, text, text, text, text, text, text, text, text, text) TO cloud_agents_runtime;",
+    ];
+    for (const sql of admitted) {
+      expect(classify(sql)).toMatchObject({
+        command: "GRANT",
+        object_kind: "FUNCTION",
+        grantee: "CLOUD_AGENTS_RUNTIME",
+      });
+      expect(() => classify(sql, "000117")).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+    for (const sql of [
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.read_all_service_accounts() TO cloud_agents_runtime;",
+      "GRANT SELECT ON TABLE cloud_agents_identity.service_accounts TO cloud_agents_runtime;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.read_service_account_subject(bytea, text, text) TO PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.record_service_account_management_denial(text, text, text, text, text, text, text, text, text, text) TO cloud_agents_identity_service;",
+      "GRANT EXECUTE ON FUNCTION cloud_agents_identity.record_service_account_management_denial(text, text, text, text, text, text, text, text, text) TO cloud_agents_runtime;",
+    ]) {
+      expect(() => classify(sql), sql).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+  });
+
+  it("admits bounded indexes on identity tables after the identity boundary", () => {
+    const classify = (sql: string, migrationId = "000111") =>
+      classifyMigrationStatement(
+        splitPostgresStatements(new TextEncoder().encode(sql))[0]!,
+        migrationId,
+      );
+    expect(
+      classify(
+        "CREATE INDEX issued_tokens_expiry_idx ON cloud_agents_identity.issued_tokens (expires_at, token_sha256);",
+      ),
+    ).toMatchObject({
+      command: "CREATE",
+      object_kind: "INDEX",
+      target_identity:
+        "index:unquoted:cloud_agents_identity/unquoted:issued_tokens/unquoted:issued_tokens_expiry_idx",
+    });
+    expect(() =>
+      classify(
+        "CREATE INDEX issued_tokens_expiry_idx ON cloud_agents_identity.issued_tokens (expires_at, token_sha256);",
+        "000104",
+      ),
+    ).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    for (const sql of [
+      "CREATE INDEX issued_tokens_expiry_idx ON other.issued_tokens (expires_at);",
+      "CREATE INDEX issued_tokens_expiry_idx ON cloud_agents_identity.issued_tokens (expires_at) TABLESPACE public_space;",
+      "CREATE INDEX issued_tokens_expiry_idx ON cloud_agents_identity.issued_tokens (expires_at), DROP TABLE cloud_agents_identity.users;",
+    ]) {
+      expect(() => classify(sql), sql).toThrow(/SQL_STATEMENT_PROFILE_REJECTED/u);
+    }
+  });
+
+  it("classifies the bounded identity invitation admission migration", () => {
+    const bytes = readFileSync(
+      resolve(root, "services/control-plane/migrations/000114_identity_invitations.sql"),
+    );
+    const statements = splitPostgresStatements(bytes);
+    const classifications = statements.map((statement) =>
+      classifyMigrationStatement(statement, "000114"),
+    );
+    expect(statements).toHaveLength(29);
+    expect(classifications).toContainEqual(
+      expect.objectContaining({
+        command: "CREATE",
+        object_kind: "FUNCTION",
+        target_identity:
+          "function:unquoted:cloud_agents/unquoted:accept_identity_invitation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      }),
+    );
+    expect(classifications).toContainEqual(
+      expect.objectContaining({
+        command: "REVOKE",
+        grantee: "PUBLIC",
+        target_identity:
+          "function:unquoted:cloud_agents/unquoted:accept_identity_invitation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+      }),
+    );
+    expect(
+      classifications.some(
+        ({ command, target_identity }) =>
+          command === "GRANT" && target_identity.includes("accept_identity_invitation_v1"),
+      ),
+    ).toBe(false);
   });
 
   it("preserves quoted identity spelling while folding unquoted identifiers", () => {

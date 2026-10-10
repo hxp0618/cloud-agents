@@ -8,18 +8,23 @@ import type {
 import {
   adminFailure,
   adminMutationKey,
+  identifierFromName,
+  identifierWithSuffix,
   listAdminRemoteWorkerEnrollmentAuditEvents,
   listAdminRemoteWorkerEnrollments,
   listAdminRemoteWorkerOperations,
+  newIdentifierSuffix,
   newRequestId,
   pendingIdempotencyKey,
   remoteWorkerFoundationSupport,
   replaceRemoteWorkerEnrollment,
-  targetIdentifierPattern,
   type AdminClient,
   type SavedAdminConnection,
 } from "./admin";
+import { DurationSelect, NameField } from "./app/form-fields";
 import { useI18n, type MessageKey } from "./i18n";
+
+const enrollmentTtlOptions = Object.freeze([300, 600, 900, 1800, 3600]);
 
 const stateKeys: Readonly<Record<RemoteWorkerEnrollment["spec"]["state"], MessageKey>> = {
   pending: "remoteWorkerEnrollment.state.pending",
@@ -65,6 +70,10 @@ function enrollmentStateKey(enrollment: RemoteWorkerEnrollment): MessageKey {
     : stateKeys[enrollment.spec.state];
 }
 
+function enrollmentPending(enrollment: RemoteWorkerEnrollment): boolean {
+  return enrollment.spec.state === "pending" || enrollment.spec.state === "secret-issued";
+}
+
 function auditActionKey(action: AdminAuditEvent["action"]): MessageKey {
   if (action === "remote-worker.drain" || action === "remote-worker.resume")
     return operationActionKeys[action];
@@ -87,7 +96,7 @@ export function RemoteWorkerEnrollmentPanel({
   client,
   connection,
 }: Readonly<{ client: AdminClient; connection: SavedAdminConnection }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, number, bytes, dateTime } = useI18n();
   const [enrollments, setEnrollments] = useState<readonly RemoteWorkerEnrollment[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [audit, setAudit] = useState<readonly AdminAuditEvent[]>([]);
@@ -100,14 +109,22 @@ export function RemoteWorkerEnrollmentPanel({
   const [error, setError] = useState<ReturnType<typeof adminFailure> | null>(null);
   const [notice, setNotice] = useState<MessageKey | null>(null);
   const [confirmation, setConfirmation] = useState("");
-  const [form, setForm] = useState({
-    enrollmentId: "",
-    workerId: "",
+  const [form, setForm] = useState(() => ({
     workerName: "",
     ttlSeconds: "900",
-  });
+    token: newIdentifierSuffix(),
+  }));
   const pendingKeysRef = useRef(new Map<string, string>());
   const selected = enrollments.find(({ metadata }) => metadata.uid === selectedId);
+  const derivedWorkerId = identifierFromName(form.workerName.trim(), "worker");
+  const workerNameTaken =
+    form.workerName.trim() !== "" &&
+    enrollments.some(
+      ({ spec }) =>
+        spec.workerId === derivedWorkerId &&
+        spec.state !== "revoked" &&
+        spec.state !== "expired",
+    );
   const foundationSupport = selected?.spec.node
     ? remoteWorkerFoundationSupport(selected.spec.node)
     : null;
@@ -174,7 +191,7 @@ export function RemoteWorkerEnrollmentPanel({
 
   async function run(
     operation: (signal: AbortSignal) => Promise<void>,
-    success: MessageKey,
+    success: MessageKey | null,
     operationKey?: string,
   ) {
     if (busy) return;
@@ -194,7 +211,14 @@ export function RemoteWorkerEnrollmentPanel({
 
   function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const body = { ...form, ttlSeconds: Number(form.ttlSeconds) };
+    if (workerNameTaken) return;
+    const workerId = derivedWorkerId;
+    const body = {
+      enrollmentId: identifierWithSuffix(workerId, form.token),
+      workerId,
+      workerName: form.workerName.trim(),
+      ttlSeconds: Number(form.ttlSeconds),
+    };
     const key = adminMutationKey("remote-worker-enrollment-create", body);
     void run(
       async (signal) => {
@@ -207,7 +231,7 @@ export function RemoteWorkerEnrollmentPanel({
           signal,
         );
         setCreating(false);
-        setForm({ enrollmentId: "", workerId: "", workerName: "", ttlSeconds: "900" });
+        setForm({ workerName: "", ttlSeconds: "900", token: newIdentifierSuffix() });
         await load(signal, result.value.metadata.uid);
       },
       "remoteWorkerEnrollment.notice.created",
@@ -219,7 +243,7 @@ export function RemoteWorkerEnrollmentPanel({
     setConfirmation("");
     setSchedulingPreview(null);
     setSchedulingConfirmation("");
-    void run((signal) => load(signal, enrollmentId), "remoteWorkerEnrollment.notice.loaded");
+    void run((signal) => load(signal, enrollmentId), null);
   }
 
   function previewScheduling() {
@@ -235,7 +259,7 @@ export function RemoteWorkerEnrollmentPanel({
       );
       setSchedulingConfirmation("");
       setSchedulingPreview(result.value);
-    }, "remoteWorkerEnrollment.notice.schedulingPreview");
+    }, null);
   }
 
   function transitionScheduling() {
@@ -307,9 +331,6 @@ export function RemoteWorkerEnrollmentPanel({
   return (
     <section className="resource-list">
       <div className="list-toolbar">
-        <span className="scope-chip" role="status">
-          remote-worker-enrollments.list · {number(enrollments.length)}
-        </span>
         <button
           className="button primary"
           type="button"
@@ -339,52 +360,20 @@ export function RemoteWorkerEnrollmentPanel({
             </div>
           </div>
           <div className="form-row">
-            <label>
-              <span>{t("remoteWorkerEnrollment.id")}</span>
-              <input
-                required
-                pattern={targetIdentifierPattern}
-                maxLength={128}
-                value={form.enrollmentId}
-                onChange={(event) => setForm({ ...form, enrollmentId: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>{t("remoteWorkerEnrollment.workerId")}</span>
-              <input
-                required
-                pattern={targetIdentifierPattern}
-                maxLength={128}
-                value={form.workerId}
-                onChange={(event) => setForm({ ...form, workerId: event.target.value })}
-              />
-            </label>
+            <NameField
+              label={t("remoteWorkerEnrollment.workerName")}
+              value={form.workerName}
+              takenMessage={workerNameTaken ? t("form.nameTaken") : ""}
+              onChange={(workerName) => setForm({ ...form, workerName })}
+            />
+            <DurationSelect
+              label={t("remoteWorkerEnrollment.ttl")}
+              value={form.ttlSeconds}
+              options={enrollmentTtlOptions}
+              onChange={(ttlSeconds) => setForm({ ...form, ttlSeconds })}
+            />
           </div>
-          <div className="form-row">
-            <label>
-              <span>{t("remoteWorkerEnrollment.workerName")}</span>
-              <input
-                required
-                pattern={targetIdentifierPattern}
-                maxLength={128}
-                value={form.workerName}
-                onChange={(event) => setForm({ ...form, workerName: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>{t("remoteWorkerEnrollment.ttl")}</span>
-              <input
-                required
-                type="number"
-                min="300"
-                max="3600"
-                value={form.ttlSeconds}
-                onChange={(event) => setForm({ ...form, ttlSeconds: event.target.value })}
-              />
-            </label>
-          </div>
-          <p className="cluster-boundary">{t("remoteWorkerEnrollment.secretBoundary")}</p>
-          <button className="button primary" type="submit" disabled={busy}>
+          <button className="button primary" type="submit" disabled={busy || workerNameTaken}>
             {t("remoteWorkerEnrollment.create")}
           </button>
         </form>
@@ -398,7 +387,6 @@ export function RemoteWorkerEnrollmentPanel({
               <thead>
                 <tr>
                   <th>{t("remoteWorkerEnrollment.workerName")}</th>
-                  <th>{t("remoteWorkerEnrollment.workerId")}</th>
                   <th>{t("remoteWorkerEnrollment.state")}</th>
                   <th>{t("remoteWorkerEnrollment.node.health")}</th>
                   <th>{t("remoteWorkerEnrollment.expires")}</th>
@@ -413,9 +401,7 @@ export function RemoteWorkerEnrollmentPanel({
                   >
                     <td>
                       <strong>{enrollment.metadata.name}</strong>
-                      <small className="mono">{enrollment.metadata.uid}</small>
                     </td>
-                    <td className="mono">{enrollment.spec.workerId}</td>
                     <td>
                       <span
                         className={`phase ${enrollment.spec.state === "revoked" || enrollment.spec.state === "expired" || enrollment.spec.certificateState === "revoked" ? "danger" : enrollment.spec.state === "enrolled" ? "success" : "running"}`}
@@ -436,7 +422,9 @@ export function RemoteWorkerEnrollmentPanel({
                         t("remoteWorkerEnrollment.node.notConnected")
                       )}
                     </td>
-                    <td>{dateTime(enrollment.spec.expiresAt)}</td>
+                    <td>
+                      {enrollmentPending(enrollment) ? dateTime(enrollment.spec.expiresAt) : "—"}
+                    </td>
                     <td>
                       <button
                         className="button outline"
@@ -458,20 +446,13 @@ export function RemoteWorkerEnrollmentPanel({
         <section className="panel overview-panel">
           <div className="panel-heading">
             <div>
-              <div className="eyebrow">RemoteWorker</div>
               <h2>{selected.metadata.name}</h2>
-              <p className="mono">{selected.metadata.uid}</p>
             </div>
-            <span className="scope-chip">resourceVersion {selected.metadata.resourceVersion}</span>
           </div>
           <dl className="detail-grid">
             <div>
               <dt>{t("remoteWorkerEnrollment.workerId")}</dt>
               <dd className="mono">{selected.spec.workerId}</dd>
-            </div>
-            <div>
-              <dt>{t("remoteWorkerEnrollment.targetId")}</dt>
-              <dd className="mono break">{selected.spec.targetId}</dd>
             </div>
             <div>
               <dt>{t("remoteWorkerEnrollment.state")}</dt>
@@ -481,26 +462,10 @@ export function RemoteWorkerEnrollmentPanel({
               <dt>{t("remoteWorkerEnrollment.created")}</dt>
               <dd>{dateTime(selected.metadata.createdAt)}</dd>
             </div>
-            <div>
-              <dt>{t("remoteWorkerEnrollment.expires")}</dt>
-              <dd>{dateTime(selected.spec.expiresAt)}</dd>
-            </div>
-            {selected.spec.incarnationId ? (
+            {enrollmentPending(selected) ? (
               <div>
-                <dt>{t("remoteWorkerEnrollment.incarnation")}</dt>
-                <dd className="mono">{selected.spec.incarnationId}</dd>
-              </div>
-            ) : null}
-            {selected.spec.spiffeId ? (
-              <div>
-                <dt>{t("remoteWorkerEnrollment.spiffeId")}</dt>
-                <dd className="mono">{selected.spec.spiffeId}</dd>
-              </div>
-            ) : null}
-            {selected.spec.certificateSha256 ? (
-              <div>
-                <dt>{t("remoteWorkerEnrollment.certificateSha256")}</dt>
-                <dd className="mono">{selected.spec.certificateSha256}</dd>
+                <dt>{t("remoteWorkerEnrollment.expires")}</dt>
+                <dd>{dateTime(selected.spec.expiresAt)}</dd>
               </div>
             ) : null}
             {selected.spec.certificateExpiresAt ? (
@@ -545,17 +510,6 @@ export function RemoteWorkerEnrollmentPanel({
                   <dd>{t(nodeStateKeys[selected.spec.node.observedState])}</dd>
                 </div>
                 <div>
-                  <dt>{t("remoteWorkerEnrollment.node.generation")}</dt>
-                  <dd className="mono">
-                    {number(selected.spec.node.observedGeneration)} /{" "}
-                    {number(selected.spec.node.generation)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t("remoteWorkerEnrollment.node.resourceVersion")}</dt>
-                  <dd className="mono">{selected.spec.node.resourceVersion}</dd>
-                </div>
-                <div>
                   <dt>{t("remoteWorkerEnrollment.node.workerVersion")}</dt>
                   <dd className="mono">{selected.spec.node.workerVersion}</dd>
                 </div>
@@ -574,8 +528,8 @@ export function RemoteWorkerEnrollmentPanel({
                   <dt>{t("remoteWorkerEnrollment.node.capacity")}</dt>
                   <dd>
                     {number(selected.spec.node.capacity.cpuMillis)} mCPU ·{" "}
-                    {number(selected.spec.node.capacity.memoryBytes)} B ·{" "}
-                    {number(selected.spec.node.capacity.diskBytes)} B
+                    {bytes(selected.spec.node.capacity.memoryBytes)} ·{" "}
+                    {bytes(selected.spec.node.capacity.diskBytes)}
                   </dd>
                 </div>
                 {selected.spec.node.placement ? (
@@ -583,8 +537,7 @@ export function RemoteWorkerEnrollmentPanel({
                     <dt>{t("remoteWorkerEnrollment.node.placement")}</dt>
                     <dd className="mono">
                       {selected.spec.node.placement.regionId} ·{" "}
-                      {selected.spec.node.placement.resourcePoolId} ·{" "}
-                      {selected.spec.node.placement.nodeId}
+                      {selected.spec.node.placement.resourcePoolId}
                     </dd>
                   </div>
                 ) : null}
@@ -604,19 +557,11 @@ export function RemoteWorkerEnrollmentPanel({
                       </dd>
                     </div>
                     <div>
-                      <dt>{t("remoteWorkerEnrollment.node.reservedCapacity")}</dt>
-                      <dd>
-                        {number(selected.spec.node.reservation.reservedCpuMillis)} mCPU ·{" "}
-                        {number(selected.spec.node.reservation.reservedMemoryBytes)} B ·{" "}
-                        {number(selected.spec.node.reservation.reservedDiskBytes)} B
-                      </dd>
-                    </div>
-                    <div>
                       <dt>{t("remoteWorkerEnrollment.node.availableCapacity")}</dt>
                       <dd>
                         {number(selected.spec.node.reservation.availableCpuMillis)} mCPU ·{" "}
-                        {number(selected.spec.node.reservation.availableMemoryBytes)} B ·{" "}
-                        {number(selected.spec.node.reservation.availableDiskBytes)} B
+                        {bytes(selected.spec.node.reservation.availableMemoryBytes)} ·{" "}
+                        {bytes(selected.spec.node.reservation.availableDiskBytes)}
                       </dd>
                     </div>
                   </>
@@ -628,10 +573,6 @@ export function RemoteWorkerEnrollmentPanel({
                 <div>
                   <dt>{t("remoteWorkerEnrollment.node.lastHeartbeat")}</dt>
                   <dd>{dateTime(selected.spec.node.lastHeartbeatAt)}</dd>
-                </div>
-                <div>
-                  <dt>{t("remoteWorkerEnrollment.node.heartbeatExpires")}</dt>
-                  <dd>{dateTime(selected.spec.node.heartbeatExpiresAt)}</dd>
                 </div>
               </dl>
               {foundationSupport ? (
@@ -680,7 +621,6 @@ export function RemoteWorkerEnrollmentPanel({
                   </dl>
                 </>
               ) : null}
-              <p className="cluster-boundary">{t("remoteWorkerEnrollment.node.boundary")}</p>
               <button
                 className="button outline"
                 type="button"
@@ -708,9 +648,7 @@ export function RemoteWorkerEnrollmentPanel({
                       )}
                     </strong>
                     <p>{schedulingPreview.spec.impactSummary}</p>
-                    <small className="mono">
-                      generation {number(schedulingPreview.spec.expectedGeneration)} ·
-                      resourceVersion {schedulingPreview.spec.expectedResourceVersion} ·{" "}
+                    <small>
                       {t("remoteWorkerEnrollment.commandDeadline", {
                         seconds: number(schedulingPreview.spec.commandDeadlineSeconds),
                       })}
@@ -743,7 +681,6 @@ export function RemoteWorkerEnrollmentPanel({
           <section className="activity-block">
             <div className="activity-heading">
               <h3>{t("remoteWorkerEnrollment.operations")}</h3>
-              <span className="scope-chip">operations.list · {number(operations.length)}</span>
             </div>
             {operations.length === 0 ? (
               <p className="activity-empty">{t("remoteWorkerEnrollment.operationsEmpty")}</p>
@@ -776,7 +713,6 @@ export function RemoteWorkerEnrollmentPanel({
               </ol>
             )}
           </section>
-          <p className="cluster-boundary">{t("remoteWorkerEnrollment.adminBoundary")}</p>
           {selected.spec.state === "pending" ||
           selected.spec.state === "secret-issued" ||
           selected.spec.state === "expired" ||
@@ -807,7 +743,6 @@ export function RemoteWorkerEnrollmentPanel({
           <section className="activity-block">
             <div className="activity-heading">
               <h3>{t("remoteWorkerEnrollment.audit")}</h3>
-              <span className="scope-chip">audit.list · {number(audit.length)}</span>
             </div>
             {audit.length === 0 ? (
               <p className="activity-empty">{t("remoteWorkerEnrollment.auditEmpty")}</p>

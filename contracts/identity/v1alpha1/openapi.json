@@ -1,0 +1,2380 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Cloud Agents Identity API",
+    "version": "v1alpha1",
+    "description": "Browser session facade and separately authenticated server-only Identity Service operations."
+  },
+  "security": [
+    {
+      "ServiceAuth": []
+    }
+  ],
+  "paths": {
+    "/.well-known/jwks.json": {
+      "get": {
+        "operationId": "identityGetJWKS",
+        "description": "Public closed RS256 verification-key document. Consumers pin issuer and accepted audiences locally and apply revision, validity, and lineage continuity rules.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Active verification keys and bounded immutable key-lineage authority metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/identity-jwks.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/login/password": {
+      "post": {
+        "operationId": "identityPasswordLogin",
+        "description": "Authenticated Web-server upstream call. The service identity fixes application purpose; the private response header returns the new opaque session handle. Authentication failures use the same generic problem response.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientIP"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/password-login-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IdentityLoginSession"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/session": {
+      "get": {
+        "operationId": "identityGetBrowserSession",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/BrowserSession"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "identityLogoutBrowserSession",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durable session revoked. The Web server separately clears its application cookie.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me": {
+      "get": {
+        "operationId": "identityGetCurrentUser",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current account display facts; not authorization authority.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/current-user.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me/tenants": {
+      "get": {
+        "operationId": "identityListBrowserTenants",
+        "description": "Returns a bounded page of authorized tenant selector projections for this application session. The cursor is opaque and bound to the session and application.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized selector projection; every resource request still rechecks authorization.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/browser-tenant-page.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/email-policy": {
+      "get": {
+        "operationId": "identityGetEmailSuffixPolicy",
+        "description": "Admin-purpose only. Rechecks the durable Admin session and current platform-admin or selected-tenant tenant-admin authority.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current exact verified-email-domain admission policy. An empty allowedDomains list permits any verified email.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/email-suffix-policy.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "identityUpdateEmailSuffixPolicy",
+        "description": "Admin-purpose only CAS update. The policy restricts later invitation acceptance or membership admission and never grants authority or removes existing members.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/email-suffix-policy-update.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated policy after the exact expected resource version is committed.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/email-suffix-policy.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenant-token": {
+      "post": {
+        "operationId": "identityIssueTenantToken",
+        "description": "Server-only. Service identity fixes application purpose; session and current Control Plane bindings derive principal and scopes.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/tenant-token-issue-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Short-lived token returned only to the authenticated Web server.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/tenant-token.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/token-status": {
+      "post": {
+        "operationId": "identityCheckTokenStatus",
+        "description": "Server-only online check for the exact-token digest and verifier-established application/tenant/project context.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/token-status-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Opaque activity status. The response never returns principal or token material.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/token-status.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/authorize-tenant-token": {
+      "post": {
+        "operationId": "identityAuthorizeTenantToken",
+        "description": "Server-only Identity Service to Control Plane authorization. The Control Plane re-reads the durable session and current bindings, then returns the stable account subject inputs and derived scopes.",
+        "security": [
+          {
+            "IdentityServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/tenant-token-authorization-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current principal and scopes derived by Control Plane authority.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/tenant-token-authorization.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/invitations": {
+      "get": {
+        "operationId": "identityListInvitations",
+        "description": "Admin-purpose only bounded invitation page, with a cursor bound to the current session and selected tenant. Never returns invitation proofs or their hashes.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation operation completed.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/invitation-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "identityCreateInvitation",
+        "description": "Admin-purpose only. Validates current tenant administrator authority, selected role and scope, and the current email domain policy. The new proof is returned once; it is never recoverable from listing.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Invitation operation completed.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/invitation-created.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/invitation-create-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "identityRevokeInvitation",
+        "description": "Admin-purpose only. Revokes a pending invitation. Repeating a revocation is a no-op; accepted or expired invitations reject the change.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/InvitationId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Invitation operation completed.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/invitations/accept": {
+      "post": {
+        "operationId": "identityAcceptInvitation",
+        "description": "New account: invitation code, password and display name, with persisted administrator email attestation. Existing account: matching active session plus CSRF, with neither password nor display name. Atomically consumes the invitation and adds the explicitly invited membership/role. Returns no token or new session.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientIP"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Invitation operation completed.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/invitation-accept-request.schema.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/identity/accounts": {
+      "get": {
+        "operationId": "identityListAccounts",
+        "description": "Platform administrator account metadata listing.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful identity operation.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/identity-account-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/accounts/{userId}/disable": {
+      "post": {
+        "operationId": "identityDisableAccount",
+        "description": "Disables an account and revokes its sessions.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account disabled."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/accounts/{userId}/password-reset": {
+      "post": {
+        "operationId": "identityIssuePasswordReset",
+        "description": "Creates a one-time 30-minute reset code.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful identity operation.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/password-reset-created.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me/password": {
+      "put": {
+        "operationId": "identityChangePassword",
+        "description": "Changes the authenticated account password and revokes all sessions.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/password-change-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "identityEnablePassword",
+        "description": "Consumes a one-use provider reauthentication proof, creates the first password credential, and revokes every session including the current session.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/ReauthenticationProof"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/enable-password-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password enabled and all sessions revoked."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/password-resets/accept": {
+      "post": {
+        "operationId": "identityAcceptPasswordReset",
+        "description": "Consumes a one-time reset code and revokes all sessions.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientIP"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/password-reset-accept-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password reset accepted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/audit-events": {
+      "get": {
+        "operationId": "identityListAuditEvents",
+        "description": "Platform administrator global identity audit metadata.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful identity operation.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/identity-audit-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/audit-events": {
+      "get": {
+        "operationId": "identityListTenantAuditEvents",
+        "description": "Tenant administrator identity audit metadata strictly filtered to the selected tenant.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful identity operation.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/identity-audit-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/accounts": {
+      "get": {
+        "operationId": "identityListTenantAccounts",
+        "description": "Tenant-scoped identity account metadata for active or suspended memberships.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant identity account page.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/identity-account-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/login/providers": {
+      "get": {
+        "operationId": "identityListLoginProviders",
+        "description": "Lists enabled login providers for the authenticated Admin or User Web service purpose.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enabled provider list.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/login-provider-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/login/provider/start": {
+      "post": {
+        "operationId": "identityStartProviderAuthorization",
+        "description": "Creates one durable one-use provider flow. Reauth and link require the current application session and CSRF; invitation additionally requires the canonical client IP. Raw state is returned only in a private response header.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/provider-authorization-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ProviderAuthorization"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/login/provider/callback": {
+      "post": {
+        "operationId": "identityCompleteProviderAuthorization",
+        "description": "Consumes a durable provider flow before exchanging its code. Optional issuer is accepted only for OIDC/GitLab and must match the pinned issuer; sessionState is bounded and non-authoritative.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/provider-callback-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ProviderCallback"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me/login-methods": {
+      "get": {
+        "operationId": "identityListLoginMethods",
+        "description": "Lists the current account login methods and whether it has a password credential.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current login methods.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/login-method-list.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me/reauthenticate/password": {
+      "post": {
+        "operationId": "identityPasswordReauthenticate",
+        "description": "Verifies the current password and returns the one-use proof only in a private response header.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/password-reauth-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reauthenticated.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "X-Cloud-Agents-Reauthentication": {
+                "$ref": "#/components/headers/ReauthenticationProof"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/reauthentication.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/me/login-methods/{loginMethodId}": {
+      "delete": {
+        "operationId": "identityUnlinkLoginMethod",
+        "description": "Consumes a one-use reauthentication proof and unlinks one provider login. The last usable login method cannot be removed.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/LoginMethodId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/ReauthenticationProof"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Login method unlinked."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/providers": {
+      "get": {
+        "operationId": "identityListProviderClients",
+        "description": "Platform-administrator provider configuration list. It contains secret references only.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider configuration list.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/provider-client-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/providers/{providerId}/applications/{application}": {
+      "put": {
+        "operationId": "identityUpdateProviderClient",
+        "description": "Creates or updates one application-specific provider configuration using optimistic resource versioning. Secrets remain operator-controlled references.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProviderId"
+          },
+          {
+            "$ref": "#/components/parameters/Application"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/provider-client-update.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored provider configuration.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/provider-client.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/authorizations": {
+      "post": {
+        "operationId": "identityStartCLIAuthorization",
+        "description": "Starts a five-minute CLI loopback authorization. The caller binds an exact loopback port, random state, application purpose, and PKCE S256 challenge.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientIP"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/cli-authorization-start-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Opaque authorization identifier.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/cli-authorization.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/authorizations/{cliAuthorizationId}/approve": {
+      "post": {
+        "operationId": "identityApproveCLIAuthorization",
+        "description": "Browser-session approval. Rechecks the application-bound session and consumes the exact state before returning a one-use code for the bound loopback port.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/CLIAuthorizationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/cli-authorization-approve-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Private loopback redirect facts for the Web server.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/cli-authorization-approved.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/grants/exchange": {
+      "post": {
+        "operationId": "identityExchangeCLIGrant",
+        "description": "One-use authorization-code exchange bound to the original PKCE verifier. Returns a revocable non-browser CLI grant once.",
+        "security": [
+          {
+            "ServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ClientIP"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/cli-grant-exchange-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revocable CLI grant returned only to the loopback CLI.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/cli-grant.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/tenants": {
+      "get": {
+        "operationId": "identityListCLITenants",
+        "description": "Lists tenants currently authorized for this application and CLI grant.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "CLIGrant": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded authorized tenant page.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/browser-tenant-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/tenant-token": {
+      "post": {
+        "operationId": "identityIssueCLITenantToken",
+        "description": "Issues a 15-minute CLI-purpose Control Plane token after live RBAC authorization.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "CLIGrant": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/tenant-token-issue-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Short-lived CLI-purpose token.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/tenant-token.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/cli/grant": {
+      "delete": {
+        "operationId": "identityRevokeCLIGrant",
+        "description": "Revokes the exact CLI grant and all future online admissions of tokens derived from it.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "CLIGrant": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "CLI grant revoked.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/automation/tenant-token": {
+      "post": {
+        "operationId": "identityIssueAutomationTenantToken",
+        "description": "Issues a 15-minute automation-purpose token from an active single-tenant service-account credential after Control Plane RBAC authorization. No browser client exposes this operation.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "AutomationCredential": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/tenant-token-issue-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Short-lived automation-purpose token.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/tenant-token.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/authorize-principal-token": {
+      "post": {
+        "operationId": "identityAuthorizePrincipalToken",
+        "description": "Server-only Identity Service to Control Plane authorization for CLI grants or service-account credentials. The Control Plane remains the sole RBAC evaluator.",
+        "security": [
+          {
+            "IdentityServiceAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "schemas/principal-token-authorization-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current subject and scopes derived by Control Plane authority.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/principal-token-authorization.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/identity/tenants/{tenantId}/control-plane-audit-events": {
+      "get": {
+        "operationId": "identityListControlPlaneAuditEvents",
+        "description": "Admin session only. Requires current tenant-admin authority and returns only the selected tenant audit facts; historical facts may omit actor and correlation.",
+        "security": [
+          {
+            "ServiceAuth": [],
+            "SessionHandle": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/PageSize"
+          },
+          {
+            "$ref": "#/components/parameters/PageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded tenant Control Plane audit page.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "schemas/control-plane-audit-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ServiceAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Configured Web or Control Plane service credential; never a browser credential."
+      },
+      "SessionHandle": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cloud-Agents-Session",
+        "description": "Opaque durable-session handle forwarded only by an authenticated Web server."
+      },
+      "IdentityServiceAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Dedicated Identity Service to Control Plane credential. It is distinct from Web service and browser credentials."
+      },
+      "CLIGrant": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cloud-Agents-CLI-Grant",
+        "description": "Private revocable CLI grant forwarded only by an authenticated Web server; never accepted as browser session or service authentication."
+      },
+      "AutomationCredential": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cloud-Agents-Automation-Credential",
+        "description": "Private revocable service-account credential forwarded only by an authenticated Web server or automation ingress; never accepted as browser session or service authentication."
+      }
+    },
+    "parameters": {
+      "RequestId": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "CSRFToken": {
+        "name": "X-CSRF-Token",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "ClientIP": {
+        "name": "X-Cloud-Agents-Client-IP",
+        "in": "header",
+        "required": true,
+        "description": "Canonical single client IP derived by the authenticated Web server from the accepted socket or configured trusted TLS proxy. Lists, ports, zones, whitespace, X-Forwarded-For, and browser-supplied values are forbidden.",
+        "schema": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 45
+        }
+      },
+      "TenantId": {
+        "name": "tenantId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-size.schema.json"
+        }
+      },
+      "PageToken": {
+        "name": "pageToken",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/page-token.schema.json"
+        }
+      },
+      "InvitationId": {
+        "name": "invitationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "UserId": {
+        "name": "userId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "ReauthenticationProof": {
+        "name": "X-Cloud-Agents-Reauthentication",
+        "in": "header",
+        "required": true,
+        "description": "Private one-use reauthentication proof forwarded only by the authenticated Web server.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "LoginMethodId": {
+        "name": "loginMethodId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "ProviderId": {
+        "name": "providerId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      },
+      "Application": {
+        "name": "application",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "user"
+          ]
+        }
+      },
+      "CLIAuthorizationId": {
+        "name": "cliAuthorizationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
+        }
+      }
+    },
+    "headers": {
+      "NoStore": {
+        "description": "Response must be Cache-Control: no-store."
+      },
+      "OAuthState": {
+        "description": "Private OAuth state. The Web server binds it to a short-lived HttpOnly flow cookie and never forwards it to browser JavaScript.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      },
+      "ReauthenticationProof": {
+        "description": "Private one-use reauthentication proof. The Web server stores it only in a short-lived HttpOnly cookie.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "responses": {
+      "BrowserSession": {
+        "description": "Application-specific session projection returned to an authenticated Web server.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "schemas/browser-session.schema.json"
+            }
+          }
+        }
+      },
+      "IdentityLoginSession": {
+        "description": "New session projection plus a private opaque handle for the authenticated Web server. The Web server must not forward this header to the browser.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "X-Cloud-Agents-Session": {
+            "description": "Private opaque durable-session handle. Never exposed in browser JSON or response headers.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 2048,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "schemas/browser-session.schema.json"
+            }
+          }
+        }
+      },
+      "Problem": {
+        "description": "Stable error response. Authentication failures do not reveal whether an account exists.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "../../common/v1alpha1/schemas/problem.schema.json"
+            }
+          }
+        }
+      },
+      "ProviderAuthorization": {
+        "description": "Provider authorization URL plus private flow state.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "X-Cloud-Agents-OAuth-State": {
+            "$ref": "#/components/headers/OAuthState"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "schemas/provider-authorization.schema.json"
+            }
+          }
+        }
+      },
+      "ProviderCallback": {
+        "description": "Closed provider callback result. New session or reauthentication proofs are private headers.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "X-Cloud-Agents-Session": {
+            "description": "Private new durable-session handle for login or invitation completion.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 2048,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          "X-Cloud-Agents-Reauthentication": {
+            "$ref": "#/components/headers/ReauthenticationProof"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "schemas/provider-callback.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

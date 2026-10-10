@@ -9,6 +9,7 @@ import {
   durableProjectCreateMigrationClosure,
   durableCoordinationHistoricalRegistrySnapshot,
   migrationLedgerProjection,
+  migrationObjectIdentity,
   migrationStatementSourceDescriptors,
   validateBuiltinRoleSeedFixture,
   validateCatalogStatementBindings,
@@ -38,6 +39,23 @@ import {
 const root = resolve(import.meta.dirname, "../..");
 
 describe("migration bundle bootstrap", () => {
+  it("derives a new identity index owner from its classified target", () => {
+    expect(
+      migrationObjectIdentity(
+        "index:unquoted:cloud_agents_identity/unquoted:issued_tokens/unquoted:issued_tokens_expiry_idx",
+      ),
+    ).toEqual({
+      kind: "index",
+      identity: { schema: "cloud_agents_identity", name: "issued_tokens_expiry_idx" },
+      relation: { schema: "cloud_agents_identity", name: "issued_tokens" },
+    });
+    expect(() =>
+      migrationObjectIdentity(
+        "index:unquoted:cloud_agents_identity/unquoted:issued_tokens_expiry_idx",
+      ),
+    ).toThrow(/INDEX_OWNING_RELATION/u);
+  });
+
   it("matches checked-in exact bytes and preserves explicit open boundaries", () => {
     const bundle = validateCheckedInMigrationBundle(root);
     expect(bundle.manifest.schema_bundle_digest).toMatch(/^sha256:[0-9a-f]{64}$/u);

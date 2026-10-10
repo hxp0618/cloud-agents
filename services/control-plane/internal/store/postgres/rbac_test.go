@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -14,7 +15,34 @@ import (
 
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
+	"github.com/jackc/pgx/v5"
 )
+
+func TestGlobalRoleReadIsFixedByStoreApplication(t *testing.T) {
+	subject := authz.SubjectRef{Kind: "user", Issuer: "https://identity.test", Subject: "user-1"}
+	digest, _ := subject.Digest()
+	for _, app := range []string{"", "user", "admin"} {
+		transaction := &fakeTransaction{rows: []rowScanner{rowValues("1", subject.Kind, subject.Issuer, subject.Subject, digest)}}
+		handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: "tenant-1", application: app}
+		binding, err := handle.readGlobalRoleBinding(context.Background(), subject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if app != "admin" {
+			if binding != nil || len(transaction.queries) != 0 {
+				t.Fatal("user store queried global administration authority")
+			}
+			continue
+		}
+		if binding == nil || binding.Subject != subject || binding.SubjectHash != digest || binding.RoleName != "platform.admin" || binding.RoleVersion != 2 {
+			t.Fatal("admin global binding was not projected exactly")
+		}
+		transaction.rows = []rowScanner{rowError(pgx.ErrNoRows)}
+		if binding, err := handle.readGlobalRoleBinding(context.Background(), subject); err != nil || binding != nil {
+			t.Fatal("revoked global binding was retained")
+		}
+	}
+}
 
 func TestRBACFactReadersUseExactBoundedQueries(t *testing.T) {
 	tenantID := "tenant-alpha"
@@ -30,7 +58,7 @@ func TestRBACFactReadersUseExactBoundedQueries(t *testing.T) {
 		rowValues(databaseCatalogFixture(t)),
 		rowValues(databaseCandidateFixture(t, subject, digest, nil)),
 	}}
-	handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: tenantID, clock: time.Now}
+	handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: tenantID, clock: time.Now, application: "user"}
 
 	scope, resolved, err := handle.resolveAuthorizationScope(context.Background(), authz.ScopeRef{Level: authz.ScopeProject, ID: projectID})
 	if err != nil || !resolved || scope.ProjectID != projectID || scope.OrganizationID != organizationID {
@@ -149,9 +177,15 @@ func TestRBACProductionSurfaceHasNoStandaloneAuthorizeOrRawActor(t *testing.T) {
 }
 
 func databaseCatalogFixture(t *testing.T) []byte {
+	return databaseCatalogVersionFixture(t, 1)
+}
+
+func databaseCatalogVersionFixture(t *testing.T, version int64) []byte {
 	t.Helper()
 	var source struct {
-		Roles []struct {
+		CatalogRevision string `json:"catalogRevision"`
+		PublishedAt     string `json:"publishedAt"`
+		Roles           []struct {
 			Name        string   `json:"name"`
 			Version     int64    `json:"version"`
 			ScopeLevel  string   `json:"scopeLevel"`
@@ -159,13 +193,19 @@ func databaseCatalogFixture(t *testing.T) []byte {
 			Permissions []string `json:"permissions"`
 		} `json:"roles"`
 	}
-	readRepositoryJSON(t, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json", &source)
+	readRepositoryJSON(t, fmt.Sprintf("contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v%d.json", version), &source)
 	rows := make([]map[string]any, len(source.Roles))
 	for index, role := range source.Roles {
+		catalogRevision := int64(1)
+		publishedAt := "2026-08-17T00:00:00Z"
+		if source.CatalogRevision == "2" && role.Name == "platform.admin" {
+			catalogRevision = 2
+			publishedAt = source.PublishedAt
+		}
 		rows[index] = map[string]any{
-			"name": role.Name, "version": role.Version, "catalog_revision": int64(1),
+			"name": role.Name, "version": role.Version, "catalog_revision": catalogRevision,
 			"scope_level": role.ScopeLevel, "state": role.State,
-			"published_at": "2026-08-17T00:00:00Z", "permissions": role.Permissions,
+			"published_at": publishedAt, "permissions": role.Permissions,
 		}
 	}
 	raw, err := json.Marshal(rows)
@@ -176,12 +216,16 @@ func databaseCatalogFixture(t *testing.T) []byte {
 }
 
 func databaseCandidateFixture(t *testing.T, subject authz.SubjectRef, digest string, expiresAt *time.Time) []byte {
+	return databaseProjectCandidateFixture(t, subject, digest, "project-alpha", expiresAt)
+}
+
+func databaseProjectCandidateFixture(t *testing.T, subject authz.SubjectRef, digest, projectID string, expiresAt *time.Time) []byte {
 	t.Helper()
 	expiry := any(nil)
 	if expiresAt != nil {
 		expiry = expiresAt.UTC().Format(time.RFC3339Nano)
 	}
-	scope := map[string]any{"level": "project", "tenant_id": "tenant-alpha", "organization_id": "organization-alpha", "project_id": "project-alpha"}
+	scope := map[string]any{"level": "project", "tenant_id": "tenant-alpha", "organization_id": "organization-alpha", "project_id": projectID}
 	rows := []map[string]any{{
 		"membership": map[string]any{"uid": "membership-alpha", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "scope": scope, "state": "active", "expires_at": expiry},
 		"binding":    map[string]any{"uid": "role-binding-alpha", "subject_kind": subject.Kind, "subject_issuer": subject.Issuer, "subject_value": subject.Subject, "subject_digest": digest, "role_name": "project.viewer", "role_version": int64(1), "scope": scope, "state": "active", "expires_at": expiry},

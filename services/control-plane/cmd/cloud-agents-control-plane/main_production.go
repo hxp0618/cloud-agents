@@ -3,11 +3,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,11 +22,10 @@ import (
 	"time"
 
 	workerv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/cloudagents/worker/v1alpha1"
-	commonv1alpha1 "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/accessgrant"
-	"github.com/hxp0618/cloud-agents/services/control-plane/internal/authn"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/dockertarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/foundationcontroller"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/identitytrust"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/localmigration"
 	internalmanagedagent "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedagent"
@@ -37,6 +34,7 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/server"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/sshtarget"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/targetcredential"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerclient"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/workerhealth"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,6 +56,7 @@ const (
 	productionKubernetesCredentialsEnvironment     = "CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY"
 	productionSSHCredentialsEnvironment            = "CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY"
 	productionAccessGrantKeyEnvironment            = "CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE"
+	productionTargetCredentialKeyEnvironment       = "CLOUD_AGENTS_PLATFORM_TARGET_CREDENTIAL_KEY_FILE"
 	productionRemoteWorkerCACertEnvironment        = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_CERT"
 	productionRemoteWorkerCAKeyEnvironment         = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_CA_KEY"
 	productionRemoteWorkerTrustDomainEnvironment   = "CLOUD_AGENTS_PLATFORM_REMOTE_WORKER_TRUST_DOMAIN"
@@ -68,8 +67,7 @@ const (
 	maxProductionCABytes                           = 1 << 20
 	productionRuntimeMaxDuration                   = 30 * time.Minute
 	productionHTTPWriteGrace                       = 15 * time.Second
-	productionJWKSFetchTimeout                     = 5 * time.Second
-	maxJWKSResponseBytes                           = 1 << 20
+	productionIdentityRefreshInterval              = time.Minute
 	defaultProductionMaxConcurrentRequests         = 128
 	maximumProductionMaxConcurrentRequests         = 10_000
 )
@@ -95,6 +93,7 @@ type productionConfig struct {
 	kubernetesCredentials     string
 	sshCredentials            string
 	accessGrantKey            string
+	targetCredentialKey       string
 	remoteWorkerCACert        string
 	remoteWorkerCAKey         string
 	remoteWorkerTrustDomain   string
@@ -102,25 +101,6 @@ type productionConfig struct {
 	admissionGeneration       uint64
 	admissionToken            []byte
 	maxConcurrentRequests     int
-}
-
-type authConfigFile struct {
-	Issuer        string          `json:"issuer"`
-	Audience      string          `json:"audience"`
-	AdminAudience string          `json:"adminAudience"`
-	JWKSURL       string          `json:"jwksUrl,omitempty"`
-	Generation    int64           `json:"generation"`
-	SecurityEpoch int64           `json:"securityEpoch"`
-	NotBefore     int64           `json:"notBefore"`
-	ExpiresAt     int64           `json:"expiresAt"`
-	Keys          []authConfigKey `json:"keys"`
-}
-
-type authConfigKey struct {
-	JWK       json.RawMessage `json:"jwk"`
-	Enabled   bool            `json:"enabled"`
-	NotBefore int64           `json:"notBefore"`
-	NotAfter  int64           `json:"notAfter"`
 }
 
 type productionStatusWriter struct {
@@ -187,12 +167,6 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		return err
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	userVerifier, adminVerifier, err := loadConfiguredVerifiers(config.authPath)
-	if err != nil {
-		return err
-	}
-	defer userVerifier.Invalidate()
-	defer adminVerifier.Invalidate()
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -204,13 +178,55 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err := pool.Ping(ctx); err != nil {
 		return errors.New("database is unavailable")
 	}
+	checkpoint, err := identitytrust.NewPostgresCheckpoint(pool)
+	if err != nil {
+		return errors.New("identity trust checkpoint is unavailable")
+	}
+	authentication, err := loadProductionIdentityAuthentication(ctx, config.authPath, checkpoint)
+	if err != nil {
+		return err
+	}
+	defer authentication.close()
+	userVerifier, adminVerifier := authentication.userAccess, authentication.adminAccess
+	tokenAuthorization, err := postgres.NewTokenAuthorizationService(pool)
+	if err != nil {
+		return errors.New("identity authorization store is unavailable")
+	}
+	identityAuthorizationServer, err := server.NewIdentityAuthorizationHTTPServer(tokenAuthorization, authentication.authorizationCredential)
+	if err != nil {
+		return errors.New("identity authorization server is unavailable")
+	}
+	principalAuthorizationServer, err := server.NewIdentityPrincipalAuthorizationHTTPServer(tokenAuthorization, authentication.authorizationCredential)
+	if err != nil {
+		return errors.New("identity principal authorization server is unavailable")
+	}
+	serviceAccountStore, err := postgres.NewServiceAccountStore(pool)
+	if err != nil {
+		return errors.New("service account store is unavailable")
+	}
+	serviceAccountServer, err := server.NewServiceAccountHTTPServer(adminVerifier, serviceAccountStore)
+	if err != nil {
+		return errors.New("service account HTTP server is unavailable")
+	}
 	coordinationService, err := postgres.NewDurableCoordinationService(pool)
 	if err != nil {
 		return errors.New("control-plane store is unavailable")
 	}
+	adminCoordinationService, err := postgres.NewAdminDurableCoordinationService(pool)
+	if err != nil {
+		return errors.New("Admin control-plane store is unavailable")
+	}
 	rbacMutationService, err := postgres.NewRBACMutationService(pool)
 	if err != nil {
 		return errors.New("RBAC mutation store is unavailable")
+	}
+	adminRBACMutationService, err := postgres.NewAdminRBACMutationService(pool)
+	if err != nil {
+		return errors.New("Admin RBAC mutation store is unavailable")
+	}
+	adminManagementServer, err := server.NewAdminManagementHTTPServer(adminVerifier, adminCoordinationService, adminRBACMutationService)
+	if err != nil {
+		return errors.New("Admin management HTTP server is unavailable")
 	}
 	var workerClientCertificate tls.Certificate
 	var workerCAs *x509.CertPool
@@ -251,6 +267,10 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("project HTTP server is unavailable")
 	}
+	myProjectsServer, err := server.NewMyProjectsHTTPServer(userVerifier, coordinationService)
+	if err != nil {
+		return errors.New("project selector HTTP server is unavailable")
+	}
 	var dockerProber *dockertarget.CredentialDirectory
 	var snapshotArchives *dockertarget.FoundationSnapshotArchiveDirectory
 	if config.snapshotDirectory != "" {
@@ -275,6 +295,13 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		if err != nil {
 			return errors.New("Kubernetes target credential directory is invalid")
 		}
+		var keyring *targetcredential.Keyring
+		if config.targetCredentialKey != "" {
+			if keyring, err = targetcredential.Load(config.targetCredentialKey); err != nil {
+				return errors.New("deployment target credential key is invalid")
+			}
+		}
+		kubernetesProber.UseSealedCredentials(coordinationService, keyring)
 	}
 	credentialDirectories := make([]string, 0, 2)
 	if config.dockerCredentials != "" {
@@ -325,19 +352,19 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			return errors.New("SSH target credential directory is invalid")
 		}
 	}
-	adminDeploymentTargetServer, err := server.NewAdminDeploymentTargetHTTPServer(adminVerifier, coordinationService, dockerProber, kubernetesProber, sshProber)
+	adminDeploymentTargetServer, err := server.NewAdminDeploymentTargetHTTPServer(adminVerifier, adminCoordinationService, dockerProber, kubernetesProber, sshProber)
 	if err != nil {
 		return errors.New("admin deployment target HTTP server is unavailable")
 	}
-	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(adminVerifier, coordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
+	adminEnvironmentLeaseServer, err := server.NewAdminEnvironmentLeaseHTTPServer(adminVerifier, adminCoordinationService, dockerProber, kubernetesProber, sshProber, dockertarget.WorkerTrust{ClientCertificate: workerClientCertificate, RootCAs: workerCAs})
 	if err != nil {
 		return errors.New("admin environment lease HTTP server is unavailable")
 	}
-	adminEnvironmentProfileServer, err := server.NewAdminEnvironmentProfileHTTPServer(adminVerifier, coordinationService)
+	adminEnvironmentProfileServer, err := server.NewAdminEnvironmentProfileHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("admin environment profile HTTP server is unavailable")
 	}
-	adminWorkerReleaseServer, err := server.NewAdminWorkerReleaseHTTPServer(adminVerifier, coordinationService)
+	adminWorkerReleaseServer, err := server.NewAdminWorkerReleaseHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("admin worker release HTTP server is unavailable")
 	}
@@ -345,15 +372,15 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("project lease quota HTTP server is unavailable")
 	}
-	adminProjectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(adminVerifier, coordinationService)
+	adminProjectLeaseQuotaServer, err := server.NewProjectLeaseQuotaHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("admin project lease quota HTTP server is unavailable")
 	}
-	networkPolicyServer, err := server.NewNetworkPolicyHTTPServer(adminVerifier, coordinationService)
+	networkPolicyServer, err := server.NewNetworkPolicyHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("network policy HTTP server is unavailable")
 	}
-	capabilityServer, err := server.NewCapabilityHTTPServer(adminVerifier, coordinationService)
+	capabilityServer, err := server.NewCapabilityHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("capability HTTP server is unavailable")
 	}
@@ -381,11 +408,11 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("RemoteWorker enrollment HTTP server is unavailable")
 	}
-	adminRemoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(adminVerifier, coordinationService, remoteWorkerCertificateAuthority, snapshotArchives)
+	adminRemoteWorkerEnrollmentServer, err := server.NewRemoteWorkerEnrollmentHTTPServer(adminVerifier, adminCoordinationService, remoteWorkerCertificateAuthority, snapshotArchives)
 	if err != nil {
 		return errors.New("admin RemoteWorker enrollment HTTP server is unavailable")
 	}
-	storagePolicyServer, err := server.NewStoragePolicyHTTPServer(adminVerifier, coordinationService)
+	storagePolicyServer, err := server.NewStoragePolicyHTTPServer(adminVerifier, adminCoordinationService)
 	if err != nil {
 		return errors.New("storage policy HTTP server is unavailable")
 	}
@@ -397,7 +424,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	if err != nil {
 		return errors.New("foundation HTTP server is unavailable")
 	}
-	adminFoundationServer, err := server.NewFoundationHTTPServer(adminVerifier, coordinationService, sandboxCredentials, grantCodec)
+	adminFoundationServer, err := server.NewFoundationHTTPServer(adminVerifier, adminCoordinationService, sandboxCredentials, grantCodec)
 	if err != nil {
 		return errors.New("admin foundation HTTP server is unavailable")
 	}
@@ -458,7 +485,17 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, coordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	mux.Handle(server.IdentityTenantTokenAuthorizationRoute, identityAuthorizationServer)
+	mux.Handle(server.IdentityPrincipalTokenAuthorizationRoute, principalAuthorizationServer)
+	mux.Handle("/v1/admin/", server.AdminDeniedWriteHandler(adminVerifier, adminCoordinationService, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if serviceAccountServer.HandlesPath(request.URL.Path) {
+			serviceAccountServer.ServeHTTP(writer, request)
+			return
+		}
+		if adminManagementServer.HandlesPath(request.URL.Path) {
+			adminManagementServer.ServeHTTP(writer, request)
+			return
+		}
 		if server.HandlesCapabilityAdminPath(request.URL.Path) {
 			capabilityServer.ServeHTTP(writer, request)
 			return
@@ -513,7 +550,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		adminDeploymentTargetServer.ServeHTTP(writer, request)
 	})))
-	mux.Handle("/v1/remote-worker-bootstrap/", remoteWorkerEnrollmentServer)
+	mux.Handle("/v1/remote-worker-bootstrap/", adminRemoteWorkerEnrollmentServer)
 	mux.Handle("/v1/remote-workers/", remoteWorkerEnrollmentServer)
 	mux.Handle(server.OrganizationCollectionRoute, organizationServer)
 	mux.Handle(server.OrganizationRoute, organizationServer)
@@ -526,6 +563,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 	mux.Handle(server.ManagedHostProjectRoute, projectServer)
 	mux.Handle(server.ManagedHostRoleBindingRoute, rbacServer)
 	mux.Handle(server.PlatformTenantRoute, tenantServer)
+	mux.Handle(server.MyProjectsRoute, myProjectsServer)
 	mux.Handle(server.ProjectRoutePrefix, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if server.HandlesFoundationPath(request.URL.Path) {
 			foundationServer.ServeHTTP(writer, request)
@@ -587,7 +625,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			writer.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if !userVerifier.Ready() || !adminVerifier.Ready() {
+		if !authentication.ready() {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -610,6 +648,7 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		writer.WriteHeader(http.StatusOK)
 	})
 	httpServer := &http.Server{Addr: config.listen, Handler: productionAccessLogHandler(logger, server.ConcurrentRequestLimitHandler(config.maxConcurrentRequests, server.JSONContentTypeHandler(mux))), BaseContext: func(net.Listener) context.Context { return ctx }, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: productionRuntimeMaxDuration + productionHTTPWriteGrace, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 64 << 10}
+	defer httpServer.Close()
 	if remoteWorkerClientCAs != nil {
 		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: remoteWorkerClientCAs}
 	}
@@ -621,6 +660,8 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 		}
 		errorChannel <- httpServer.ListenAndServe()
 	}()
+	refreshTicker := time.NewTicker(productionIdentityRefreshInterval)
+	defer refreshTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -628,25 +669,19 @@ func runProduction(ctx context.Context, args []string, getenv func(string) strin
 			defer cancel()
 			return httpServer.Shutdown(shutdownContext)
 		case <-hup:
-			userRefreshed, adminRefreshed, refreshErr := loadConfiguredVerifierConfigs(config.authPath)
-			if refreshErr != nil {
-				logger.Error("authentication reload failed", "error", refreshErr)
-				continue
-			}
-			if refreshErr = userVerifier.Reload(userRefreshed); refreshErr != nil {
-				logger.Error("authentication reload failed", "error", refreshErr)
-				continue
-			}
-			if refreshErr = adminVerifier.Reload(adminRefreshed); refreshErr != nil {
-				logger.Error("admin authentication reload failed", "error", refreshErr)
-				continue
-			}
-			logger.Info("authentication reloaded", "generation", userRefreshed.Generation)
+		case <-refreshTicker.C:
 		case err := <-errorChannel:
 			if errors.Is(err, http.ErrServerClosed) {
 				return nil
 			}
 			return errors.New("HTTP server stopped")
+		}
+		if err := authentication.refresh(ctx); err != nil {
+			if errors.Is(err, identitytrust.ErrTransportUnavailable) {
+				logger.Warn("identity trust refresh unavailable; current authority remains valid")
+				continue
+			}
+			return errors.New("identity trust refresh rejected")
 		}
 	}
 }
@@ -672,6 +707,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	kubernetesCredentials := set.String("kubernetes-credentials-directory", "", "deployment-owned Kubernetes ServiceAccount credential directory")
 	sshCredentials := set.String("ssh-credentials-directory", "", "deployment-owned SSH credential directory")
 	accessGrantKey := set.String("access-grant-key-file", "", "shared 32-64 byte Sandbox access Grant key file")
+	targetCredentialKey := set.String("target-credential-key-file", "", "owner-only 32 byte key that seals kubeconfig target credentials")
 	remoteWorkerCACert := set.String("remote-worker-ca-cert", "", "RemoteWorker enrollment CA certificate path")
 	remoteWorkerCAKey := set.String("remote-worker-ca-key", "", "RemoteWorker enrollment CA private key path")
 	remoteWorkerTrustDomain := set.String("remote-worker-trust-domain", "", "RemoteWorker SPIFFE trust domain")
@@ -708,11 +744,12 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	fill(kubernetesCredentials, productionKubernetesCredentialsEnvironment)
 	fill(sshCredentials, productionSSHCredentialsEnvironment)
 	fill(accessGrantKey, productionAccessGrantKeyEnvironment)
+	fill(targetCredentialKey, productionTargetCredentialKeyEnvironment)
 	fill(remoteWorkerCACert, productionRemoteWorkerCACertEnvironment)
 	fill(remoteWorkerCAKey, productionRemoteWorkerCAKeyEnvironment)
 	fill(remoteWorkerTrustDomain, productionRemoteWorkerTrustDomainEnvironment)
 	fill(admissionLeaseID, productionAdmissionLeaseEnvironment)
-	if strings.TrimSpace(*providerCredentials) != *providerCredentials || strings.TrimSpace(*capabilityMaterialization) != *capabilityMaterialization || strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*snapshotDirectory) != *snapshotDirectory || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
+	if strings.TrimSpace(*providerCredentials) != *providerCredentials || strings.TrimSpace(*capabilityMaterialization) != *capabilityMaterialization || strings.TrimSpace(*dockerCredentials) != *dockerCredentials || strings.TrimSpace(*snapshotDirectory) != *snapshotDirectory || strings.TrimSpace(*kubernetesCredentials) != *kubernetesCredentials || strings.TrimSpace(*sshCredentials) != *sshCredentials || strings.TrimSpace(*accessGrantKey) != *accessGrantKey || strings.TrimSpace(*targetCredentialKey) != *targetCredentialKey || strings.TrimSpace(*remoteWorkerCACert) != *remoteWorkerCACert || strings.TrimSpace(*remoteWorkerCAKey) != *remoteWorkerCAKey || strings.TrimSpace(*remoteWorkerTrustDomain) != *remoteWorkerTrustDomain {
 		return productionConfig{}, errors.New("invalid control-plane configuration")
 	}
 	if *admissionGeneration == 0 && getenv != nil {
@@ -739,7 +776,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	managedAgentRuntime := legacyRuntime || *providerCredentials != "" || *workspaceDirectory != ""
 	if legacyRuntime && (*workerClientCert == "" || *workerClientKey == "" || *workerCA == "" || *workspaceDirectory == "" || admissionToken == "") ||
 		managedAgentRuntime && (*workspaceDirectory == "" || !legacyRuntime && *providerCredentials == "") || *providerCredentials != "" && *dockerCredentials == "" && *kubernetesCredentials == "" || *capabilityMaterialization != "" && *providerCredentials == "" || *snapshotDirectory != "" && *dockerCredentials == "" && *kubernetesCredentials == "" ||
-		managedAgentRuntime && *kubernetesCredentials != "" && *snapshotDirectory == "" ||
+		managedAgentRuntime && *kubernetesCredentials != "" && *snapshotDirectory == "" || *targetCredentialKey != "" && *kubernetesCredentials == "" ||
 		staticWorker && (*workerEndpoint == "" || *workerSPIFFE == "" || *admissionLeaseID == "" || *admissionGeneration == 0) || len(admissionToken) > 1<<20 {
 		return productionConfig{}, errors.New("database, authentication, TLS, Worker Runtime, and admission configuration are required")
 	}
@@ -750,7 +787,7 @@ func parseProductionConfig(args []string, getenv func(string) string) (productio
 	return productionConfig{
 		listen: *listen, database: *database, authPath: *authPath, tlsCert: *tlsCert, tlsKey: *tlsKey,
 		workerEndpoint: *workerEndpoint, workerSPIFFE: *workerSPIFFE, workerClientCert: *workerClientCert, workerClientKey: *workerClientKey, workerCA: *workerCA,
-		workspaceDirectory: *workspaceDirectory, providerCredentials: *providerCredentials, capabilityMaterialization: *capabilityMaterialization, dockerCredentials: *dockerCredentials, snapshotDirectory: *snapshotDirectory, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
+		workspaceDirectory: *workspaceDirectory, providerCredentials: *providerCredentials, capabilityMaterialization: *capabilityMaterialization, dockerCredentials: *dockerCredentials, snapshotDirectory: *snapshotDirectory, kubernetesCredentials: *kubernetesCredentials, sshCredentials: *sshCredentials, accessGrantKey: *accessGrantKey, targetCredentialKey: *targetCredentialKey, remoteWorkerCACert: *remoteWorkerCACert, remoteWorkerCAKey: *remoteWorkerCAKey, remoteWorkerTrustDomain: *remoteWorkerTrustDomain, admissionLeaseID: *admissionLeaseID, admissionGeneration: *admissionGeneration, admissionToken: []byte(admissionToken), maxConcurrentRequests: *maxConcurrentRequests,
 	}, nil
 }
 
@@ -785,190 +822,4 @@ func readProductionFile(path string, maximum int64) ([]byte, error) {
 		return nil, errors.New("file exceeds limit")
 	}
 	return contents, nil
-}
-
-func loadConfiguredVerifiers(path string) (*authn.ConfiguredVerifier, *authn.ConfiguredVerifier, error) {
-	userConfig, adminConfig, err := loadConfiguredVerifierConfigs(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	userVerifier, err := authn.NewConfiguredVerifier(userConfig)
-	if err != nil {
-		return nil, nil, errors.New("auth configuration is invalid")
-	}
-	adminVerifier, err := authn.NewConfiguredVerifier(adminConfig)
-	if err != nil {
-		userVerifier.Invalidate()
-		return nil, nil, errors.New("admin auth configuration is invalid")
-	}
-	return userVerifier, adminVerifier, nil
-}
-
-func loadConfiguredVerifierConfigs(path string) (authn.ConfiguredVerifierConfig, authn.ConfiguredVerifierConfig, error) {
-	return loadConfiguredVerifierConfigsWith(path, fetchJWKS)
-}
-
-func loadConfiguredVerifierConfigsWith(path string, fetch func(string) ([]json.RawMessage, error)) (authn.ConfiguredVerifierConfig, authn.ConfiguredVerifierConfig, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration cannot be opened")
-	}
-	defer file.Close()
-	contents, err := io.ReadAll(io.LimitReader(file, maxAuthConfigBytes+1))
-	if err != nil || len(contents) > maxAuthConfigBytes {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(contents))
-	decoder.DisallowUnknownFields()
-	var input authConfigFile
-	if err := decoder.Decode(&input); err != nil {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration is invalid")
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration has trailing data")
-	}
-	if input.AdminAudience == "" || input.AdminAudience == input.Audience {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must use distinct User and Admin audiences")
-	}
-	if input.JWKSURL != "" && len(input.Keys) != 0 {
-		return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("auth configuration must select keys or jwksUrl")
-	}
-	keys := input.Keys
-	if input.JWKSURL != "" {
-		if fetch == nil {
-			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetcher is required")
-		}
-		remoteKeys, err := fetch(input.JWKSURL)
-		if err != nil {
-			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS fetch failed")
-		}
-		keys = make([]authConfigKey, 0, len(remoteKeys))
-		for _, key := range remoteKeys {
-			normalized, supported, err := normalizeRemoteJWK(key)
-			if err != nil {
-				return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains an invalid key")
-			}
-			if supported {
-				keys = append(keys, authConfigKey{JWK: normalized, Enabled: true, NotBefore: input.NotBefore, NotAfter: input.ExpiresAt})
-			}
-		}
-		if len(keys) == 0 {
-			return authn.ConfiguredVerifierConfig{}, authn.ConfiguredVerifierConfig{}, errors.New("JWKS contains no supported RS256 key")
-		}
-	}
-	configuredKeys := make([]authn.ConfiguredVerifierKey, len(keys))
-	for index, key := range keys {
-		configuredKeys[index] = authn.ConfiguredVerifierKey{JWK: key.JWK, Enabled: key.Enabled, NotBefore: key.NotBefore, NotAfter: key.NotAfter}
-	}
-	userConfig := authn.ConfiguredVerifierConfig{Issuer: input.Issuer, Audience: input.Audience, Generation: input.Generation, SecurityEpoch: input.SecurityEpoch, NotBefore: input.NotBefore, ExpiresAt: input.ExpiresAt, Keys: configuredKeys, Clock: time.Now}
-	adminConfig := userConfig
-	adminConfig.Audience = input.AdminAudience
-	return userConfig, adminConfig, nil
-}
-
-func normalizeRemoteJWK(raw json.RawMessage) (json.RawMessage, bool, error) {
-	fields, _, err := commonv1alpha1.DecodeJSONObjectWithSidecar(raw, []string{
-		"alg", "d", "dp", "dq", "e", "k", "key_ops", "kid", "kty", "n", "oth", "p", "q", "qi", "use",
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	var key struct {
-		Alg    string   `json:"alg"`
-		E      string   `json:"e"`
-		KeyOps []string `json:"key_ops"`
-		Kid    string   `json:"kid"`
-		Kty    string   `json:"kty"`
-		N      string   `json:"n"`
-		Use    string   `json:"use"`
-	}
-	if json.Unmarshal(raw, &key) != nil {
-		return nil, false, errors.New("JWKS key fields are invalid")
-	}
-	for _, name := range []string{"d", "dp", "dq", "k", "oth", "p", "q", "qi"} {
-		if _, present := fields[name]; present {
-			return nil, false, errors.New("JWKS key contains private material")
-		}
-	}
-	if key.Kty == "" {
-		return nil, false, errors.New("JWKS key type is invalid")
-	}
-	if key.Kty != "RSA" {
-		return nil, false, nil
-	}
-	if _, present := fields["alg"]; present && key.Alg == "" {
-		return nil, false, errors.New("JWKS key algorithm is invalid")
-	}
-	if key.Alg != "" && key.Alg != "RS256" {
-		return nil, false, nil
-	}
-	if _, present := fields["use"]; present && key.Use == "" {
-		return nil, false, errors.New("JWKS key use is invalid")
-	}
-	if key.Use != "" && key.Use != "sig" {
-		return nil, false, nil
-	}
-	if _, present := fields["key_ops"]; present {
-		if len(key.KeyOps) != 1 || key.KeyOps[0] != "verify" {
-			return nil, false, nil
-		}
-	}
-	if key.Kid == "" || key.N == "" || key.E == "" {
-		return nil, false, errors.New("JWKS RSA key is incomplete")
-	}
-	normalized, err := json.Marshal(struct {
-		Alg    string   `json:"alg"`
-		E      string   `json:"e"`
-		KeyOps []string `json:"key_ops"`
-		Kid    string   `json:"kid"`
-		Kty    string   `json:"kty"`
-		N      string   `json:"n"`
-		Use    string   `json:"use"`
-	}{Alg: "RS256", E: key.E, KeyOps: []string{"verify"}, Kid: key.Kid, Kty: "RSA", N: key.N, Use: "sig"})
-	return normalized, true, err
-}
-
-func fetchJWKS(rawURL string) ([]json.RawMessage, error) {
-	return fetchJWKSWithClient(rawURL, &http.Client{Timeout: productionJWKSFetchTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }})
-}
-
-func fetchJWKSWithClient(rawURL string, client *http.Client) ([]json.RawMessage, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || strings.TrimSpace(rawURL) != rawURL {
-		return nil, errors.New("JWKS URL must be an HTTPS URL")
-	}
-	if client == nil {
-		return nil, errors.New("JWKS HTTP client is required")
-	}
-	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Accept", "application/json")
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, errors.New("JWKS endpoint returned non-200")
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxJWKSResponseBytes+1))
-	if err != nil || len(body) > maxJWKSResponseBytes {
-		return nil, errors.New("JWKS response is too large")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	var document struct {
-		Keys []json.RawMessage `json:"keys"`
-	}
-	if err := decoder.Decode(&document); err != nil || len(document.Keys) == 0 {
-		return nil, errors.New("JWKS response is invalid")
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, errors.New("JWKS response has trailing data")
-	}
-	return document.Keys, nil
 }

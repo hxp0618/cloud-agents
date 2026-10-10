@@ -9,6 +9,9 @@ import (
 
 var ErrInvalidConfiguredVerifier = errors.New("configured access-token verifier is invalid")
 
+// Pair reloads share an order so reversed callers cannot deadlock on the two verifiers.
+var configuredPairReload sync.Mutex
+
 // ConfiguredVerifierConfig is the startup trust input for a Control Plane
 // resource server. Keys are public JWKs; private material is rejected by the
 // existing closed v1 parser. Refresh is explicit by constructing a new
@@ -76,6 +79,77 @@ func (verifier *ConfiguredVerifier) Reload(config ConfiguredVerifierConfig) erro
 	return nil
 }
 
+// ReloadTogether validates both audience snapshots before publishing either.
+// Existing operations settle under their generation leases before replacement.
+func (verifier *ConfiguredVerifier) ReloadTogether(config ConfiguredVerifierConfig, other *ConfiguredVerifier, otherConfig ConfiguredVerifierConfig) error {
+	if verifier == nil || other == nil || verifier == other ||
+		!validConfiguredVerifierConfig(config, false) || !validConfiguredVerifierConfig(otherConfig, false) ||
+		config.Issuer != otherConfig.Issuer || config.Audience == otherConfig.Audience ||
+		config.Generation != otherConfig.Generation || config.SecurityEpoch != otherConfig.SecurityEpoch ||
+		config.NotBefore != otherConfig.NotBefore || config.ExpiresAt != otherConfig.ExpiresAt {
+		return ErrInvalidConfiguredVerifier
+	}
+	configuredPairReload.Lock()
+	defer configuredPairReload.Unlock()
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	other.mu.Lock()
+	defer other.mu.Unlock()
+	if verifier.invalidated || other.invalidated || verifier.lineage == nil || other.lineage == nil {
+		return ErrInvalidConfiguredVerifier
+	}
+	verifier.lineage.mutation.Lock()
+	defer verifier.lineage.mutation.Unlock()
+	other.lineage.mutation.Lock()
+	defer other.lineage.mutation.Unlock()
+	left, leftHistory, err := verifier.prepareReload(config)
+	if err != nil {
+		return ErrInvalidConfiguredVerifier
+	}
+	right, rightHistory, err := other.prepareReload(otherConfig)
+	if err != nil || !equalTrustHistory(leftHistory, rightHistory) || len(left.keys) != len(right.keys) {
+		return ErrInvalidConfiguredVerifier
+	}
+	for kid, key := range left.keys {
+		peer, ok := right.keys[kid]
+		if !ok || !equalBytes(key.modulus, peer.modulus) || key.enabled != peer.enabled ||
+			key.notBefore != peer.notBefore || key.notAfter != peer.notAfter {
+			return ErrInvalidConfiguredVerifier
+		}
+	}
+	publishTrustPair(verifier.lineage, left, leftHistory, other.lineage, right, rightHistory)
+	verifier.clock, other.clock = config.Clock, otherConfig.Clock
+	return nil
+}
+
+func equalTrustHistory(left, right map[string][]byte) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for kid, modulus := range left {
+		peer, ok := right[kid]
+		if !ok || !equalBytes(modulus, peer) {
+			return false
+		}
+	}
+	return true
+}
+
+func (verifier *ConfiguredVerifier) prepareReload(config ConfiguredVerifierConfig) (*trustSnapshot, map[string][]byte, error) {
+	verifier.lineage.state.Lock()
+	defer verifier.lineage.state.Unlock()
+	if verifier.clock == nil || verifier.lineage.current == nil || verifier.lineage.current.snapshot == nil {
+		return nil, nil, ErrInvalidConfiguredVerifier
+	}
+	previous := verifier.lineage.current.snapshot
+	if config.Audience != previous.audience {
+		return nil, nil, ErrInvalidConfiguredVerifier
+	}
+	candidate := config.snapshotCandidate()
+	candidate.previousSnapshotDigest = previous.digest
+	return buildTrustSnapshot(candidate, previous, verifier.lineage.history)
+}
+
 func (verifier *ConfiguredVerifier) Verify(token string, request VerificationRequest) (*VerifiedPrincipal, error) {
 	if verifier == nil {
 		return nil, verifierError(errorInternalFailure)
@@ -123,6 +197,31 @@ func (verifier *ConfiguredVerifier) Invalidate() {
 	if verifier.lineage != nil {
 		verifier.lineage.invalidate()
 	}
+}
+
+// InvalidateTogether permanently closes both audience verifiers. Both stop
+// admitting new generation leases before either waits for existing leases to
+// settle, so one audience cannot remain usable during shutdown of its peer.
+func (verifier *ConfiguredVerifier) InvalidateTogether(other *ConfiguredVerifier) {
+	if verifier == nil {
+		if other != nil {
+			other.Invalidate()
+		}
+		return
+	}
+	if other == nil || verifier == other {
+		verifier.Invalidate()
+		return
+	}
+	configuredPairReload.Lock()
+	defer configuredPairReload.Unlock()
+	verifier.mu.Lock()
+	defer verifier.mu.Unlock()
+	other.mu.Lock()
+	defer other.mu.Unlock()
+	verifier.invalidated = true
+	other.invalidated = true
+	invalidateTrustPair(verifier.lineage, other.lineage)
 }
 
 type VerificationRequest struct {

@@ -1,0 +1,439 @@
+{
+  "version": "v1alpha1",
+  "cases": [
+    {
+      "name": "identity-password-login-request",
+      "schema": "../schemas/password-login-request.schema.json",
+      "instance": "golden/password-login-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-password-login-client-purpose",
+      "schema": "../schemas/password-login-request.schema.json",
+      "instance": "negative/password-login-client-purpose.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-browser-session",
+      "schema": "../schemas/browser-session.schema.json",
+      "instance": "golden/browser-session.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-browser-session-boolean-authority",
+      "schema": "../schemas/browser-session.schema.json",
+      "instance": "negative/browser-session-boolean-authority.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-current-user",
+      "schema": "../schemas/current-user.schema.json",
+      "instance": "golden/current-user.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-browser-tenant-page",
+      "schema": "../schemas/browser-tenant-page.schema.json",
+      "instance": "golden/browser-tenant-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-tenant-token-issue-request",
+      "schema": "../schemas/tenant-token-issue-request.schema.json",
+      "instance": "golden/tenant-token-issue-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-tenant-token-scope-injection",
+      "schema": "../schemas/tenant-token-issue-request.schema.json",
+      "instance": "negative/tenant-token-scope-injection.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-tenant-token",
+      "schema": "../schemas/tenant-token.schema.json",
+      "instance": "golden/tenant-token.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-token-status-request",
+      "schema": "../schemas/token-status-request.schema.json",
+      "instance": "golden/token-status-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-token-status-raw-token",
+      "schema": "../schemas/token-status-request.schema.json",
+      "instance": "negative/token-status-raw-token.json",
+      "expectedSchemaValid": false,
+      "expectedError": "INVALID_TOKEN_DIGEST"
+    },
+    {
+      "name": "identity-token-status",
+      "schema": "../schemas/token-status.schema.json",
+      "instance": "golden/token-status.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-tenant-token-authorization-request",
+      "schema": "../schemas/tenant-token-authorization-request.schema.json",
+      "instance": "golden/tenant-token-authorization-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-tenant-token-authorization-authority-injection",
+      "schema": "../schemas/tenant-token-authorization-request.schema.json",
+      "instance": "negative/tenant-token-authorization-authority-injection.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-tenant-token-authorization",
+      "schema": "../schemas/tenant-token-authorization.schema.json",
+      "instance": "golden/tenant-token-authorization.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-jwks",
+      "schema": "../schemas/identity-jwks.schema.json",
+      "instance": "golden/identity-jwks.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-jwks-private-key",
+      "schema": "../schemas/identity-jwks.schema.json",
+      "instance": "negative/identity-jwks-private-key.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-email-suffix-policy",
+      "schema": "../schemas/email-suffix-policy.schema.json",
+      "instance": "golden/email-suffix-policy.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-email-suffix-policy-wildcard",
+      "schema": "../schemas/email-suffix-policy.schema.json",
+      "instance": "negative/email-suffix-policy-wildcard.json",
+      "expectedSchemaValid": false,
+      "expectedError": "EMAIL_DOMAIN_PATTERN_MISMATCH"
+    },
+    {
+      "name": "identity-email-suffix-policy-duplicate",
+      "schema": "../schemas/email-suffix-policy.schema.json",
+      "instance": "negative/email-suffix-policy-duplicate.json",
+      "expectedSchemaValid": false,
+      "expectedError": "DUPLICATE_ITEM"
+    },
+    {
+      "name": "identity-email-suffix-policy-update",
+      "schema": "../schemas/email-suffix-policy-update.schema.json",
+      "instance": "golden/email-suffix-policy-update.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation",
+      "schema": "../schemas/invitation.schema.json",
+      "instance": "golden/invitation.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-create-request",
+      "schema": "../schemas/invitation-create-request.schema.json",
+      "instance": "golden/invitation-create-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-created",
+      "schema": "../schemas/invitation-created.schema.json",
+      "instance": "golden/invitation-created.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-page",
+      "schema": "../schemas/invitation-page.schema.json",
+      "instance": "golden/invitation-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-accept-request",
+      "schema": "../schemas/invitation-accept-request.schema.json",
+      "instance": "golden/invitation-accept-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-accept-existing",
+      "schema": "../schemas/invitation-accept-request.schema.json",
+      "instance": "golden/invitation-accept-existing.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-invitation-subject-injection",
+      "schema": "../schemas/invitation-create-request.schema.json",
+      "instance": "negative/invitation-subject-injection.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-invitation-proof-exposure",
+      "schema": "../schemas/invitation.schema.json",
+      "instance": "negative/invitation-proof-exposure.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-identity-account",
+      "schema": "../schemas/identity-account.schema.json",
+      "instance": "golden/identity-account.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-identity-account-page",
+      "schema": "../schemas/identity-account-page.schema.json",
+      "instance": "golden/identity-account-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-password-change-request",
+      "schema": "../schemas/password-change-request.schema.json",
+      "instance": "golden/password-change-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-password-reset-created",
+      "schema": "../schemas/password-reset-created.schema.json",
+      "instance": "golden/password-reset-created.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-password-reset-accept-request",
+      "schema": "../schemas/password-reset-accept-request.schema.json",
+      "instance": "golden/password-reset-accept-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-identity-audit-event",
+      "schema": "../schemas/identity-audit-event.schema.json",
+      "instance": "golden/identity-audit-event.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-identity-audit-page",
+      "schema": "../schemas/identity-audit-page.schema.json",
+      "instance": "golden/identity-audit-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-identity-account-password-hash",
+      "schema": "../schemas/identity-account.schema.json",
+      "instance": "negative/identity-account-password-hash.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-identity-audit-event-reset-code",
+      "schema": "../schemas/identity-audit-event.schema.json",
+      "instance": "negative/identity-audit-event-reset-code.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-login-provider-page",
+      "schema": "../schemas/login-provider-page.schema.json",
+      "instance": "golden/login-provider-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-authorization-request",
+      "schema": "../schemas/provider-authorization-request.schema.json",
+      "instance": "golden/provider-authorization-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-authorization",
+      "schema": "../schemas/provider-authorization.schema.json",
+      "instance": "golden/provider-authorization.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-callback-request",
+      "schema": "../schemas/provider-callback-request.schema.json",
+      "instance": "golden/provider-callback-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-callback",
+      "schema": "../schemas/provider-callback.schema.json",
+      "instance": "golden/provider-callback.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-login-method-list",
+      "schema": "../schemas/login-method-list.schema.json",
+      "instance": "golden/login-method-list.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-password-reauth-request",
+      "schema": "../schemas/password-reauth-request.schema.json",
+      "instance": "golden/password-reauth-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-reauthentication",
+      "schema": "../schemas/reauthentication.schema.json",
+      "instance": "golden/reauthentication.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-enable-password-request",
+      "schema": "../schemas/enable-password-request.schema.json",
+      "instance": "golden/enable-password-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-client-page",
+      "schema": "../schemas/provider-client-page.schema.json",
+      "instance": "golden/provider-client-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-client-update",
+      "schema": "../schemas/provider-client-update.schema.json",
+      "instance": "golden/provider-client-update.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-provider-client-secret",
+      "schema": "../schemas/provider-client-update.schema.json",
+      "instance": "negative/provider-client-secret.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    },
+    {
+      "name": "identity-cli-login",
+      "schema": "../schemas/cli-login.schema.json",
+      "instance": "golden/cli-login.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-authorization-request",
+      "schema": "../schemas/cli-authorization-request.schema.json",
+      "instance": "golden/cli-authorization-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-authorization-start-request",
+      "schema": "../schemas/cli-authorization-start-request.schema.json",
+      "instance": "golden/cli-authorization-start-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-authorization",
+      "schema": "../schemas/cli-authorization.schema.json",
+      "instance": "golden/cli-authorization.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-authorization-approve-request",
+      "schema": "../schemas/cli-authorization-approve-request.schema.json",
+      "instance": "golden/cli-authorization-approve-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-authorization-approved",
+      "schema": "../schemas/cli-authorization-approved.schema.json",
+      "instance": "golden/cli-authorization-approved.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-grant-exchange-request",
+      "schema": "../schemas/cli-grant-exchange-request.schema.json",
+      "instance": "golden/cli-grant-exchange-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-cli-grant",
+      "schema": "../schemas/cli-grant.schema.json",
+      "instance": "golden/cli-grant.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account",
+      "schema": "../schemas/service-account.schema.json",
+      "instance": "golden/service-account.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-create-request",
+      "schema": "../schemas/service-account-create-request.schema.json",
+      "instance": "golden/service-account-create-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-created",
+      "schema": "../schemas/service-account-created.schema.json",
+      "instance": "golden/service-account-created.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-rotate-request",
+      "schema": "../schemas/service-account-rotate-request.schema.json",
+      "instance": "golden/service-account-rotate-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-disable-request",
+      "schema": "../schemas/service-account-disable-request.schema.json",
+      "instance": "golden/service-account-disable-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-rotated",
+      "schema": "../schemas/service-account-rotated.schema.json",
+      "instance": "golden/service-account-rotated.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-page",
+      "schema": "../schemas/service-account-page.schema.json",
+      "instance": "golden/service-account-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-principal-token-authorization-request",
+      "schema": "../schemas/principal-token-authorization-request.schema.json",
+      "instance": "golden/principal-token-authorization-request.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-principal-token-authorization",
+      "schema": "../schemas/principal-token-authorization.schema.json",
+      "instance": "golden/principal-token-authorization.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-control-plane-audit-event",
+      "schema": "../schemas/control-plane-audit-event.schema.json",
+      "instance": "golden/control-plane-audit-event.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-control-plane-audit-page",
+      "schema": "../schemas/control-plane-audit-page.schema.json",
+      "instance": "golden/control-plane-audit-page.json",
+      "expectedSchemaValid": true
+    },
+    {
+      "name": "identity-service-account-credential-exposure",
+      "schema": "../schemas/service-account.schema.json",
+      "instance": "negative/service-account-credential-exposure.json",
+      "expectedSchemaValid": false,
+      "expectedError": "UNKNOWN_FIELD"
+    }
+  ]
+}

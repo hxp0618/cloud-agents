@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/cli-authorization.schema.json",
+  "title": "CliAuthorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorizationId",
+    "expiresAt"
+  ],
+  "properties": {
+    "authorizationId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

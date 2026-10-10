@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/platform/v1alpha1/schemas/builtin-role-catalog-v2.schema.json",
+  "title": "BuiltinRoleCatalogV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "catalogRevision", "publishedAt", "roles"],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.cloud-agents.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "BuiltinRoleCatalog"
+    },
+    "catalogRevision": {
+      "const": "2"
+    },
+    "publishedAt": {
+      "const": "2026-10-08T00:00:00Z"
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "scopeLevel", "state", "permissions"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "platform.admin",
+              "tenant.admin",
+              "organization.admin",
+              "project.admin",
+              "project.operator",
+              "project.developer",
+              "project.viewer"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "scopeLevel": {
+            "type": "string",
+            "enum": ["platform", "tenant", "organization", "project"]
+          },
+          "state": {
+            "const": "active"
+          },
+          "permissions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "permission.schema.json"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "roles are bytewise name-sorted and contain every revision 2 built-in role exactly once",
+    "platform.admin is version 2; every other role remains at its frozen version 1 definition",
+    "scopeLevel equals the frozen scope for the role name",
+    "each permission list is bytewise sorted and exactly equals the role-version set",
+    "platform.admin version 2 contains only selected-tenant administration, project action, and operation metadata permissions",
+    "future permissions never enter any role version implicitly"
+  ]
+}

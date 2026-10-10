@@ -1,3 +1,4 @@
+import { SheetHeading } from "../AdminSheet";
 import { useState, type FormEvent } from "react";
 import { useI18n } from "../i18n";
 import {
@@ -5,22 +6,24 @@ import {
   type RuntimeProfile,
   type WorkspaceSnapshot,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
-import { targetIdentifierPattern } from "../admin";
+import { DurationSelect, NameField } from "./form-fields";
 import { phaseLabel, phaseTone, runtimeProfileTargetLabel } from "./presentation";
 
+const snapshotRetentionOptions = Object.freeze([86_400, 604_800, 2_592_000, 7_776_000, 31_536_000]);
+const restoreTtlOptions = Object.freeze([600, 1800, 3600, 7200, 21_600, 43_200, 86_400]);
+
 export type WorkspaceSnapshotDraft = Readonly<{
-  snapshotId: string;
   sourceSandboxId: string;
   retentionSeconds: string;
+  token: string;
 }>;
 
 export type WorkspaceSnapshotRestoreDraft = Readonly<{
   snapshotId: string;
-  workspaceId: string;
   workspaceName: string;
-  sandboxId: string;
   runtimeProfileVersionId: string;
   ttlSeconds: string;
+  token: string;
 }>;
 
 export function WorkspaceSnapshotPanel({
@@ -51,188 +54,134 @@ export function WorkspaceSnapshotPanel({
   onCleanup: (snapshot: WorkspaceSnapshot) => void;
 }>) {
   const { t, number } = useI18n();
+  const stoppedSandboxes = sandboxes.filter(
+    ({ spec }) => spec.writerReleased && spec.observedState === "stopped",
+  );
+  const availableSnapshots = snapshots.filter(({ spec }) => spec.status === "available");
   return (
     <section className="panel overview-panel">
       <div className="panel-heading">
         <div>
           <h2>{t("workspaceSnapshot.title")}</h2>
-          <p>{t("workspaceSnapshot.description")}</p>
         </div>
-        <span className="scope-chip">
-          snapshots.list · snapshots.create · snapshots.act · snapshots.delete
-        </span>
       </div>
-      <form className="resource-form" onSubmit={onCreate}>
-        <div className="form-row">
-          <label>
-            <span>{t("workspaceSnapshot.id")}</span>
-            <input
-              required
-              maxLength={128}
-              spellCheck={false}
-              value={snapshotForm.snapshotId}
-              onChange={(event) =>
-                onSnapshotFormChange({
-                  ...snapshotForm,
-                  snapshotId: event.target.value,
-                })
-              }
-              placeholder="snapshot-before-upgrade"
-            />
-          </label>
-          <label>
-            <span>{t("workspaceSnapshot.source")}</span>
-            <select
-              required
-              value={snapshotForm.sourceSandboxId}
-              onChange={(event) =>
-                onSnapshotFormChange({
-                  ...snapshotForm,
-                  sourceSandboxId: event.target.value,
-                })
-              }
-            >
-              <option value="">{t("workspaceSnapshot.selectSource")}</option>
-              {sandboxes
-                .filter(({ spec }) => spec.writerReleased && spec.observedState === "stopped")
-                .map((sandbox) => (
-                  <option key={sandbox.metadata.uid} value={sandbox.metadata.uid}>
-                    {sandbox.spec.workspaceName} · {sandbox.metadata.uid} · g
-                    {number(sandbox.spec.generation)}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            <span>{t("workspaceSnapshot.retention")}</span>
-            <input
-              required
-              type="number"
-              min={1}
-              max={31_536_000}
-              value={snapshotForm.retentionSeconds}
-              onChange={(event) =>
-                onSnapshotFormChange({
-                  ...snapshotForm,
-                  retentionSeconds: event.target.value,
-                })
-              }
-            />
-          </label>
-        </div>
-        <p className="cluster-boundary">{t("workspaceSnapshot.offlineBoundary")}</p>
-        <button
-          className="button primary"
-          type="submit"
-          disabled={busy || snapshotForm.sourceSandboxId === ""}
-        >
-          {t("workspaceSnapshot.create")}
-        </button>
-      </form>
-      <form className="resource-form" onSubmit={onRestore}>
-        <div className="form-row">
-          <label>
-            <span>{t("workspaceSnapshot.restoreSource")}</span>
-            <select
-              required
-              value={restoreForm.snapshotId}
-              onChange={(event) =>
-                onRestoreFormChange({
-                  ...restoreForm,
-                  snapshotId: event.target.value,
-                  runtimeProfileVersionId: "",
-                })
-              }
-            >
-              <option value="">{t("workspaceSnapshot.selectRestoreSource")}</option>
-              {snapshots
-                .filter(({ spec }) => spec.status === "available")
-                .map((snapshot) => (
-                  <option key={snapshot.metadata.uid} value={snapshot.metadata.uid}>
-                    {snapshot.metadata.name} · {snapshot.spec.backend} ·{" "}
-                    {snapshot.spec.sourceTargetId}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            <span>{t("workspaceSnapshot.restoreProfile")}</span>
-            <select
-              required
-              value={restoreForm.runtimeProfileVersionId}
-              onChange={(event) =>
-                onRestoreFormChange({
-                  ...restoreForm,
-                  runtimeProfileVersionId: event.target.value,
-                })
-              }
-            >
-              <option value="">{t("workspaceSnapshot.selectRestoreProfile")}</option>
-              {restoreRuntimeProfiles.map((profile) => (
-                <option key={profile.metadata.uid} value={profile.metadata.uid}>
-                  {profile.metadata.name} · v{number(profile.spec.version)} ·{" "}
-                  {runtimeProfileTargetLabel(profile)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="form-row">
-          {(
-            [
-              ["workspaceId", "workspaceSnapshot.restoreWorkspaceId", "workspace-restored"],
-              ["workspaceName", "workspaceSnapshot.restoreWorkspaceName", "Restored workspace"],
-              ["sandboxId", "workspaceSnapshot.restoreSandboxId", "sandbox-restored"],
-            ] as const
-          ).map(([field, label, placeholder]) => (
-            <label key={field}>
-              <span>{t(label)}</span>
-              <input
+      {stoppedSandboxes.length === 0 ? (
+        <p className="boundary-note">{t("workspaceSnapshot.noStoppedSandbox")}</p>
+      ) : (
+        <form className="resource-form" onSubmit={onCreate}>
+          <div className="form-row">
+            <label>
+              <span>{t("workspaceSnapshot.source")}</span>
+              <select
                 required
-                maxLength={128}
-                pattern={targetIdentifierPattern}
-                spellCheck={false}
-                value={restoreForm[field]}
-                placeholder={placeholder}
+                value={snapshotForm.sourceSandboxId}
+                onChange={(event) =>
+                  onSnapshotFormChange({
+                    ...snapshotForm,
+                    sourceSandboxId: event.target.value,
+                  })
+                }
+              >
+                <option value="">{t("workspaceSnapshot.selectSource")}</option>
+                {stoppedSandboxes.map((sandbox) => (
+                  <option key={sandbox.metadata.uid} value={sandbox.metadata.uid}>
+                    {sandbox.spec.workspaceName} · {sandbox.metadata.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <DurationSelect
+              label={t("workspaceSnapshot.retention")}
+              value={snapshotForm.retentionSeconds}
+              options={snapshotRetentionOptions}
+              onChange={(retentionSeconds) =>
+                onSnapshotFormChange({ ...snapshotForm, retentionSeconds })
+              }
+            />
+          </div>
+          <button
+            className="button primary"
+            type="submit"
+            disabled={busy || snapshotForm.sourceSandboxId === ""}
+          >
+            {t("workspaceSnapshot.create")}
+          </button>
+        </form>
+      )}
+      {availableSnapshots.length === 0 ? null : (
+        <form className="resource-form" onSubmit={onRestore}>
+          <div className="form-row">
+            <label>
+              <span>{t("workspaceSnapshot.restoreSource")}</span>
+              <select
+                required
+                value={restoreForm.snapshotId}
                 onChange={(event) =>
                   onRestoreFormChange({
                     ...restoreForm,
-                    [field]: event.target.value,
+                    snapshotId: event.target.value,
+                    runtimeProfileVersionId: "",
                   })
                 }
-              />
+              >
+                <option value="">{t("workspaceSnapshot.selectRestoreSource")}</option>
+                {availableSnapshots.map((snapshot) => (
+                  <option key={snapshot.metadata.uid} value={snapshot.metadata.uid}>
+                    {snapshot.metadata.name}
+                  </option>
+                ))}
+              </select>
             </label>
-          ))}
-          <label>
-            <span>{t("workspaceSnapshot.restoreTtl")}</span>
-            <input
-              required
-              type="number"
-              min={60}
-              max={86_400}
-              value={restoreForm.ttlSeconds}
-              onChange={(event) =>
-                onRestoreFormChange({
-                  ...restoreForm,
-                  ttlSeconds: event.target.value,
-                })
-              }
+            <label>
+              <span>{t("workspaceSnapshot.restoreProfile")}</span>
+              <select
+                required
+                value={restoreForm.runtimeProfileVersionId}
+                onChange={(event) =>
+                  onRestoreFormChange({
+                    ...restoreForm,
+                    runtimeProfileVersionId: event.target.value,
+                  })
+                }
+              >
+                <option value="">{t("workspaceSnapshot.selectRestoreProfile")}</option>
+                {restoreRuntimeProfiles.map((profile) => (
+                  <option key={profile.metadata.uid} value={profile.metadata.uid}>
+                    {profile.metadata.name} · v{number(profile.spec.version)} ·{" "}
+                    {runtimeProfileTargetLabel(profile)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="form-row">
+            <NameField
+              label={t("workspaceSnapshot.restoreWorkspaceName")}
+              value={restoreForm.workspaceName}
+              placeholder="workspace-restored"
+              onChange={(workspaceName) => onRestoreFormChange({ ...restoreForm, workspaceName })}
             />
-          </label>
-        </div>
-        <p className="cluster-boundary">{t("workspaceSnapshot.restoreBoundary")}</p>
-        <button
-          className="button primary"
-          type="submit"
-          disabled={
-            busy ||
-            selectedRestoreSnapshot?.spec.status !== "available" ||
-            restoreForm.runtimeProfileVersionId === ""
-          }
-        >
-          {t("workspaceSnapshot.restore")}
-        </button>
-      </form>
+            <DurationSelect
+              label={t("workspaceSnapshot.restoreTtl")}
+              value={restoreForm.ttlSeconds}
+              options={restoreTtlOptions}
+              onChange={(ttlSeconds) => onRestoreFormChange({ ...restoreForm, ttlSeconds })}
+            />
+          </div>
+          <p className="cluster-boundary">{t("workspaceSnapshot.restoreBoundary")}</p>
+          <button
+            className="button primary"
+            type="submit"
+            disabled={
+              busy ||
+              selectedRestoreSnapshot?.spec.status !== "available" ||
+              restoreForm.runtimeProfileVersionId === ""
+            }
+          >
+            {t("workspaceSnapshot.restore")}
+          </button>
+        </form>
+      )}
       <WorkspaceSnapshotTable snapshots={snapshots} onCleanup={onCleanup} />
     </section>
   );
@@ -245,7 +194,7 @@ export function WorkspaceSnapshotTable({
   snapshots: readonly WorkspaceSnapshot[];
   onCleanup: (snapshot: WorkspaceSnapshot) => void;
 }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, number, bytes, dateTime } = useI18n();
   if (snapshots.length === 0)
     return <div className="table-empty">{t("workspaceSnapshot.empty")}</div>;
   return (
@@ -285,9 +234,7 @@ export function WorkspaceSnapshotTable({
                 </span>
               </td>
               <td>
-                {snapshot.spec.sizeBytes === undefined
-                  ? "—"
-                  : `${number(snapshot.spec.sizeBytes)} B`}
+                {snapshot.spec.sizeBytes === undefined ? "—" : bytes(snapshot.spec.sizeBytes)}
               </td>
               <td>
                 {snapshot.spec.retentionSeconds === undefined
@@ -336,25 +283,15 @@ export function WorkspaceSnapshotCleanupConfirmation({
   onClose: () => void;
   onConfirm: () => void;
 }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, bytes, dateTime } = useI18n();
   const [confirmed, setConfirmed] = useState(false);
   return (
     <section className="dialog" aria-labelledby="snapshot-cleanup-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">snapshots.delete · {t("common.destructive")}</div>
-          <h2 id="snapshot-cleanup-title">{t("workspaceSnapshot.cleanupTitle")}</h2>
-          <p>{t("workspaceSnapshot.cleanupDescription")}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading
+        id="snapshot-cleanup-title"
+        title={t("workspaceSnapshot.cleanupTitle")}
+        onClose={onClose}
+      />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -377,9 +314,7 @@ export function WorkspaceSnapshotCleanupConfirmation({
           </div>
           <div>
             <dt>{t("workspaceSnapshot.size")}</dt>
-            <dd>
-              {snapshot.spec.sizeBytes === undefined ? "—" : `${number(snapshot.spec.sizeBytes)} B`}
-            </dd>
+            <dd>{snapshot.spec.sizeBytes === undefined ? "—" : bytes(snapshot.spec.sizeBytes)}</dd>
           </div>
           <div>
             <dt>{t("workspaceSnapshot.expires")}</dt>

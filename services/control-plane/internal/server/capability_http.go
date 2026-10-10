@@ -71,12 +71,12 @@ func (server *CapabilityHTTPServer) ServeHTTP(writer http.ResponseWriter, reques
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
+	if _, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}

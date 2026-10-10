@@ -446,6 +446,37 @@ func TestGeneratedDeploymentTargetCleanupPreviewContract(t *testing.T) {
 	}
 }
 
+func TestGeneratedDeploymentTargetKubernetesCredentialContract(t *testing.T) {
+	const prefix = `{"targetId":"kube-alpha","targetName":"kube-alpha","targetKind":"kubernetes","endpoint":"https://kube.example.test:6443","credentialRef":"kube-alpha"`
+	for name, test := range map[string]struct {
+		body  string
+		valid bool
+	}{
+		"token":                   {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","token":"secret-token"}}`, true},
+		"client certificate":      {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","clientCertificateData":"Q0VSVA==","clientKeyData":"S0VZ"}}`, true},
+		"token and certificate":   {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","token":"t","clientCertificateData":"Q0VSVA==","clientKeyData":"S0VZ"}}`, false},
+		"certificate without key": {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","clientCertificateData":"Q0VSVA=="}}`, false},
+		"missing CA":              {prefix + `,"kubernetesCredential":{"token":"t"}}`, false},
+		"invalid base64":          {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E","token":"t"}}`, false},
+		"token whitespace":        {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","token":"a b"}}`, false},
+		"exec field":              {prefix + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","token":"t","exec":{}}}`, false},
+		"docker target":           {strings.Replace(prefix, `"kubernetes"`, `"docker"`, 1) + `,"kubernetesCredential":{"certificateAuthorityData":"Q0E=","token":"t"}}`, false},
+	} {
+		value, err := DecodeDeploymentTargetRegisterRequestJSON([]byte(test.body))
+		if test.valid != (err == nil) {
+			t.Fatalf("%s: error=%v", name, err)
+		}
+		if test.valid {
+			if encoded, encodeErr := EncodeDeploymentTargetRegisterRequestJSON(value); encodeErr != nil || string(encoded) != test.body {
+				t.Fatalf("%s: round trip=%s error=%v", name, encoded, encodeErr)
+			}
+			if strings.Contains(value.KubernetesCredential.String()+value.KubernetesCredential.GoString(), "Q0E=") {
+				t.Fatalf("%s: credential formatting exposed secret material", name)
+			}
+		}
+	}
+}
+
 func TestGeneratedPlatformJSONCanonicalFraming(t *testing.T) {
 	data := readPlatformFixture(t, "golden/project.json")
 	for _, suffix := range [][]byte{[]byte("[]")} {
@@ -461,7 +492,7 @@ func TestGeneratedPlatformJSONCanonicalFraming(t *testing.T) {
 func TestAdminDeniedWriteMetadataContract(t *testing.T) {
 	event := map[string]any{"apiVersion": APIVersion, "kind": "AdminDeniedWriteEvent", "eventId": "denied-alpha",
 		"tenantId": "tenant-alpha", "projectId": "project-alpha", "actor": "sha256:" + strings.Repeat("a", 64),
-		"action": "adminProbeDeploymentTarget", "resourceId": "target-alpha", "result": "denied", "stableErrorCode": "AUTHORIZATION_DENIED",
+		"action": "adminCreateMcpServer", "resourceId": "mcp-alpha", "result": "denied", "stableErrorCode": "AUTHORIZATION_DENIED",
 		"requestId": "request-alpha", "occurredAt": "2026-09-05T12:00:00Z"}
 	raw, _ := json.Marshal(event)
 	if _, err := DecodeAdminDeniedWriteEventJSON(raw); err != nil {

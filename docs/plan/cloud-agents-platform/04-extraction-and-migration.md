@@ -10,7 +10,7 @@
 
 ### 账号登录、租户与角色：IDENTITY-V1（2026-10-08）
 
-本节替换此前未分期的管理员登录草案。依据 [ADR-0033](../adr/0033-built-in-identity-service.md)、[05 验收](05-gates-and-acceptance.md#identity-v1) 和 [07 页面与范围](07-admin-web-requirements-and-design.md#identity-v1)，本次只交付 P0 文档；须用户明确批准 P0 才能实施运行时。既有 BASE/P1 授权、其他并行切片或文档写完均不跨越此边界。实际状态只写入 [06](06-status-tracker.md)。
+本节替换此前未分期的管理员登录草案。依据 [ADR-0033](../adr/0033-built-in-identity-service.md)、[05 验收](05-gates-and-acceptance.md#identity-v1) 和 [07 页面与范围](07-admin-web-requirements-and-design.md#identity-v1)，用户已于 2026-10-08 批准 P0，并要求作为 Goal 持续推进 P1–P5 直至完成。按当前代码差距逐片实施与验收，不因缺少单个外部 provider 条件停止独立工作；既有部署写入与已有数据处理仍保留单独授权边界。实际状态只写入 [06](06-status-tracker.md)。
 
 | 阶段 | 完整切片范围 | 退出条件 |
 | --- | --- | --- |
@@ -23,7 +23,13 @@
 | P4.3 飞书 / 钉钉 / 企业微信 | 各自协议、稳定 subject、受限企业/组织与显式可信邮箱策略；缺失邮箱不能接受邀请 | 三个 provider 分别验证登录/关联/解绑/未知拒绝/邀请接受，覆盖邮箱缺失与不可信；未配置真实 provider 的单元保持 BLOCKED/NOT RUN |
 | P5 CLI、自动化与部署 | cloud-agentsctl 浏览器登录及 loopback callback；独立 service-account token 用于自动化/E2E；Compose/Helm 身份容器、签名密钥引用、Web TLS；指定既有部署切换登录并停止人工 mint | CLI callback/state/PKCE 与服务账号最小权限、部署/密钥轮换/重启恢复通过，完成聚焦安全审查；既有部署写入及数据处理另经明确授权 |
 
-token 默认 15 分钟，由 Web server 续签；空邮箱域列表允许任意已验证邮箱，平台管理员仅自身管理访问豁免；TOTP/WebAuthn、SCIM、会话管理页面延后。邀请创建、成员授权和撤销不能延后到页面阶段；P1 提供核心，P3 完成管理闭环。P2/P3 的密码验收不提前宣称 P4 联合登录已完成。
+token 默认 15 分钟，由 Web server 续签；空邮箱域列表允许任意已验证邮箱，平台管理员本人豁免域限制但不替他人豁免；TOTP/WebAuthn、SCIM、会话管理页面延后。邀请创建、成员授权和撤销不能延后到页面阶段；P1 提供核心，P3 完成管理闭环。P2/P3 的密码验收不提前宣称 P4 联合登录已完成。
+
+P4 的应用配置引用和回调地址统一由平台管理员在 Admin Web 的“登录提供方”系统设置中维护，字段与权限见 [07](07-admin-web-requirements-and-design.md#815-身份成员与账号identity-v1-p2p3)。这些设置持久化到 Identity 数据库，不作为产品环境变量或启动配置；运维只预置秘密材料及其受限引用。测试夹具的环境变量不构成另一套产品配置入口。真实提供方未配置时仅阻塞该提供方的真实登录验收，不表示配置功能尚未交付。
+
+P1 先关闭当前代码中的具体缺口：把尚未接入的 browser session 签发草稿移出离线 `authn`，复用已安装的 Argon2id/OIDC 依赖实现身份服务核心；从可编辑 contract 生成身份 API/SDK；通过现有迁移生成器新增 identity schema 与受限函数。签发输入必须来自 CP 受限授权入口，禁止浏览器任填 scope。先验证密码、签发/验签边界、一次性 proof 与数据拒绝，再接入 HTTP/会话撤销及自动 JWKS，避免以未接入的核心测试冒充完整 P1。
+
+部署前审查修复（2026-10-09）：CP 拉取 JWKS 收到 5xx/429/408 时按传输故障处理，仅继续使用未过期 checkpoint，不再关闭准入并退出；BFF 只在会话查询或仅携带会话句柄的身份调用返回 401 时清除 cookie，错误密码不再清除会话与 CLI flow；浏览器 Control Plane 客户端与 bearer 客户端共用二进制响应处理，Artifact 字节不经 UTF-8 解码且沿用 16 MiB 上限；身份服务按 CA 引用复用 provider HTTP client，CA 文件内容变化时重建。CLI 取消通知、代理超时与 Identity 401 细分另行决策。
 
 先按当前源码盘点 token 输入、存储、代理、CLI、E2E/fixture 与核心测试调用者，不把提案中的文件数当成固定清单。复用现有核心安全回归和生成链；Web 普通流程迁移至 tester-army/e2e，自动化走 service account。替代流程通过后再删旧覆盖，按相同范围统计测试维护文件和行数，搬移不计减少。实现当前契约，不保留粘贴 token 的历史兼容入口；不自动改写现有数据库、旧 subject 绑定或冻结证据。
 

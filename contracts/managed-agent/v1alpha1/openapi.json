@@ -11,6 +11,941 @@
     }
   ],
   "paths": {
+    "/v1/admin/tenants/{tenantId}": {
+      "get": {
+        "operationId": "adminGetPlatformTenant",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/platform-tenant.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/organizations/{organizationId}": {
+      "get": {
+        "operationId": "adminGetOrganization",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/organization.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/organizations": {
+      "get": {
+        "operationId": "adminListOrganizations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/organization-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateOrganization",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/organization-create-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/organization.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects": {
+      "get": {
+        "operationId": "adminListProjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectListOrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateProject",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/project-create-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/projects/{projectId}": {
+      "get": {
+        "operationId": "adminGetProject",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/memberships": {
+      "get": {
+        "operationId": "adminListMemberships",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/membership-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateMembership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-create-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/memberships/{membershipId}": {
+      "get": {
+        "operationId": "adminGetMembership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/membership.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/memberships/{membershipId}:resume": {
+      "post": {
+        "operationId": "adminResumeMembership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/memberships/{membershipId}:suspend": {
+      "post": {
+        "operationId": "adminSuspendMembership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/memberships/{membershipId}:revoke": {
+      "post": {
+        "operationId": "adminRevokeMembership",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/membership-transition-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/roles": {
+      "get": {
+        "operationId": "adminListRoles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/roles/{roleId}": {
+      "get": {
+        "operationId": "adminGetRole",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RoleId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/role-bindings": {
+      "get": {
+        "operationId": "adminListRoleBindings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-binding-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminBindRole",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/role-binding-create-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/role-bindings/{roleBindingId}": {
+      "get": {
+        "operationId": "adminGetRoleBinding",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RoleBindingId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/role-binding.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/role-bindings/{roleBindingId}:revoke": {
+      "post": {
+        "operationId": "adminRevokeRoleBinding",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RoleBindingId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../platform/v1alpha1/schemas/role-binding-revoke-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/rbac-mutation-result.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}": {
       "get": {
         "operationId": "managedAgentGetPlatformTenant",
@@ -185,7 +1120,49 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/my-projects": {
+      "get": {
+        "operationId": "managedAgentListMyProjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../platform/v1alpha1/schemas/project-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -288,7 +1265,9 @@
           "429": {
             "$ref": "#/components/responses/Problem"
           },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -341,35 +1320,63 @@
       "get": {
         "operationId": "managedAgentListSessions",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/SandboxIdFilter" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxIdFilter"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/session-page.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/session-page.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       },
       "post": {
         "operationId": "managedAgentCreateSession",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -391,15 +1398,27 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/session.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/session.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -407,10 +1426,18 @@
       "get": {
         "operationId": "managedAgentGetSession",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "responses": {
           "200": {
@@ -422,14 +1449,24 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/session.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/session.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -438,11 +1475,21 @@
         "operationId": "managedAgentCloseSession",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "responses": {
           "200": {
@@ -454,15 +1501,27 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/session.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/session.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -470,42 +1529,74 @@
       "get": {
         "operationId": "managedAgentListTurns",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/turn-page.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/turn-page.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       },
       "post": {
         "operationId": "managedAgentCreateTurn",
         "x-cloud-agents-coordination": "direct-transaction",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "./schemas/turn-create-request.schema.json" }
+              "schema": {
+                "$ref": "./schemas/turn-create-request.schema.json"
+              }
             }
           }
         },
@@ -519,16 +1610,30 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/turn.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/turn.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -536,26 +1641,48 @@
       "get": {
         "operationId": "managedAgentListEvents",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/EventCursor" },
-          { "$ref": "#/components/parameters/EventLimit" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/EventCursor"
+          },
+          {
+            "$ref": "#/components/parameters/EventLimit"
+          }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/event-page.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/event-page.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -563,11 +1690,21 @@
       "get": {
         "operationId": "managedAgentGetTurn",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "responses": {
           "200": {
@@ -579,14 +1716,24 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/turn.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/turn.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -594,36 +1741,66 @@
       "get": {
         "operationId": "managedAgentListExecutions",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/execution-page.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/execution-page.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       },
       "post": {
         "operationId": "managedAgentExecute",
         "x-cloud-agents-coordination": "durable-runtime",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -645,17 +1822,33 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/execution.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "502": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -663,12 +1856,24 @@
       "get": {
         "operationId": "managedAgentGetExecution",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "responses": {
           "200": {
@@ -680,14 +1885,24 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/execution.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -695,13 +1910,27 @@
       "get": {
         "operationId": "managedAgentDownloadArtifact",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/MessageIndex" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/MessageIndex"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "responses": {
           "200": {
@@ -715,18 +1944,28 @@
               }
             },
             "content": {
-            "*/*": {
-              "schema": {
-                "$ref": "./schemas/artifact.schema.json"
-              }
+              "*/*": {
+                "schema": {
+                  "$ref": "./schemas/artifact.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "502": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -735,13 +1974,27 @@
         "operationId": "managedAgentCancelExecution",
         "x-cloud-agents-coordination": "durable-runtime",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -763,16 +2016,30 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/execution.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -781,13 +2048,27 @@
         "operationId": "managedAgentInterruptExecution",
         "x-cloud-agents-coordination": "durable-runtime",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -809,16 +2090,30 @@
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "./schemas/execution.schema.json" }
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -827,13 +2122,27 @@
         "operationId": "managedAgentReconcileSideEffect",
         "x-cloud-agents-coordination": "durable-runtime",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/IdempotencyKey" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -846,13 +2155,27 @@
           }
         },
         "responses": {
-          "204": { "description": "Side effect outcome reconciled" },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "204": {
+            "description": "Side effect outcome reconciled"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -860,12 +2183,24 @@
       "post": {
         "operationId": "managedAgentResolveApproval",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -878,13 +2213,27 @@
           }
         },
         "responses": {
-          "204": { "description": "Approval resolved" },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "502": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "204": {
+            "description": "Approval resolved"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -892,12 +2241,24 @@
       "post": {
         "operationId": "managedAgentResolveUserInput",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/ProjectId" },
-          { "$ref": "#/components/parameters/SessionId" },
-          { "$ref": "#/components/parameters/TurnId" },
-          { "$ref": "#/components/parameters/ExecutionId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionId"
+          },
+          {
+            "$ref": "#/components/parameters/TurnId"
+          },
+          {
+            "$ref": "#/components/parameters/ExecutionId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -910,13 +2271,27 @@
           }
         },
         "responses": {
-          "204": { "description": "User input resolved" },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "502": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "204": {
+            "description": "User input resolved"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -924,10 +2299,18 @@
       "get": {
         "operationId": "managedAgentListMemberships",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
@@ -940,16 +2323,26 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       },
       "post": {
         "operationId": "managedAgentCreateMembership",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -977,11 +2370,21 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1034,9 +2437,15 @@
       "post": {
         "operationId": "managedAgentResumeMembership",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/MembershipId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -1064,12 +2473,24 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1077,9 +2498,15 @@
       "post": {
         "operationId": "managedAgentSuspendMembership",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/MembershipId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -1107,12 +2534,24 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1120,9 +2559,15 @@
       "post": {
         "operationId": "managedAgentRevokeMembership",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/MembershipId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/MembershipId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -1150,12 +2595,24 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1163,10 +2620,18 @@
       "get": {
         "operationId": "managedAgentListRoles",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
@@ -1179,9 +2644,15 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1234,10 +2705,18 @@
       "get": {
         "operationId": "managedAgentListRoleBindings",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RequestId" },
-          { "$ref": "#/components/parameters/ProjectPageSize" },
-          { "$ref": "#/components/parameters/ProjectPageToken" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
         ],
         "responses": {
           "200": {
@@ -1250,16 +2729,26 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       },
       "post": {
         "operationId": "managedAgentBindRole",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -1287,11 +2776,21 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     },
@@ -1344,9 +2843,15 @@
       "post": {
         "operationId": "managedAgentRevokeRoleBinding",
         "parameters": [
-          { "$ref": "#/components/parameters/TenantId" },
-          { "$ref": "#/components/parameters/RoleBindingId" },
-          { "$ref": "#/components/parameters/RequestId" }
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RoleBindingId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
         ],
         "requestBody": {
           "required": true,
@@ -1374,12 +2879,236 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/Problem" },
-          "401": { "$ref": "#/components/responses/Problem" },
-          "403": { "$ref": "#/components/responses/Problem" },
-          "404": { "$ref": "#/components/responses/Problem" },
-          "409": { "$ref": "#/components/responses/Problem" },
-          "415": { "$ref": "#/components/responses/Problem" }
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/service-accounts": {
+      "get": {
+        "operationId": "adminListServiceAccounts",
+        "description": "Lists the tenant service-account directory. Requires tenant-scope memberships.list; a project-only principal cannot list the directory.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageSize"
+          },
+          {
+            "$ref": "#/components/parameters/ProjectPageToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded service-account page. Management scope is database authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../identity/v1alpha1/schemas/service-account-page.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateServiceAccount",
+        "description": "Creates one single-tenant service account and initial credential. The same actor must pass memberships.create and role-bindings.bind at the requested scope in one transaction.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../identity/v1alpha1/schemas/service-account-create-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created service account and one-time credential.",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../identity/v1alpha1/schemas/service-account-created.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/service-accounts/{serviceAccountId}:rotate-credential": {
+      "post": {
+        "operationId": "adminRotateServiceAccountCredential",
+        "description": "Rotates the credential after loading the database-trusted management scope and authorizing memberships.update at that scope.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceAccountId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../identity/v1alpha1/schemas/service-account-rotate-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New one-time credential and updated versions.",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../identity/v1alpha1/schemas/service-account-rotated.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/admin/tenants/{tenantId}/service-accounts/{serviceAccountId}:disable": {
+      "post": {
+        "operationId": "adminDisableServiceAccount",
+        "description": "Permanently disables the service account and all credentials after loading the database-trusted management scope and authorizing memberships.delete. Membership and binding records remain for audit.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantId"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceAccountId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../identity/v1alpha1/schemas/service-account-disable-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Service account and credentials disabled.",
+            "headers": {
+              "X-Resource-Version": {
+                "$ref": "#/components/headers/ResourceVersion"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          }
         }
       }
     }
@@ -1534,13 +3263,17 @@
         "name": "cursor",
         "in": "query",
         "required": false,
-        "schema": { "$ref": "./schemas/event-cursor.schema.json" }
+        "schema": {
+          "$ref": "./schemas/event-cursor.schema.json"
+        }
       },
       "EventLimit": {
         "name": "limit",
         "in": "query",
         "required": false,
-        "schema": { "$ref": "./schemas/event-limit.schema.json" }
+        "schema": {
+          "$ref": "./schemas/event-limit.schema.json"
+        }
       },
       "IdempotencyKey": {
         "name": "Idempotency-Key",
@@ -1548,6 +3281,14 @@
         "required": true,
         "schema": {
           "$ref": "../../common/v1alpha1/schemas/idempotency-key.schema.json"
+        }
+      },
+      "ServiceAccountId": {
+        "name": "serviceAccountId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "../../common/v1alpha1/schemas/identifier.schema.json"
         }
       }
     },
@@ -1565,7 +3306,9 @@
         "headers": {
           "WWW-Authenticate": {
             "description": "Bearer authentication challenge returned with 401 responses.",
-            "schema": { "$ref": "./schemas/www-authenticate.schema.json" }
+            "schema": {
+              "$ref": "./schemas/www-authenticate.schema.json"
+            }
           }
         },
         "content": {

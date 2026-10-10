@@ -1,0 +1,14 @@
+{
+  "id": "account-example",
+  "email": "admin@example.com",
+  "displayName": "Example Admin",
+  "state": "active",
+  "platformAdmin": true,
+  "emailVerifiedAt": "2026-10-09T00:00:00Z",
+  "createdAt": "2026-10-09T00:00:00Z",
+  "subject": {
+    "kind": "user",
+    "issuer": "https://identity.example.com",
+    "subject": "user-account-example"
+  }
+}

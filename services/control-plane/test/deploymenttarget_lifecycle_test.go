@@ -46,6 +46,27 @@ func TestDeploymentTargetValidationAndDigests(t *testing.T) {
 	if err := input.Validate("tenant-alpha"); err == nil {
 		t.Fatal("accepted direct registration of a server-owned RemoteWorker target")
 	}
+
+	input.Kind, input.Endpoint = "kubernetes", "https://kubernetes.example.test:6443"
+	withoutCredential, err := deploymenttarget.RegisterMutationDigest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := deploymenttarget.SealedCredential{KeyID: "k1-" + strings.Repeat("a", 32), Sealed: make([]byte, 64), Fingerprint: "hmac-sha256:" + strings.Repeat("1", 64)}
+	input.SealedCredential = &credential
+	firstCredential, err := deploymenttarget.RegisterMutationDigest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential.Fingerprint = "hmac-sha256:" + strings.Repeat("2", 64)
+	secondCredential, err := deploymenttarget.RegisterMutationDigest(input)
+	if err != nil || withoutCredential == firstCredential || firstCredential == secondCredential {
+		t.Fatalf("registration digest did not bind the sealed credential: %q %q %q %v", withoutCredential, firstCredential, secondCredential, err)
+	}
+	input.Kind, input.Endpoint = "docker", "https://docker.example.test:2376"
+	if err := input.Validate("tenant-alpha"); err == nil {
+		t.Fatal("accepted a sealed Kubernetes credential on a Docker target")
+	}
 }
 
 func TestDeploymentTargetSnapshotKeepsProbeFactsPhaseBound(t *testing.T) {

@@ -128,6 +128,239 @@ func TestBuiltinCatalogFixtureAndDrift(t *testing.T) {
 	}
 }
 
+func TestBuiltinCatalogV2PreservesV1AndClosesPlatformAdminPermissions(t *testing.T) {
+	if err := builtinCatalogFixture(t).Validate(); err != nil {
+		t.Fatalf("frozen v1 catalog rejected: %v", err)
+	}
+	catalog := builtinCatalogV2Fixture(t)
+	if err := catalog.Validate(); err != nil {
+		t.Fatalf("valid v2 catalog rejected: %v", err)
+	}
+	role, ok := catalog.Role("platform.admin", 2)
+	if !ok {
+		t.Fatal("platform.admin v2 missing")
+	}
+	for _, forbidden := range []string{"sessions.get", "turns.get", "artifacts.get", "credentials.get"} {
+		if containsPermission(role.Permissions, forbidden) {
+			t.Fatalf("platform.admin v2 contains content permission %q", forbidden)
+		}
+	}
+	if !containsPermission(role.Permissions, "projects.act") || !containsPermission(role.Permissions, "operations.list") || !containsPermission(role.Permissions, "projects.update") || !containsPermission(role.Permissions, "tenants.update") {
+		t.Fatalf("platform.admin v2 permissions = %v", role.Permissions)
+	}
+
+	drifted := cloneCatalog(catalog)
+	drifted.Roles[1].Permissions = append(drifted.Roles[1].Permissions, "tenants.watch")
+	if err := drifted.Validate(); !errors.Is(err, ErrCatalogDrift) {
+		t.Fatalf("expanded catalog error = %v, want ErrCatalogDrift", err)
+	}
+	drifted = cloneCatalog(catalog)
+	drifted.Roles[0].CatalogRevision = 2
+	drifted.Roles[0].PublishedAt = builtinCatalogV2PublishedAt
+	if err := drifted.Validate(); !errors.Is(err, ErrCatalogDrift) {
+		t.Fatalf("rewritten inherited role error = %v, want ErrCatalogDrift", err)
+	}
+}
+
+func TestPlatformAdminV2UsesExplicitAdminApplicationPolicy(t *testing.T) {
+	now := time.Date(2026, time.October, 8, 1, 2, 3, 0, time.UTC)
+	subject := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	digest, err := subject.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-alpha", ProjectID: "project-alpha"}
+	binding := &GlobalRoleBindingFact{
+		UserID: "alpha", Subject: subject, SubjectHash: digest,
+		RoleName: "platform.admin", RoleVersion: 2, State: BindingActive,
+	}
+	snapshot := Snapshot{
+		TenantID: "tenant-alpha", Application: "admin", Scope: project, ScopeResolved: true,
+		Catalog: builtinCatalogV2Fixture(t), GlobalBinding: binding,
+	}
+	request := authorizationRequest{Subject: subject, Permission: "projects.update", Resource: ScopeRef{Level: ScopeProject, ID: "project-alpha"}}
+	decision, err := evaluate(snapshot, request, now)
+	if err != nil || !decision.Allowed || decision.evidence == nil || decision.evidence.RoleName != "platform.admin" {
+		t.Fatalf("platform admin decision = %#v err=%v", decision, err)
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*Snapshot, *authorizationRequest)
+		err    error
+	}{
+		{name: "user application", mutate: func(value *Snapshot, _ *authorizationRequest) { value.Application = "user" }, err: nil},
+		{name: "unknown content permission", mutate: func(_ *Snapshot, value *authorizationRequest) { value.Permission = "sessions.get" }, err: nil},
+		{name: "revoked global binding", mutate: func(value *Snapshot, _ *authorizationRequest) { value.GlobalBinding.State = BindingRevoked }, err: nil},
+		{name: "v1 catalog", mutate: func(value *Snapshot, _ *authorizationRequest) { value.Catalog = builtinCatalogFixture(t) }, err: nil},
+		{name: "missing application", mutate: func(value *Snapshot, _ *authorizationRequest) { value.Application = "" }, err: ErrSnapshotMalformed},
+		{name: "subject digest mismatch", mutate: func(value *Snapshot, _ *authorizationRequest) {
+			value.GlobalBinding.SubjectHash = "sha256:" + stringsOf("0", 64)
+		}, err: ErrSnapshotMalformed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := cloneSnapshot(snapshot)
+			requestCopy := request
+			test.mutate(&value, &requestCopy)
+			got, gotErr := evaluate(value, requestCopy, now)
+			if test.err != nil {
+				if !errors.Is(gotErr, test.err) {
+					t.Fatalf("error = %v, want %v", gotErr, test.err)
+				}
+				return
+			}
+			if gotErr != nil || got.Allowed || got.Reason != denyNoEligibleBinding {
+				t.Fatalf("decision = %#v err=%v, want closed deny", got, gotErr)
+			}
+		})
+	}
+}
+
+func TestEvaluateTokenScopesUsesOperationEvaluator(t *testing.T) {
+	now := time.Date(2026, time.October, 8, 1, 2, 3, 0, time.UTC)
+	subject := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	digest, err := subject.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-alpha", ProjectID: "project-alpha"}
+	snapshot := Snapshot{
+		TenantID: "tenant-alpha", Application: "admin", Scope: project, ScopeResolved: true,
+		Catalog: builtinCatalogV2Fixture(t),
+		GlobalBinding: &GlobalRoleBindingFact{
+			UserID: "alpha", Subject: subject, SubjectHash: digest,
+			RoleName: "platform.admin", RoleVersion: 2, State: BindingActive,
+		},
+	}
+	scopes, err := EvaluateTokenScopes(snapshot, subject, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, scope := range scopes {
+		if index > 0 && scopes[index-1] >= scope {
+			t.Fatalf("scopes are not strictly sorted: %v", scopes)
+		}
+	}
+	for _, required := range []string{"audit.list", "mcp-servers.create", "network-policies.update", "operations.list", "profiles.list", "projects.act", "projects.get", "remote-worker-enrollments.create", "sandboxes.act", "snapshots.create", "storage-policies.update", "targets.create", "workers.list"} {
+		if !containsPermission(scopes, required) {
+			t.Fatalf("scopes %v missing %q", scopes, required)
+		}
+	}
+	if len(scopes) != 46 {
+		t.Fatalf("admin project-token scope count = %d, want 46: %v", len(scopes), scopes)
+	}
+	for _, forbidden := range []string{"memberships.create", "tenants.update", "environment-profiles.list", "remote-worker-bootstrap.act", "sessions.get", "credentials.get"} {
+		if containsPermission(scopes, forbidden) {
+			t.Fatalf("scopes %v contain %q", scopes, forbidden)
+		}
+	}
+	snapshot.Application = "user"
+	if _, err := EvaluateTokenScopes(snapshot, subject, now); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("user application scope error = %v, want ErrOperationDenied", err)
+	}
+
+	member := allowedSnapshot(t, subject, "tenant-alpha", "project-alpha")
+	member.Application = "user"
+	member.Scope = ScopePath{Level: ScopeTenant, TenantID: "tenant-alpha"}
+	memberScopes, err := EvaluateTokenScopes(member, subject, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(memberScopes) != 3 || !containsPermission(memberScopes, "projects.get") || !containsPermission(memberScopes, "projects.list") || !containsPermission(memberScopes, "projects.watch") {
+		t.Fatalf("project member tenant-token scopes = %v", memberScopes)
+	}
+	for _, forbidden := range []string{"environment-profiles.list", "environments.get", "sandboxes.update"} {
+		if containsPermission(memberScopes, forbidden) {
+			t.Fatalf("tenant-token scopes %v contain project permission %q", memberScopes, forbidden)
+		}
+	}
+	member.Scope = project
+	projectScopes, err := EvaluateTokenScopes(member, subject, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"environment-profiles.list", "environment-quotas.get", "environments.get", "projects.get"} {
+		if !containsPermission(projectScopes, required) {
+			t.Fatalf("user project-token scopes %v missing %q", projectScopes, required)
+		}
+	}
+	for _, forbidden := range []string{"environments.create", "remote-worker-bootstrap.act", "sandboxes.update", "sessions.get"} {
+		if containsPermission(projectScopes, forbidden) {
+			t.Fatalf("user project-token scopes %v contain %q", projectScopes, forbidden)
+		}
+	}
+	member.Candidates[0].Binding.RoleName = "project.operator"
+	operatorScopes, err := EvaluateTokenScopes(member, subject, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"environments.create", "environments.delete", "projects.act", "sandboxes.update"} {
+		if !containsPermission(operatorScopes, required) {
+			t.Fatalf("operator project-token scopes %v missing %q", operatorScopes, required)
+		}
+	}
+	member.Scope = ScopePath{Level: ScopeTenant, TenantID: "tenant-alpha"}
+	member.Application = ""
+	if _, err := EvaluateTokenScopes(member, subject, now); !errors.Is(err, ErrSnapshotMalformed) {
+		t.Fatalf("missing application error = %v, want ErrSnapshotMalformed", err)
+	}
+
+	member = allowedSnapshot(t, subject, "tenant-alpha", "project-b")
+	member.Application = "user"
+	member.Scope = ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-alpha", ProjectID: "project-a"}
+	if _, err := EvaluateTokenScopes(member, subject, now); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("other-project scope error = %v, want ErrOperationDenied", err)
+	}
+
+	member.Application = "admin"
+	member.Catalog = builtinCatalogV2Fixture(t)
+	if _, err := EvaluateTokenScopes(member, subject, now); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("non-tenant admin scope error = %v, want ErrOperationDenied", err)
+	}
+	serviceAccount := SubjectRef{Kind: "serviceAccount", Issuer: subject.Issuer, Subject: "service-project-viewer"}
+	serviceAccountProject := allowedSnapshot(t, serviceAccount, "tenant-alpha", "project-alpha")
+	serviceAccountProject.Application = "admin"
+	serviceAccountProject.Catalog = builtinCatalogV2Fixture(t)
+	serviceAccountScopes, err := EvaluateTokenScopes(serviceAccountProject, serviceAccount, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPermission(serviceAccountScopes, "projects.get") || containsPermission(serviceAccountScopes, "projects.act") || containsPermission(serviceAccountScopes, "tenants.get") {
+		t.Fatalf("Admin project-viewer service-account scopes = %v", serviceAccountScopes)
+	}
+	serviceAccountProject.Scope.ProjectID = "project-other"
+	if _, err := EvaluateTokenScopes(serviceAccountProject, serviceAccount, now); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("other-project service-account scope error = %v, want ErrOperationDenied", err)
+	}
+	member.Scope = ScopePath{Level: ScopeTenant, TenantID: "tenant-alpha"}
+	member.Candidates[0].Membership.Scope = member.Scope
+	member.Candidates[0].Binding.Scope = member.Scope
+	member.Candidates[0].Binding.RoleName = "tenant.admin"
+	adminScopes, err := EvaluateTokenScopes(member, subject, now)
+	if err != nil || !containsPermission(adminScopes, "tenants.get") || !containsPermission(adminScopes, "projects.act") {
+		t.Fatalf("tenant admin scopes = %v err=%v", adminScopes, err)
+	}
+	for _, forbidden := range []string{"audit.list", "profiles.list", "remote-worker-bootstrap.act", "sessions.get"} {
+		if containsPermission(adminScopes, forbidden) {
+			t.Fatalf("tenant admin tenant-token scopes %v contain %q", adminScopes, forbidden)
+		}
+	}
+	member.Application = "user"
+	member.Scope = project
+	userTenantAdminProjectScopes, err := EvaluateTokenScopes(member, subject, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(userTenantAdminProjectScopes) != 31 {
+		t.Fatalf("user tenant-admin project-token scope count = %d, want 31: %v", len(userTenantAdminProjectScopes), userTenantAdminProjectScopes)
+	}
+	for _, forbidden := range []string{"organizations.create", "remote-worker-bootstrap.act", "tenants.update"} {
+		if containsPermission(userTenantAdminProjectScopes, forbidden) {
+			t.Fatalf("user tenant-admin project-token scopes %v contain %q", userTenantAdminProjectScopes, forbidden)
+		}
+	}
+}
+
 func TestEvaluateDefaultDenyAndScopeContainment(t *testing.T) {
 	now := time.Date(2026, time.August, 17, 1, 2, 3, 0, time.UTC)
 	tenantID := "tenant-alpha"
@@ -363,6 +596,86 @@ func TestVerifiedOperationProtectedCallbackErrorPreservesExecutedProgress(t *tes
 	}
 }
 
+func TestVerifiedOperationProjectSelectorUsesExistingEvaluator(t *testing.T) {
+	now := time.Date(2026, time.October, 8, 1, 2, 3, 0, time.UTC)
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	tenant := ScopeRef{Level: ScopeTenant, ID: "tenant-alpha"}
+	operation, err := testVerifiedOperationBinder(actor, "tenant-alpha", tenant, "projects.list").Bind("tenant-alpha", tenant, "projects.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := allowedSnapshot(t, actor, "tenant-alpha", "project-alpha")
+	base.Application = "user"
+	base.Scope = ScopePath{Level: ScopeTenant, TenantID: "tenant-alpha"}
+	projectAlpha := ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-alpha", ProjectID: "project-alpha"}
+	projectBeta := ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-beta", ProjectID: "project-beta"}
+	batches := [][]ScopePath{{projectAlpha}, {projectBeta}}
+	var bitmaps [][]bool
+	if err := operation.ExecuteProjectSelector(base, now, func() ([]ScopePath, bool, error) {
+		batch := batches[0]
+		batches = batches[1:]
+		return batch, len(batches) == 0, nil
+	}, func(allowed []bool) (bool, error) {
+		bitmaps = append(bitmaps, append([]bool(nil), allowed...))
+		return false, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(bitmaps) != 2 || len(bitmaps[0]) != 1 || !bitmaps[0][0] || len(bitmaps[1]) != 1 || bitmaps[1][0] {
+		t.Fatalf("selector bitmaps = %#v", bitmaps)
+	}
+	if err := operation.ExecuteProjectSelector(base, now, nil, nil); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("repeat selector error = %v", err)
+	}
+}
+
+func TestVerifiedOperationProjectSelectorRejectsAuthorityMismatch(t *testing.T) {
+	now := time.Date(2026, time.October, 8, 1, 2, 3, 0, time.UTC)
+	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
+	tenant := ScopeRef{Level: ScopeTenant, ID: "tenant-alpha"}
+	project := ScopePath{Level: ScopeProject, TenantID: "tenant-alpha", OrganizationID: "organization-alpha", ProjectID: "project-alpha"}
+	base := allowedSnapshot(t, actor, "tenant-alpha", "project-alpha")
+	base.Application = "user"
+	base.Scope = ScopePath{Level: ScopeTenant, TenantID: "tenant-alpha"}
+	for _, test := range []struct {
+		name       string
+		permission string
+		mutate     func(*Snapshot, *[]ScopePath)
+	}{
+		{name: "wrong application", permission: "projects.list", mutate: func(snapshot *Snapshot, _ *[]ScopePath) { snapshot.Application = "admin" }},
+		{name: "wrong tenant", permission: "projects.list", mutate: func(_ *Snapshot, scopes *[]ScopePath) { (*scopes)[0].TenantID = "tenant-other" }},
+		{name: "wrong permission", permission: "projects.get", mutate: func(*Snapshot, *[]ScopePath) {}},
+		{name: "inactive parent scope", permission: "projects.list", mutate: func(_ *Snapshot, scopes *[]ScopePath) { (*scopes)[0].OrganizationID = "" }},
+		{name: "mixed scope levels", permission: "projects.list", mutate: func(_ *Snapshot, scopes *[]ScopePath) {
+			*scopes = append(*scopes, ScopePath{Level: ScopeOrganization, TenantID: "tenant-alpha", OrganizationID: "organization-alpha"})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := cloneSnapshot(base)
+			scopes := []ScopePath{project}
+			test.mutate(&snapshot, &scopes)
+			operation, err := testVerifiedOperationBinder(actor, "tenant-alpha", tenant, test.permission).Bind("tenant-alpha", tenant, test.permission)
+			if err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			err = operation.ExecuteProjectSelector(snapshot, now, func() ([]ScopePath, bool, error) { return scopes, true, nil }, func([]bool) (bool, error) { called = true; return false, nil })
+			if !errors.Is(err, ErrOperationDenied) || called {
+				t.Fatalf("error=%v callback=%v", err, called)
+			}
+		})
+	}
+
+	escaped, err := testVerifiedOperationBinder(actor, "tenant-alpha", tenant, "projects.list").Bind("tenant-alpha", tenant, "projects.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	escaped.lifetime.close()
+	if err := escaped.ExecuteProjectSelector(base, now, func() ([]ScopePath, bool, error) { return []ScopePath{project}, true, nil }, func([]bool) (bool, error) { return false, nil }); !errors.Is(err, ErrOperationDenied) {
+		t.Fatalf("escaped selector error = %v", err)
+	}
+}
+
 func TestVerifiedOperationCopyTamperMismatchAndEscapeFailClosed(t *testing.T) {
 	actor := SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-alpha"}
 	resource := ScopeRef{Level: ScopeProject, ID: "project-alpha"}
@@ -488,9 +801,19 @@ func allowedSnapshot(t *testing.T, actor SubjectRef, tenantID, projectID string)
 }
 
 func builtinCatalogFixture(t *testing.T) Catalog {
+	return builtinCatalogFixtureAt(t, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json")
+}
+
+func builtinCatalogV2Fixture(t *testing.T) Catalog {
+	return builtinCatalogFixtureAt(t, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v2.json")
+}
+
+func builtinCatalogFixtureAt(t *testing.T, path string) Catalog {
 	t.Helper()
 	var document struct {
-		Roles []struct {
+		CatalogRevision string `json:"catalogRevision"`
+		PublishedAt     string `json:"publishedAt"`
+		Roles           []struct {
 			Name        string   `json:"name"`
 			Version     int64    `json:"version"`
 			ScopeLevel  string   `json:"scopeLevel"`
@@ -498,13 +821,19 @@ func builtinCatalogFixture(t *testing.T) Catalog {
 			Permissions []string `json:"permissions"`
 		} `json:"roles"`
 	}
-	readFixture(t, "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v1.json", &document)
+	readFixture(t, path, &document)
 	roles := make([]Role, len(document.Roles))
 	for index, role := range document.Roles {
+		catalogRevision := int64(1)
+		publishedAt := builtinCatalogV1PublishedAt
+		if document.CatalogRevision == "2" && role.Name == "platform.admin" {
+			catalogRevision = 2
+			publishedAt = document.PublishedAt
+		}
 		roles[index] = Role{
-			Name: role.Name, Version: role.Version, CatalogRevision: 1,
+			Name: role.Name, Version: role.Version, CatalogRevision: catalogRevision,
 			ScopeLevel: ScopeLevel(role.ScopeLevel), State: role.State,
-			PublishedAt: "2026-08-17T00:00:00Z", Permissions: append([]string(nil), role.Permissions...),
+			PublishedAt: publishedAt, Permissions: append([]string(nil), role.Permissions...),
 		}
 	}
 	return Catalog{Roles: roles}
@@ -538,6 +867,10 @@ func cloneSnapshot(value Snapshot) Snapshot {
 	for index := range cloned.Candidates {
 		cloned.Candidates[index].Membership.ExpiresAt = cloneTimeValue(value.Candidates[index].Membership.ExpiresAt)
 		cloned.Candidates[index].Binding.ExpiresAt = cloneTimeValue(value.Candidates[index].Binding.ExpiresAt)
+	}
+	if value.GlobalBinding != nil {
+		binding := *value.GlobalBinding
+		cloned.GlobalBinding = &binding
 	}
 	return cloned
 }

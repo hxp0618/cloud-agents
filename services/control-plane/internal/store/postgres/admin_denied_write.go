@@ -40,10 +40,11 @@ func validAdminDeniedWrite(event AdminDeniedWrite) bool {
 	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminSetStoragePolicy", "adminSetNetworkPolicy",
 		"adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget",
 		"adminStopSandboxSession", "adminRebuildSandboxSession", "adminCorrectSandboxUsage", "adminRevokeSandboxAccessGrant",
-		"adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
+		"adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot",
+		"adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling", "adminRevokeMcpServer", "adminRevokeSkillBundle":
 		return event.ResourceID != "" && event.ProfileVersion == 0
 	case "adminRegisterWorkerRelease", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminCreateRuntimeProfile",
-		"adminRegisterDeploymentTarget", "adminCreateRemoteWorkerEnrollment":
+		"adminRegisterDeploymentTarget", "adminCreateRemoteWorkerEnrollment", "adminCreateWorkspaceSnapshot", "adminCreateMcpServer", "adminCreateSkillBundle":
 		return event.ResourceID == "" && event.ProfileVersion == 0
 	}
 	return false
@@ -62,7 +63,7 @@ func (service *DurableCoordinationService) RecordAdminDeniedWrite(ctx context.Co
 	return authn.ConsumeVerifiedPrincipal(principal, func(view authn.VerifiedPrincipalView) error {
 		tenant, level, project, permission, ok := view.AuthorizationContext()
 		kind, issuer, subject, actorOK := view.Actor()
-		if !ok || !actorOK || !view.Check() || tenant != event.TenantID || level != "project" || project != event.ProjectID || permission != "projects.act" {
+		if !ok || !actorOK || !view.Check() || tenant != event.TenantID || level != "project" || project != event.ProjectID || permission != "projects.act" && permission != "projects.get" {
 			return authz.ErrOperationDenied
 		}
 		actor := authz.SubjectRef{Kind: kind, Issuer: issuer, Subject: subject}

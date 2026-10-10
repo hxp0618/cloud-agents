@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/email-suffix-policy.schema.json",
+  "title": "EmailSuffixPolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId", "resourceVersion", "allowedDomains"],
+  "properties": {
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "resourceVersion": { "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json" },
+    "allowedDomains": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 253,
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+      }
+    }
+  },
+  "description": "Allowed domains are sorted canonical IDNA A-label domains and match verified email domains exactly. An empty list permits any verified email."
+}

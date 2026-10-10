@@ -1,3 +1,6 @@
+{{- if and .Values.deploymentTargets.credentialKeySecretName (not .Values.deploymentTargets.kubernetesCredentialSecretName) }}
+{{- fail "deploymentTargets.credentialKeySecretName requires deploymentTargets.kubernetesCredentialSecretName" }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -61,6 +64,47 @@ spec:
               readOnly: true
             - name: access-grant
               mountPath: /target
+        {{- if .Values.deploymentTargets.credentialKeySecretName }}
+        - name: install-target-credential-key
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/usr/bin/install"]
+          args: ["--mode=0400", "/source/target-credential.key", "/target/target-credential.key"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: target-credential-key-source
+              mountPath: /source
+              readOnly: true
+            - name: access-grant
+              mountPath: /target
+        {{- end }}
+        - name: install-identity-client-secrets
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.controlPlaneKey }} /target/control-plane.proof
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.controlPlaneAuthorizationKey }} /target/identity-control-plane.proof
+              install -m 0400 /source/ca/{{ .Values.identity.tls.caKey }} /target/identity-ca.crt
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: identity-credentials-source
+              mountPath: /source/credentials
+              readOnly: true
+            - name: identity-ca-source
+              mountPath: /source/ca
+              readOnly: true
+            - name: identity-secrets
+              mountPath: /target
       containers:
         - name: control-plane
           image: {{ include "cloud-agents.image" .Values.images.controlPlane | quote }}
@@ -69,7 +113,7 @@ spec:
             - --listen
             - :8080
             - --auth-config
-            - /run/cloud-agents/auth/auth.json
+            - /run/cloud-agents/identity/config/control-plane.json
             - --tls-cert
             - /run/cloud-agents/control-plane-tls/tls.crt
             - --tls-key
@@ -112,6 +156,10 @@ spec:
             {{- end }}
             - name: CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE
               value: /run/cloud-agents/secrets/access-grant.key
+            {{- if .Values.deploymentTargets.credentialKeySecretName }}
+            - name: CLOUD_AGENTS_PLATFORM_TARGET_CREDENTIAL_KEY_FILE
+              value: /run/cloud-agents/secrets/target-credential.key
+            {{- end }}
             {{- if .Values.worker.enabled }}
             - name: CLOUD_AGENTS_PLATFORM_WORKSPACE_DIRECTORY
               value: /workspace
@@ -160,8 +208,11 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            - name: auth
-              mountPath: /run/cloud-agents/auth
+            - name: identity-config
+              mountPath: /run/cloud-agents/identity/config
+              readOnly: true
+            - name: identity-secrets
+              mountPath: /run/cloud-agents/identity/secrets
               readOnly: true
             - name: control-plane-tls
               mountPath: /run/cloud-agents/control-plane-tls
@@ -203,15 +254,34 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
-        - name: auth
-          secret:
-            secretName: {{ .Values.auth.secretName }}
+        - name: identity-config
+          configMap:
+            name: {{ include "cloud-agents.fullname" . }}-identity-config
             items:
-              - key: {{ .Values.auth.configKey }}
-                path: auth.json
+              - key: control-plane.json
+                path: control-plane.json
+        - name: identity-credentials-source
+          secret:
+            secretName: {{ .Values.identity.credentials.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.credentials.controlPlaneKey }}, path: {{ .Values.identity.credentials.controlPlaneKey }} }
+              - { key: {{ .Values.identity.credentials.controlPlaneAuthorizationKey }}, path: {{ .Values.identity.credentials.controlPlaneAuthorizationKey }} }
+        - name: identity-ca-source
+          secret:
+            secretName: {{ .Values.identity.tls.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.tls.caKey }}, path: {{ .Values.identity.tls.caKey }} }
+        - name: identity-secrets
+          emptyDir:
+            medium: Memory
         - name: control-plane-tls
           secret:
             secretName: {{ .Values.tls.controlPlaneSecretName }}
+            items:
+              - { key: tls.crt, path: tls.crt }
+              - { key: tls.key, path: tls.key }
         {{- if .Values.worker.enabled }}
         - name: worker-client
           secret:
@@ -245,6 +315,15 @@ spec:
         - name: access-grant
           emptyDir:
             medium: Memory
+        {{- if .Values.deploymentTargets.credentialKeySecretName }}
+        - name: target-credential-key-source
+          secret:
+            secretName: {{ .Values.deploymentTargets.credentialKeySecretName }}
+            defaultMode: 0440
+            items:
+              - key: target-credential.key
+                path: target-credential.key
+        {{- end }}
         {{- if .Values.deploymentTargets.kubernetesCredentialSecretName }}
         - name: kubernetes-target-credentials
           secret:

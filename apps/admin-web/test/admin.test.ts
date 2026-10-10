@@ -352,6 +352,53 @@ describe("Admin Web boundary", () => {
       });
     expect(adminFailure(new Error("secret-bytes"))).toEqual({ key: "error.generic", code: null });
   });
+  it("turns known quota response codes into actionable messages", () => {
+    const codes = [
+      ["PROJECT_LEASE_COUNT_QUOTA_EXCEEDED", "error.quotaCount"],
+      ["PROJECT_LEASE_CPU_QUOTA_EXCEEDED", "error.quotaCpu"],
+      ["PROJECT_LEASE_MEMORY_QUOTA_EXCEEDED", "error.quotaMemory"],
+      ["PROJECT_LEASE_TTL_QUOTA_EXCEEDED", "error.quotaTtl"],
+    ] as const;
+    for (const [code, key] of codes) {
+      const problem = {
+        type: "https://problems.cloud-agents.dev/lease-quota",
+        title: "Conflict",
+        status: 409,
+        error: { code, retryable: false },
+        requestId: "quota-test",
+      };
+      expect(adminFailure(new ClientError("lease", 409, problem))).toEqual({ key, code });
+    }
+  });
+  it("maps HTTP problem statuses to actionable localized categories", () => {
+    const cases = [
+      [400, "error.invalidRequest"],
+      [405, "error.invalidRequest"],
+      [415, "error.invalidRequest"],
+      [422, "error.invalidRequest"],
+      [408, "error.timeout"],
+      [429, "error.rateLimited"],
+      [502, "error.actuatorUnavailable"],
+      [503, "error.actuatorUnavailable"],
+      [504, "error.actuatorUnavailable"],
+    ] as const;
+    for (const [status, key] of cases)
+      expect(adminFailure(new ClientError("request", status))).toEqual({ key, code: null });
+  });
+
+  it("does not let a quota code hide an authentication failure", () => {
+    const problem = {
+      type: "https://problems.cloud-agents.dev/lease-quota",
+      title: "Unauthorized",
+      status: 401,
+      error: { code: "PROJECT_LEASE_COUNT_QUOTA_EXCEEDED", retryable: false },
+      requestId: "auth-test",
+    };
+    expect(adminFailure(new ClientError("lease", 401, problem))).toEqual({
+      key: "error.tokenExpired",
+      code: "PROJECT_LEASE_COUNT_QUOTA_EXCEEDED",
+    });
+  });
   it("submits the exact cleanup fences returned by the preview", () => {
     expect(
       cleanupRequestFromPreview({
@@ -1254,8 +1301,8 @@ describe("Admin Web boundary", () => {
     } as unknown as Parameters<typeof writeSavedAdminConnection>[1]);
     expect(value).not.toContain("secret-token");
     expect(value).not.toContain("docker-secret");
+    expect(value).not.toContain("control-plane.example.test");
     expect(readSavedAdminConnection(storage)).toEqual({
-      endpoint: "https://control-plane.example.test",
       tenantId: "tenant-alpha",
       projectId: "project-alpha",
     });

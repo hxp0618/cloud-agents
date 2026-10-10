@@ -3,10 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 
 import { canonicalizeJson } from "./platform-json-semantics";
 
-import {
-  formatWithOxfmt,
-  PLATFORM_OXFMT_LIBRARY_PATH,
-} from "./platform-oxfmt";
+import { formatWithOxfmt, PLATFORM_OXFMT_LIBRARY_PATH } from "./platform-oxfmt";
 import {
   dependencyFileRecords,
   digestBytes,
@@ -36,6 +33,9 @@ const TYPESCRIPT_TEMPLATE_PATH = "scripts/templates/platform-json-sdk-typescript
 const ENTRY_PATH = "docs/plan/p1/sdk-identity-closure-entry-20260820.md";
 const COMMON_MANIFEST_PATH = "contracts/common/v1alpha1/fixtures/manifest.json";
 const PLATFORM_MANIFEST_PATH = "contracts/platform/v1alpha1/fixtures/manifest.json";
+const IDENTITY_MANIFEST_PATH = "contracts/identity/v1alpha1/fixtures/manifest.json";
+const IDENTITY_OPENAPI_PATH = "contracts/identity/v1alpha1/openapi.json";
+const IDENTITY_README_PATH = "contracts/identity/v1alpha1/README.md";
 const MANAGED_AGENT_OPENAPI_PATH = "contracts/managed-agent/v1alpha1/openapi.json";
 const MANAGED_HOST_OPENAPI_PATH = "contracts/managed-host/v1alpha1/openapi.json";
 const GO_MODULE_PATH = "sdk/go/go.mod";
@@ -233,9 +233,52 @@ const MANAGED_AGENT_SCHEMAS = [
   "event-cursor.schema.json",
   "event-limit.schema.json",
 ] as const;
+const IDENTITY_SCHEMAS = [
+  "browser-session.schema.json",
+  "browser-tenant-page.schema.json",
+  "browser-tenant.schema.json",
+  "current-user.schema.json",
+  "email-suffix-policy-update.schema.json",
+  "email-suffix-policy.schema.json",
+  "identity-jwks.schema.json",
+  "identity-account.schema.json",
+  "identity-account-page.schema.json",
+  "identity-audit-event.schema.json",
+  "identity-audit-page.schema.json",
+  "invitation.schema.json",
+  "invitation-create-request.schema.json",
+  "invitation-created.schema.json",
+  "invitation-page.schema.json",
+  "invitation-accept-request.schema.json",
+  "login-provider.schema.json",
+  "login-provider-page.schema.json",
+  "provider-authorization-request.schema.json",
+  "provider-authorization.schema.json",
+  "provider-callback-request.schema.json",
+  "provider-callback.schema.json",
+  "login-method.schema.json",
+  "login-method-list.schema.json",
+  "password-reauth-request.schema.json",
+  "reauthentication.schema.json",
+  "enable-password-request.schema.json",
+  "provider-client.schema.json",
+  "provider-client-page.schema.json",
+  "provider-client-update.schema.json",
+  "password-login-request.schema.json",
+  "password-change-request.schema.json",
+  "password-reset-created.schema.json",
+  "password-reset-accept-request.schema.json",
+  "tenant-token-issue-request.schema.json",
+  "tenant-token.schema.json",
+  "tenant-token-authorization-request.schema.json",
+  "tenant-token-authorization.schema.json",
+  "token-status-request.schema.json",
+  "token-status.schema.json",
+] as const;
 
 const SELECTED_COMMON_SCHEMA_REFS = new Set(COMMON_SCHEMAS.map((name) => `../schemas/${name}`));
 const SELECTED_PLATFORM_SCHEMA_REFS = new Set(PLATFORM_SCHEMAS.map((name) => `../schemas/${name}`));
+const SELECTED_IDENTITY_SCHEMA_REFS = new Set(IDENTITY_SCHEMAS.map((name) => `../schemas/${name}`));
 
 type FixtureManifest = {
   readonly cases: ReadonlyArray<{
@@ -276,13 +319,18 @@ export function platformJSONSDKContractInputs(root: string): string[] {
     ENTRY_PATH,
     COMMON_MANIFEST_PATH,
     PLATFORM_MANIFEST_PATH,
+    IDENTITY_MANIFEST_PATH,
+    IDENTITY_OPENAPI_PATH,
+    IDENTITY_README_PATH,
     MANAGED_AGENT_OPENAPI_PATH,
     MANAGED_HOST_OPENAPI_PATH,
     ...COMMON_SCHEMAS.map((name) => `contracts/common/v1alpha1/schemas/${name}`),
     ...PLATFORM_SCHEMAS.map((name) => `contracts/platform/v1alpha1/schemas/${name}`),
     ...MANAGED_AGENT_SCHEMAS.map((name) => `contracts/managed-agent/v1alpha1/schemas/${name}`),
+    ...IDENTITY_SCHEMAS.map((name) => `contracts/identity/v1alpha1/schemas/${name}`),
     ...selectedFixtures(root, COMMON_MANIFEST_PATH, SELECTED_COMMON_SCHEMA_REFS),
     ...selectedFixtures(root, PLATFORM_MANIFEST_PATH, SELECTED_PLATFORM_SCHEMA_REFS),
+    ...selectedFixtures(root, IDENTITY_MANIFEST_PATH, SELECTED_IDENTITY_SCHEMA_REFS),
   ].toSorted();
   if (new Set(inputs).size !== inputs.length)
     throw new Error("JSON SDK contract inputs must be unique.");
@@ -446,16 +494,26 @@ function selectedFixtures(
 function validateJSONSDKAuthority(root: string): void {
   const agent = readJSON<Record<string, unknown>>(root, MANAGED_AGENT_OPENAPI_PATH);
   const host = readJSON<Record<string, unknown>>(root, MANAGED_HOST_OPENAPI_PATH);
-  if (agent.openapi !== "3.1.1" || host.openapi !== "3.1.1") {
+  const identity = readJSON<Record<string, unknown>>(root, IDENTITY_OPENAPI_PATH);
+  if (agent.openapi !== "3.1.1" || host.openapi !== "3.1.1" || identity.openapi !== "3.1.1") {
     throw new Error("JSON SDK OpenAPI authority must remain OpenAPI 3.1.1.");
   }
-  const operations = [...openAPIOperations(agent), ...openAPIOperations(host)].toSorted();
+  const operations = [
+    ...openAPIOperations(agent),
+    ...openAPIOperations(host),
+    ...openAPIOperations(identity),
+  ].toSorted();
   const expected = [
+    "adminBindRole",
     "adminCleanupDeploymentTarget",
     "adminCleanupWorkspaceSnapshot",
     "adminCorrectSandboxUsage",
     "adminCreateEnvironmentProfile",
+    "adminCreateMembership",
+    "adminCreateServiceAccount",
     "adminCreateMcpServer",
+    "adminCreateOrganization",
+    "adminCreateProject",
     "adminCreateRemoteWorkerEnrollment",
     "adminCreateRuntimeProfile",
     "adminCreateSkillBundle",
@@ -465,11 +523,17 @@ function validateJSONSDKAuthority(root: string): void {
     "adminGetDeploymentTarget",
     "adminGetEnvironmentLease",
     "adminGetEnvironmentProfile",
+    "adminGetMembership",
     "adminGetNetworkPolicy",
     "adminGetMcpServer",
+    "adminGetOrganization",
+    "adminGetPlatformTenant",
+    "adminGetProject",
     "adminGetProjectLeaseQuota",
     "adminGetRemoteWorkerEnrollment",
     "adminGetRuntimeProfile",
+    "adminGetRole",
+    "adminGetRoleBinding",
     "adminGetSkillBundle",
     "adminGetSandboxSession",
     "adminGetStoragePolicy",
@@ -482,6 +546,8 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListEnvironmentLeases",
     "adminListEnvironmentProfileAuditEvents",
     "adminListEnvironmentProfiles",
+    "adminListMemberships",
+    "adminListServiceAccounts",
     "adminListMaintenanceOperations",
     "adminListMcpServers",
     "adminListNetworkPolicies",
@@ -490,6 +556,10 @@ function validateJSONSDKAuthority(root: string): void {
     "adminListRemoteWorkerEnrollmentAuditEvents",
     "adminListRemoteWorkerEnrollments",
     "adminListRemoteWorkerOperations",
+    "adminListOrganizations",
+    "adminListProjects",
+    "adminListRoleBindings",
+    "adminListRoles",
     "adminListRuntimeProfiles",
     "adminListSkillBundles",
     "adminListSandboxAccessGrants",
@@ -512,6 +582,9 @@ function validateJSONSDKAuthority(root: string): void {
     "adminRegisterWorkerRelease",
     "adminRestoreWorkspaceSnapshot",
     "adminRevokeRemoteWorkerEnrollment",
+    "adminRevokeMembership",
+    "adminRevokeRoleBinding",
+    "adminRotateServiceAccountCredential",
     "adminRevokeMcpServer",
     "adminRevokeSandboxAccessGrant",
     "adminRevokeSkillBundle",
@@ -520,9 +593,12 @@ function validateJSONSDKAuthority(root: string): void {
     "adminSetProjectLeaseQuota",
     "adminSetStoragePolicy",
     "adminStopSandboxSession",
+    "adminSuspendMembership",
+    "adminDisableServiceAccount",
     "adminTransitionDeploymentTargetScheduling",
     "adminTransitionRemoteWorkerScheduling",
     "adminUpgradeEnvironmentLease",
+    "adminResumeMembership",
     "foundationCreatePTYSession",
     "foundationCreateSandbox",
     "foundationCreateSandboxAccessGrant",
@@ -536,6 +612,47 @@ function validateJSONSDKAuthority(root: string): void {
     "foundationRegisterSandboxPreviewPort",
     "foundationRevokeSandboxPreviewPort",
     "foundationWriteSandboxFile",
+    "identityAcceptInvitation",
+    "identityApproveCLIAuthorization",
+    "identityAuthorizePrincipalToken",
+    "identityExchangeCLIGrant",
+    "identityIssueAutomationTenantToken",
+    "identityIssueCLITenantToken",
+    "identityListCLITenants",
+    "identityListControlPlaneAuditEvents",
+    "identityRevokeCLIGrant",
+    "identityStartCLIAuthorization",
+    "identityCreateInvitation",
+    "identityListInvitations",
+    "identityRevokeInvitation",
+    "identityAcceptPasswordReset",
+    "identityChangePassword",
+    "identityCompleteProviderAuthorization",
+    "identityDisableAccount",
+    "identityEnablePassword",
+    "identityIssuePasswordReset",
+    "identityListAccounts",
+    "identityListAuditEvents",
+    "identityListLoginMethods",
+    "identityListLoginProviders",
+    "identityListProviderClients",
+    "identityListTenantAuditEvents",
+    "identityListTenantAccounts",
+    "identityAuthorizeTenantToken",
+    "identityCheckTokenStatus",
+    "identityGetBrowserSession",
+    "identityGetCurrentUser",
+    "identityGetEmailSuffixPolicy",
+    "identityGetJWKS",
+    "identityIssueTenantToken",
+    "identityListBrowserTenants",
+    "identityLogoutBrowserSession",
+    "identityPasswordLogin",
+    "identityPasswordReauthenticate",
+    "identityStartProviderAuthorization",
+    "identityUnlinkLoginMethod",
+    "identityUpdateEmailSuffixPolicy",
+    "identityUpdateProviderClient",
     "managedAgentBindRole",
     "managedAgentCancelExecution",
     "managedAgentCloseSession",
@@ -563,6 +680,7 @@ function validateJSONSDKAuthority(root: string): void {
     "managedAgentListEvents",
     "managedAgentListExecutions",
     "managedAgentListMemberships",
+    "managedAgentListMyProjects",
     "managedAgentListOrganizations",
     "managedAgentListProjects",
     "managedAgentListRoleBindings",

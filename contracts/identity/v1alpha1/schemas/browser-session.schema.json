@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/browser-session.schema.json",
+  "title": "BrowserSession",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application", "user", "tenants", "csrfToken"],
+  "properties": {
+    "application": {
+      "type": "string",
+      "enum": ["admin", "user"]
+    },
+    "user": { "$ref": "current-user.schema.json" },
+    "tenants": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "browser-tenant.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" },
+    "csrfToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    }
+  },
+  "description": "Non-authoritative browser projection containing the first deterministic tenant page. The authenticated Web server fixes application purpose."
+}

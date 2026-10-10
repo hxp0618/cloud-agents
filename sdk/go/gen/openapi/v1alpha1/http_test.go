@@ -52,6 +52,61 @@ func TestHTTPClientUsesProvidedHTTPClient(t *testing.T) {
 	}
 }
 
+func TestIdentityServiceHTTPClientUsesConfiguredServiceCredential(t *testing.T) {
+	csrf := strings.Repeat("A", 43)
+	handle := "server-session-handle"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/identity/login/password" || request.Header.Get("Authorization") != "Bearer identity-service-credential" || request.Header.Get(HeaderIdentityClientIP) != "2001:db8::1" {
+			t.Fatalf("request = %s %s auth=%q client-ip=%q", request.Method, request.URL.Path, request.Header.Get("Authorization"), request.Header.Get(HeaderIdentityClientIP))
+		}
+		writer.Header().Set("X-Cloud-Agents-Session", handle)
+		_, _ = writer.Write([]byte(`{"application":"admin","user":{"id":"user-alpha","email":"admin@example.com","displayName":"Admin","displayRoles":["platform.admin"]},"tenants":[],"csrfToken":"` + csrf + `"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewIdentityServiceHTTPClientWithClient(server.URL, "identity-service-credential", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.PasswordLogin(context.Background(), "request-login", "2001:db8::1", PasswordLoginRequest{Email: "admin@example.com", Password: "secret-password"})
+	if err != nil || result.SessionHandle != handle || result.Session.Application != IdentityApplicationAdmin {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	for _, input := range []struct {
+		baseURL    string
+		credential string
+	}{
+		{baseURL: "http://identity.example.test", credential: "credential"},
+		{baseURL: "https://identity.example.test", credential: " credential"},
+	} {
+		if candidate, err := NewIdentityServiceHTTPClient(input.baseURL, input.credential); candidate != nil || err == nil {
+			t.Fatalf("unsafe identity service config accepted: %#v", input)
+		}
+	}
+}
+
+func TestIdentityAuthorizationHTTPClientUsesDedicatedServiceCredential(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/identity/authorize-tenant-token" || request.Header.Get("Authorization") != "Bearer identity-to-control-plane" {
+			t.Fatalf("request = %s %s auth=%q", request.Method, request.URL.Path, request.Header.Get("Authorization"))
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"userId":"account-alpha","issuer":"https://identity.example.com/","tenantId":"tenant-alpha","application":"admin","scopes":["agents.get"]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewIdentityAuthorizationHTTPClientWithClient(server.URL, "identity-to-control-plane", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AuthorizeTenantToken(context.Background(), "request-authorize", TenantTokenAuthorizationRequest{
+		Application: IdentityApplicationAdmin, SessionSHA256: "sha256:" + strings.Repeat("1", 64), TenantID: "tenant-alpha",
+	})
+	if err != nil || result.UserID != "account-alpha" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestRemoteWorkerBootstrapHTTPClientUsesEnrollmentScheme(t *testing.T) {
 	secret := "carw1_" + strings.Repeat("A", 43)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

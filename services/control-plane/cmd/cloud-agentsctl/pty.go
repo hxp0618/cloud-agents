@@ -53,13 +53,6 @@ func attachPTY(ctx context.Context, options globalOptions, client *openapi.Clien
 		dialer.TLSClientConfig = &tls.Config{RootCAs: roots}
 	}
 	headers := http.Header{"Authorization": {"Bearer " + options.token}, "X-Request-ID": {options.requestID}}
-	if options.tokenFile != "" {
-		contents, err := os.ReadFile(options.tokenFile)
-		if err != nil || len(contents) > maxBearerTokenFileBytes {
-			return errors.New("cannot read bearer token file")
-		}
-		headers.Set("Authorization", "Bearer "+strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r"))
-	}
 	connection, response, err := dialer.DialContext(ctx, base.String(), headers)
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()

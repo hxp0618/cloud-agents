@@ -87,7 +87,7 @@
       },
       "bunLock": {
         "path": "bun.lock",
-        "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+        "sha256": "sha256:c97b01255295db82df85edb7c4010ae05b6ac8d9003acfe4c703be4cea8a2de4"
       },
       "profile": {
         "path": "contracts/proto-generation.profile.json",
@@ -147,7 +147,7 @@
     },
     "bunLock": {
       "path": "bun.lock",
-      "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d"
+      "sha256": "sha256:c97b01255295db82df85edb7c4010ae05b6ac8d9003acfe4c703be4cea8a2de4"
     },
     "notice": {
       "path": "sdk/typescript/THIRD_PARTY_NOTICES.md",

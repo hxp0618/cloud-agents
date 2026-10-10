@@ -29,7 +29,73 @@ const (
 	BindingRevoked                 = "revoked"
 )
 
-const expectedBuiltinCatalogDigest = "640dac3144f1f1ce2499d354901a423889a797a4f35b137c45c80a0eda05c6a4"
+const (
+	expectedBuiltinCatalogV1Digest = "640dac3144f1f1ce2499d354901a423889a797a4f35b137c45c80a0eda05c6a4"
+	expectedBuiltinCatalogV2Digest = "f722f7ca257895c4806025cfe8db80c0dfa01c7e71376a0e3e44d9e7c63b194d"
+	builtinCatalogV1PublishedAt    = "2026-08-17T00:00:00Z"
+	builtinCatalogV2PublishedAt    = "2026-10-08T00:00:00Z"
+	maxTokenScopes                 = 64
+)
+
+type tokenScopeProjection struct {
+	permission   string
+	prerequisite string
+}
+
+var adminProjectScopeProjection = [...]tokenScopeProjection{
+	{permission: "audit.list", prerequisite: "projects.get"},
+	{permission: "leases.act", prerequisite: "projects.act"},
+	{permission: "leases.get", prerequisite: "projects.get"},
+	{permission: "leases.list", prerequisite: "projects.get"},
+	{permission: "mcp-servers.create", prerequisite: "projects.act"},
+	{permission: "mcp-servers.delete", prerequisite: "projects.act"},
+	{permission: "mcp-servers.get", prerequisite: "projects.get"},
+	{permission: "mcp-servers.list", prerequisite: "projects.get"},
+	{permission: "network-policies.get", prerequisite: "projects.get"},
+	{permission: "network-policies.list", prerequisite: "projects.get"},
+	{permission: "network-policies.update", prerequisite: "projects.act"},
+	{permission: "profiles.act", prerequisite: "projects.act"},
+	{permission: "profiles.create", prerequisite: "projects.act"},
+	{permission: "profiles.get", prerequisite: "projects.get"},
+	{permission: "profiles.list", prerequisite: "projects.get"},
+	{permission: "quotas.get", prerequisite: "projects.get"},
+	{permission: "quotas.update", prerequisite: "projects.act"},
+	{permission: "releases.create", prerequisite: "projects.act"},
+	{permission: "releases.list", prerequisite: "projects.get"},
+	{permission: "remote-worker-enrollments.act", prerequisite: "projects.act"},
+	{permission: "remote-worker-enrollments.create", prerequisite: "projects.act"},
+	{permission: "remote-worker-enrollments.get", prerequisite: "projects.get"},
+	{permission: "remote-worker-enrollments.list", prerequisite: "projects.get"},
+	{permission: "sandboxes.act", prerequisite: "projects.act"},
+	{permission: "sandboxes.get", prerequisite: "projects.get"},
+	{permission: "sandboxes.list", prerequisite: "projects.get"},
+	{permission: "skill-bundles.create", prerequisite: "projects.act"},
+	{permission: "skill-bundles.delete", prerequisite: "projects.act"},
+	{permission: "skill-bundles.get", prerequisite: "projects.get"},
+	{permission: "skill-bundles.list", prerequisite: "projects.get"},
+	{permission: "snapshots.act", prerequisite: "projects.act"},
+	{permission: "snapshots.create", prerequisite: "projects.act"},
+	{permission: "snapshots.delete", prerequisite: "projects.act"},
+	{permission: "snapshots.get", prerequisite: "projects.get"},
+	{permission: "snapshots.list", prerequisite: "projects.get"},
+	{permission: "storage-policies.get", prerequisite: "projects.get"},
+	{permission: "storage-policies.list", prerequisite: "projects.get"},
+	{permission: "storage-policies.update", prerequisite: "projects.act"},
+	{permission: "targets.act", prerequisite: "projects.act"},
+	{permission: "targets.create", prerequisite: "projects.act"},
+	{permission: "targets.get", prerequisite: "projects.get"},
+	{permission: "targets.list", prerequisite: "projects.get"},
+	{permission: "workers.list", prerequisite: "projects.get"},
+}
+
+var userProjectScopeProjection = [...]tokenScopeProjection{
+	{permission: "environment-profiles.list", prerequisite: "projects.get"},
+	{permission: "environment-quotas.get", prerequisite: "projects.get"},
+	{permission: "environments.create", prerequisite: "projects.act"},
+	{permission: "environments.delete", prerequisite: "projects.act"},
+	{permission: "environments.get", prerequisite: "projects.get"},
+	{permission: "sandboxes.update", prerequisite: "projects.act"},
+}
 
 var (
 	ErrInvalidRequest    = errors.New("authorization request is invalid")
@@ -256,9 +322,17 @@ func (catalog Catalog) Validate() error {
 	if len(catalog.Roles) != 7 {
 		return fmt.Errorf("%w: role count", ErrCatalogDrift)
 	}
+	revision, publishedAt, expectedDigest, ok := catalog.profile()
+	if !ok {
+		return fmt.Errorf("%w: catalog identity", ErrCatalogDrift)
+	}
 	seenRoles := make(map[string]struct{}, len(catalog.Roles))
 	for index, role := range catalog.Roles {
-		if role.Name == "" || role.Version != 1 || role.CatalogRevision != 1 || role.State != "active" || role.PublishedAt != "2026-08-17T00:00:00Z" {
+		expectedVersion, expectedRevision, expectedPublication := int64(1), int64(1), builtinCatalogV1PublishedAt
+		if revision == 2 && role.Name == "platform.admin" {
+			expectedVersion, expectedRevision, expectedPublication = 2, 2, builtinCatalogV2PublishedAt
+		}
+		if role.Name == "" || role.Version != expectedVersion || role.CatalogRevision != expectedRevision || role.State != "active" || role.PublishedAt != expectedPublication {
 			return fmt.Errorf("%w: role %d identity", ErrCatalogDrift, index)
 		}
 		if _, exists := seenRoles[role.Name]; exists {
@@ -283,15 +357,32 @@ func (catalog Catalog) Validate() error {
 			return fmt.Errorf("%w: role order", ErrCatalogDrift)
 		}
 	}
-	canonical, err := catalog.canonicalBytes()
+	canonical, err := catalog.canonicalBytes(revision, publishedAt)
 	if err != nil {
 		return fmt.Errorf("%w: canonical catalog: %v", ErrCatalogDrift, err)
 	}
 	digest := sha256.Sum256(canonical)
-	if hex.EncodeToString(digest[:]) != expectedBuiltinCatalogDigest {
+	if hex.EncodeToString(digest[:]) != expectedDigest {
 		return fmt.Errorf("%w: canonical digest", ErrCatalogDrift)
 	}
 	return nil
+}
+
+func (catalog Catalog) profile() (revision int64, publishedAt, digest string, ok bool) {
+	for _, role := range catalog.Roles {
+		if role.Name != "platform.admin" {
+			continue
+		}
+		switch {
+		case role.Version == 1 && role.CatalogRevision == 1 && role.PublishedAt == builtinCatalogV1PublishedAt:
+			return 1, builtinCatalogV1PublishedAt, expectedBuiltinCatalogV1Digest, true
+		case role.Version == 2 && role.CatalogRevision == 2 && role.PublishedAt == builtinCatalogV2PublishedAt:
+			return 2, builtinCatalogV2PublishedAt, expectedBuiltinCatalogV2Digest, true
+		default:
+			return 0, "", "", false
+		}
+	}
+	return 0, "", "", false
 }
 
 func (catalog Catalog) Role(name string, version int64) (Role, bool) {
@@ -303,7 +394,7 @@ func (catalog Catalog) Role(name string, version int64) (Role, bool) {
 	return Role{}, false
 }
 
-func (catalog Catalog) canonicalBytes() ([]byte, error) {
+func (catalog Catalog) canonicalBytes(revision int64, publishedAt string) ([]byte, error) {
 	if len(catalog.Roles) == 0 {
 		return nil, ErrCatalogDrift
 	}
@@ -315,9 +406,9 @@ func (catalog Catalog) canonicalBytes() ([]byte, error) {
 		Roles           []canonicalRole `json:"roles"`
 	}{
 		APIVersion:      "platform.cloud-agents.dev/v1alpha1",
-		CatalogRevision: "1",
+		CatalogRevision: fmt.Sprintf("%d", revision),
 		Kind:            "BuiltinRoleCatalog",
-		PublishedAt:     "2026-08-17T00:00:00Z",
+		PublishedAt:     publishedAt,
 		Roles:           make([]canonicalRole, len(catalog.Roles)),
 	}
 	for index, role := range catalog.Roles {
@@ -372,12 +463,152 @@ type Candidate struct {
 	Binding    RoleBindingFact
 }
 
+// GlobalRoleBindingFact is the narrow projection of the single-realm
+// identity.platform_admins authority. It deliberately has no MembershipFact:
+// platform administration is global authority and must not manufacture tenant
+// admission.
+type GlobalRoleBindingFact struct {
+	UserID      string
+	Subject     SubjectRef
+	SubjectHash string
+	RoleName    string
+	RoleVersion int64
+	State       string
+}
+
 type Snapshot struct {
 	TenantID      string
+	Application   string
 	Scope         ScopePath
 	ScopeResolved bool
 	Catalog       Catalog
 	Candidates    []Candidate
+	GlobalBinding *GlobalRoleBindingFact
+}
+
+// EvaluateTokenScopes returns the exact sorted permission set that the
+// Control Plane may hand to the tenant-token signer for this current snapshot.
+// It uses the same evaluator as VerifiedOperation.Execute; the result is not a
+// resource-operation allow decision and remains subject to a fresh database
+// check when the token is used.
+func EvaluateTokenScopes(snapshot Snapshot, subject SubjectRef, now time.Time) ([]string, error) {
+	if snapshot.Application != "admin" && snapshot.Application != "user" {
+		return nil, fmt.Errorf("%w: token application", ErrSnapshotMalformed)
+	}
+	if snapshot.Scope.Level != ScopeTenant && snapshot.Scope.Level != ScopeProject {
+		return nil, ErrOperationDenied
+	}
+	// Human Admin sessions and CLI grants must first prove tenant-wide Admin
+	// admission. A service account is created at one explicit management scope;
+	// requiring tenants.get here would reject every project-scoped service
+	// account before its current project membership and binding are evaluated.
+	if snapshot.Application == "admin" && subject.Kind != "serviceAccount" {
+		allowed, err := evaluateTokenPermission(
+			snapshot,
+			subject,
+			"tenants.get",
+			ScopePath{Level: ScopeTenant, TenantID: snapshot.TenantID},
+			now,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, ErrOperationDenied
+		}
+	}
+	permissions := tokenCatalogPermissions(snapshot.Application, snapshot.Scope.Level, snapshot.Catalog)
+	if len(permissions) > maxTokenScopes {
+		return nil, fmt.Errorf("%w: token scope limit", ErrSnapshotMalformed)
+	}
+	targets := []ScopePath{snapshot.Scope}
+	if snapshot.Scope.Level == ScopeTenant {
+		for _, candidate := range snapshot.Candidates {
+			targets = appendUniqueScope(targets, candidate.Binding.Scope)
+		}
+	}
+	allowed := make([]string, 0, len(permissions))
+	for _, permission := range permissions {
+		for _, target := range targets {
+			permitted, err := evaluateTokenPermission(snapshot, subject, permission, target, now)
+			if err != nil {
+				return nil, err
+			}
+			if permitted {
+				allowed = append(allowed, permission)
+				break
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return nil, ErrOperationDenied
+	}
+	if snapshot.Scope.Level == ScopeProject {
+		projection := userProjectScopeProjection[:]
+		if snapshot.Application == "admin" {
+			projection = adminProjectScopeProjection[:]
+		}
+		for _, projected := range projection {
+			if containsPermission(allowed, projected.prerequisite) {
+				allowed = insertSortedUnique(allowed, projected.permission)
+			}
+		}
+	}
+	if len(allowed) > maxTokenScopes {
+		return nil, fmt.Errorf("%w: token scope limit", ErrSnapshotMalformed)
+	}
+	return allowed, nil
+}
+
+func tokenCatalogPermissions(application string, level ScopeLevel, catalog Catalog) []string {
+	if level == ScopeProject {
+		// Tenant administration stays on a tenant token. Admin project tokens
+		// carry only the coarse checks used by current Admin infrastructure routes;
+		// User project tokens retain the closed project-role catalog surface.
+		if application == "admin" {
+			return []string{"operations.list", "projects.act", "projects.get"}
+		}
+		permissions := make([]string, 0, maxTokenScopes)
+		for _, role := range catalog.Roles {
+			if role.ScopeLevel != ScopeProject {
+				continue
+			}
+			for _, permission := range role.Permissions {
+				permissions = insertSortedUnique(permissions, permission)
+			}
+		}
+		return permissions
+	}
+	permissions := make([]string, 0, maxTokenScopes)
+	for _, role := range catalog.Roles {
+		for _, permission := range role.Permissions {
+			permissions = insertSortedUnique(permissions, permission)
+		}
+	}
+	return permissions
+}
+
+func evaluateTokenPermission(snapshot Snapshot, subject SubjectRef, permission string, target ScopePath, now time.Time) (bool, error) {
+	resource, ok := target.resourceRef()
+	if !ok {
+		return false, nil
+	}
+	targetSnapshot := snapshot
+	targetSnapshot.Scope = target
+	result, err := evaluate(targetSnapshot, authorizationRequest{Subject: subject, Permission: permission, Resource: resource}, now)
+	if err != nil {
+		return false, err
+	}
+	return result.Allowed, nil
+}
+
+func appendUniqueScope(scopes []ScopePath, candidate ScopePath) []ScopePath {
+	for _, scope := range scopes {
+		if scope == candidate {
+			return scopes
+		}
+	}
+	return append(scopes, candidate)
 }
 
 // VerifiedOperationBinder exists only while WithVerifiedOperation's callback
@@ -521,6 +752,66 @@ func (operation *VerifiedOperation) Execute(snapshot Snapshot, now time.Time, ca
 	return callback()
 }
 
+const maxProjectSelectorBatch = 201
+
+// ExecuteProjectSelector spends an exact tenant/projects.list User operation
+// while streaming bounded active-project scopes through the existing RBAC
+// evaluator. The protected callback receives only an allow bitmap for the
+// current batch; no subject, snapshot, or reusable authorization capability
+// escapes the operation lifetime.
+func (operation *VerifiedOperation) ExecuteProjectSelector(
+	snapshot Snapshot,
+	now time.Time,
+	next func() ([]ScopePath, bool, error),
+	callback func([]bool) (bool, error),
+) error {
+	if operation == nil || operation.consumed == nil || operation.progress == nil || !operation.consumed.CompareAndSwap(false, true) {
+		return ErrOperationDenied
+	}
+	if !operation.selfBound() || next == nil || callback == nil || !operation.lifetime.acquire() {
+		return ErrOperationDenied
+	}
+	defer operation.lifetime.release()
+	tenantScope := ScopeRef{Level: ScopeTenant, ID: operation.tenantID}
+	if operation.resource != tenantScope || operation.permission != "projects.list" || snapshot.TenantID != operation.tenantID ||
+		snapshot.Application != "user" || !snapshot.ScopeResolved || snapshot.Scope != (ScopePath{Level: ScopeTenant, TenantID: operation.tenantID}) ||
+		snapshot.GlobalBinding != nil {
+		return ErrOperationDenied
+	}
+	for {
+		scopes, done, err := next()
+		if err != nil {
+			return err
+		}
+		if len(scopes) > maxProjectSelectorBatch || len(scopes) == 0 && !done {
+			return ErrOperationDenied
+		}
+		allowed := make([]bool, len(scopes))
+		for index, scope := range scopes {
+			if scope.Level != ScopeProject || scope.TenantID != operation.tenantID || scope.Validate(operation.tenantID) != nil {
+				return ErrOperationDenied
+			}
+			target := snapshot
+			target.Scope = scope
+			result, evaluationErr := evaluate(target, authorizationRequest{
+				Subject: operation.actor, Permission: "projects.list", Resource: ScopeRef{Level: ScopeProject, ID: scope.ProjectID},
+			}, now)
+			if evaluationErr != nil {
+				return evaluationErr
+			}
+			allowed[index] = result.Allowed
+		}
+		operation.progress.Store(operationProgressExecuted)
+		stop, callbackErr := callback(allowed)
+		if callbackErr != nil {
+			return callbackErr
+		}
+		if stop || done {
+			return nil
+		}
+	}
+}
+
 func (operation *VerifiedOperation) selfBound() bool {
 	return operation != nil && operation.self == operation && operation.lifetime != nil &&
 		operation.binding == operationBinding(operation.actor, operation.tenantID, operation.resource, operation.permission)
@@ -648,9 +939,26 @@ func evaluate(snapshot Snapshot, request authorizationRequest, now time.Time) (d
 	if err := snapshot.Catalog.Validate(); err != nil {
 		return decision{}, err
 	}
+	if snapshot.Application != "" && snapshot.Application != "admin" && snapshot.Application != "user" {
+		return decision{}, fmt.Errorf("%w: application", ErrSnapshotMalformed)
+	}
 	requestedDigest, err := request.Subject.Digest()
 	if err != nil {
 		return decision{Reason: denyInvalidRequest}, nil
+	}
+	var globalBinding *GlobalRoleBindingFact
+	if snapshot.GlobalBinding != nil {
+		if snapshot.Application == "" {
+			return decision{}, fmt.Errorf("%w: global application", ErrSnapshotMalformed)
+		}
+		binding := *snapshot.GlobalBinding
+		if err := validateGlobalRoleBinding(binding); err != nil {
+			return decision{}, err
+		}
+		if binding.Subject != request.Subject || binding.SubjectHash != requestedDigest {
+			return decision{}, fmt.Errorf("%w: global subject binding", ErrSnapshotMalformed)
+		}
+		globalBinding = &binding
 	}
 	seen := make(map[string]struct{}, len(snapshot.Candidates))
 	for _, candidate := range snapshot.Candidates {
@@ -687,7 +995,30 @@ func evaluate(snapshot Snapshot, request authorizationRequest, now time.Time) (d
 			},
 		}, nil
 	}
+	if globalBinding != nil {
+		binding := *globalBinding
+		if snapshot.Application == "admin" && binding.State == BindingActive {
+			role, ok := snapshot.Catalog.Role(binding.RoleName, binding.RoleVersion)
+			if ok && role.State == "active" && role.Name == "platform.admin" && role.Version == 2 && role.CatalogRevision == 2 &&
+				role.ScopeLevel == ScopePlatform && containsPermission(role.Permissions, request.Permission) {
+				return decision{Allowed: true, evidence: &evidence{RoleName: role.Name, RoleVersion: role.Version}}, nil
+			}
+		}
+	}
 	return decision{Reason: denyNoEligibleBinding}, nil
+}
+
+func (scope ScopePath) resourceRef() (ScopeRef, bool) {
+	switch scope.Level {
+	case ScopeTenant:
+		return ScopeRef{Level: scope.Level, ID: scope.TenantID}, true
+	case ScopeOrganization:
+		return ScopeRef{Level: scope.Level, ID: scope.OrganizationID}, true
+	case ScopeProject:
+		return ScopeRef{Level: scope.Level, ID: scope.ProjectID}, true
+	default:
+		return ScopeRef{}, false
+	}
 }
 
 func (scope ScopePath) matches(resource ScopeRef, tenantID string) bool {
@@ -731,6 +1062,22 @@ func validateCandidate(tenantID string, candidate Candidate) error {
 	return nil
 }
 
+func validateGlobalRoleBinding(binding GlobalRoleBindingFact) error {
+	if !validOpaqueIdentifier(binding.UserID) || binding.Subject.Subject != "user-"+binding.UserID {
+		return fmt.Errorf("%w: global binding uid", ErrSnapshotMalformed)
+	}
+	if err := binding.Subject.Validate(); err != nil || binding.Subject.Kind != "user" {
+		return fmt.Errorf("%w: global binding subject", ErrSnapshotMalformed)
+	}
+	if binding.RoleName != "platform.admin" || binding.RoleVersion != 2 {
+		return fmt.Errorf("%w: global binding role", ErrSnapshotMalformed)
+	}
+	if binding.State != BindingActive && binding.State != BindingRevoked {
+		return fmt.Errorf("%w: global binding state", ErrSnapshotMalformed)
+	}
+	return nil
+}
+
 func expired(value *time.Time, now time.Time) bool {
 	return value != nil && !now.Before(*value)
 }
@@ -742,6 +1089,20 @@ func containsPermission(permissions []string, requested string) bool {
 		}
 	}
 	return false
+}
+
+func insertSortedUnique(values []string, value string) []string {
+	index := 0
+	for index < len(values) && values[index] < value {
+		index++
+	}
+	if index < len(values) && values[index] == value {
+		return values
+	}
+	values = append(values, "")
+	copy(values[index+1:], values[index:])
+	values[index] = value
+	return values
 }
 
 func validPermission(value string) bool {

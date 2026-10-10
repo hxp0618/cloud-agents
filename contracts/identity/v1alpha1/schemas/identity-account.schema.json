@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/identity-account.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "subject", "email", "displayName", "state", "platformAdmin", "emailVerifiedAt", "createdAt"],
+  "properties": {
+    "id": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "subject": { "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json" },
+    "email": { "type": "string", "minLength": 3, "maxLength": 254, "format": "email" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "state": { "enum": ["active", "disabled"] },
+    "platformAdmin": { "type": "boolean" },
+    "emailVerifiedAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

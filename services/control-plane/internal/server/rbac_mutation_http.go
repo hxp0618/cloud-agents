@@ -74,7 +74,7 @@ func (server *RBACHTTPServer) createMembership(writer http.ResponseWriter, reque
 		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifyMutation(bearer, tenantID, scope, "memberships.create")
+	principal, err := server.verifyMutation(request.Context(), bearer, tenantID, scope, "memberships.create")
 	if err != nil {
 		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -82,7 +82,7 @@ func (server *RBACHTTPServer) createMembership(writer http.ResponseWriter, reque
 	result, err := server.mutator.CreateMembership(request.Context(), tenantID, principal, postgres.CreateMembershipInput{
 		ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: validated.Body.MembershipID, MembershipName: validated.Body.MembershipName,
 		Subject: authz.SubjectRef{Kind: validated.Body.Subject.Kind, Issuer: validated.Body.Subject.Issuer, Subject: validated.Body.Subject.Subject}, Scope: scope,
-		ExpiresAt: parseMutationTime(validated.Body.ExpiresAt), AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode,
+		ExpiresAt: parseMutationTime(validated.Body.ExpiresAt), AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode,
 	})
 	server.writeMutationResult(writer, requestID, http.StatusCreated, result, err)
 }
@@ -98,7 +98,7 @@ func (server *RBACHTTPServer) bindRole(writer http.ResponseWriter, request *http
 		writeRBACError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifyMutation(bearer, tenantID, scope, "role-bindings.bind")
+	principal, err := server.verifyMutation(request.Context(), bearer, tenantID, scope, "role-bindings.bind")
 	if err != nil {
 		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -106,7 +106,7 @@ func (server *RBACHTTPServer) bindRole(writer http.ResponseWriter, request *http
 	result, err := server.mutator.BindRole(request.Context(), tenantID, principal, postgres.BindRoleInput{
 		ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, RoleBindingUID: validated.Body.RoleBindingID, RoleBindingName: validated.Body.RoleBindingName,
 		Subject: authz.SubjectRef{Kind: validated.Body.Subject.Kind, Issuer: validated.Body.Subject.Issuer, Subject: validated.Body.Subject.Subject}, RoleName: validated.Body.RoleName,
-		RoleVersion: validated.Body.RoleVersion, Scope: scope, ExpiresAt: parseMutationTime(validated.Body.ExpiresAt), AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode,
+		RoleVersion: validated.Body.RoleVersion, Scope: scope, ExpiresAt: parseMutationTime(validated.Body.ExpiresAt), AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode,
 	})
 	server.writeMutationResult(writer, requestID, http.StatusCreated, result, err)
 }
@@ -143,7 +143,7 @@ func (server *RBACHTTPServer) transition(writer http.ResponseWriter, request *ht
 	if kind == "role_binding" {
 		permission = "role-bindings.delete"
 	}
-	principal, err := server.verifyMutation(bearer, tenantID, scope, permission)
+	principal, err := server.verifyMutation(request.Context(), bearer, tenantID, scope, permission)
 	if err != nil {
 		writeRBACError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -151,13 +151,13 @@ func (server *RBACHTTPServer) transition(writer http.ResponseWriter, request *ht
 	var result postgres.MutationResult
 	switch {
 	case kind == "membership" && action == "resume":
-		result, err = server.mutator.ResumeMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
+		result, err = server.mutator.ResumeMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode})
 	case kind == "membership" && action == "suspend":
-		result, err = server.mutator.SuspendMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
+		result, err = server.mutator.SuspendMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode})
 	case kind == "membership" && action == "revoke":
-		result, err = server.mutator.RevokeMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
+		result, err = server.mutator.RevokeMembership(request.Context(), tenantID, principal, postgres.MembershipTransitionInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, MembershipUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode})
 	case kind == "role_binding" && action == "revoke":
-		result, err = server.mutator.RevokeRoleBinding(request.Context(), tenantID, principal, postgres.RevokeRoleBindingInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, RoleBindingUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, ReasonCode: validated.Body.ReasonCode})
+		result, err = server.mutator.RevokeRoleBinding(request.Context(), tenantID, principal, postgres.RevokeRoleBindingInput{ExpectedTenantRevision: validated.Body.ExpectedTenantRevision, RoleBindingUID: resourceID, ExpectedResourceVersion: validated.Body.ExpectedResourceVersion, AuditFactUID: validated.Body.AuditFactUID, CorrelationID: validated.RequestID, ReasonCode: validated.Body.ReasonCode})
 	default:
 		writeRBACError(writer, http.StatusNotFound, "route_not_found")
 		return
@@ -165,8 +165,8 @@ func (server *RBACHTTPServer) transition(writer http.ResponseWriter, request *ht
 	server.writeMutationResult(writer, requestID, http.StatusOK, result, err)
 }
 
-func (server *RBACHTTPServer) verifyMutation(bearer, tenantID string, scope authz.ScopeRef, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: string(scope.Level), ResourceID: scope.ID, RequiredPermission: permission})
+func (server *RBACHTTPServer) verifyMutation(ctx context.Context, bearer, tenantID string, scope authz.ScopeRef, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: string(scope.Level), ResourceID: scope.ID, RequiredPermission: permission})
 }
 
 func (server *RBACHTTPServer) writeMutationResult(writer http.ResponseWriter, requestID string, status int, result postgres.MutationResult, err error) {

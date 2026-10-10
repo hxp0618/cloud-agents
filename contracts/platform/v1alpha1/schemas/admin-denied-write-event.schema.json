@@ -52,7 +52,11 @@
         "adminCleanupWorkspaceSnapshot",
         "adminCreateRemoteWorkerEnrollment",
         "adminRevokeRemoteWorkerEnrollment",
-        "adminTransitionRemoteWorkerScheduling"
+        "adminTransitionRemoteWorkerScheduling",
+        "adminCreateMcpServer",
+        "adminRevokeMcpServer",
+        "adminCreateSkillBundle",
+        "adminRevokeSkillBundle"
       ]
     },
     "resourceId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },

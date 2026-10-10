@@ -125,3 +125,20 @@ func TestAdminDeniedWriteResponseDurableBeforeForbiddenAndFailureReplacement(t *
 		}
 	}
 }
+
+func TestAdminDeniedWriteReadOnlyTokenRequiresDurableDenial(t *testing.T) {
+	verifier, tokens := foundationVerifierAndScopedTokens(t, "projects.get")
+	called := false
+	handler := AdminDeniedWriteHandler(verifier, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/admin/tenants/tenant/projects/project-one/deployment-targets/target-one:probe", unreadableAuditBody{t})
+	request.Header.Set("Authorization", "Bearer "+tokens[0])
+	request.Header.Set("X-Request-ID", "readonly-denial")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if called || response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "ADMIN_AUDIT_UNAVAILABLE") {
+		t.Fatalf("readonly denial bypassed durable audit: downstream=%v status=%d body=%s", called, response.Code, response.Body.String())
+	}
+}

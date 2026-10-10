@@ -63,7 +63,7 @@ func (server *PlatformTenantHTTPServer) ServeHTTP(writer http.ResponseWriter, re
 		writeTenantError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: tenantID, ResourceLevel: "tenant", ResourceID: tenantID, RequiredPermission: "tenants.get",
 	})
 	if err != nil {

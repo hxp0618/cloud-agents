@@ -166,9 +166,9 @@ func TestProductionSurfaceAndDependencyClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The second consumer can append authenticated rejection evidence only; it does not
+	// The store consumers can append authenticated rejection evidence only; they do not
 	// execute an RBAC resource mutation or manufacture an authorization snapshot.
-	if len(consumeCallers) != 2 || filepath.Clean(consumeCallers[0]) != filepath.Clean("../../internal/authz/rbac.go") || filepath.Clean(consumeCallers[1]) != filepath.Clean("../../internal/store/postgres/admin_denied_write.go") {
+	if len(consumeCallers) != 3 || filepath.Clean(consumeCallers[0]) != filepath.Clean("../../internal/authz/rbac.go") || filepath.Clean(consumeCallers[1]) != filepath.Clean("../../internal/store/postgres/admin_denied_write.go") || filepath.Clean(consumeCallers[2]) != filepath.Clean("../../internal/store/postgres/service_account.go") {
 		t.Fatalf("Slice C ConsumeVerifiedPrincipal closure changed: %v", consumeCallers)
 	}
 	if len(verifyCallers) != 0 {
@@ -236,12 +236,12 @@ func assertAuthzBinderSurface(t *testing.T) {
 	}
 	assertExactNames(t, "authz exports", exported, []string{
 		"BindingActive", "BindingRevoked", "Candidate", "Catalog", "ErrCatalogDrift", "ErrInvalidRequest",
-		"ErrOperationDenied", "ErrScopeUnresolved", "ErrSnapshotMalformed", "MembershipActive", "MembershipFact",
+		"ErrOperationDenied", "ErrScopeUnresolved", "ErrSnapshotMalformed", "EvaluateTokenScopes", "GlobalRoleBindingFact", "MembershipActive", "MembershipFact",
 		"MembershipRevoked", "MembershipSuspended", "Role", "RoleBindingFact", "ScopeLevel", "ScopeOrganization",
 		"ScopePath", "ScopePlatform", "ScopeProject", "ScopeRef", "ScopeTenant", "Snapshot", "SubjectRef",
 		"VerifiedOperation", "VerifiedOperationBinder", "WithVerifiedOperation",
 	})
-	assertExactNames(t, "VerifiedOperation methods", methods["VerifiedOperation"], []string{"Actor", "Execute"})
+	assertExactNames(t, "VerifiedOperation methods", methods["VerifiedOperation"], []string{"Actor", "Execute", "ExecuteProjectSelector"})
 	assertExactNames(t, "VerifiedOperationBinder methods", methods["VerifiedOperationBinder"], []string{"Bind"})
 	for _, forbidden := range []string{"Request", "Decision", "Evaluate", "DenyReason"} {
 		for _, name := range exported {

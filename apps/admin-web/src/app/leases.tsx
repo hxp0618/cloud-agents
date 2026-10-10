@@ -1,3 +1,4 @@
+import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
 import {
   type DeploymentTarget,
@@ -19,7 +20,7 @@ export function LeaseTable({
   selectedLeaseId: string;
   onSelect: (leaseId: string) => void;
 }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, dateTime } = useI18n();
   if (leases.length === 0)
     return (
       <div className="table-empty">
@@ -34,7 +35,6 @@ export function LeaseTable({
             <th>{t("table.name")}</th>
             <th>{t("table.observed")}</th>
             <th>{t("table.cleanup")}</th>
-            <th>{t("table.generation")}</th>
             <th>{t("table.expires")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
@@ -64,7 +64,6 @@ export function LeaseTable({
                   {phaseLabel(lease.spec.cleanupPhase, t)}
                 </span>
               </td>
-              <td className="mono">g{number(lease.spec.generation)}</td>
               <td>{dateTime(lease.spec.expiresAt)}</td>
               <td className="row-action-cell">
                 <button
@@ -269,23 +268,7 @@ export function LeaseReleaseConfirmation({
   );
   return (
     <section className="dialog" aria-labelledby="lease-release-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">leases.act · {t("common.destructive")}</div>
-          <h2 id="lease-release-title">
-            {t("lease.releaseConfirmTitle", { action: actionLabel })}
-          </h2>
-          <p>{lease.metadata.name}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="lease-release-title" title={t("lease.releaseConfirmTitle", { action: actionLabel })} subject={lease.metadata.name} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {

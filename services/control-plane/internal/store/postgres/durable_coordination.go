@@ -211,6 +211,15 @@ func NewDurableCoordinationService(pool *pgxpool.Pool) (*DurableCoordinationServ
 	return newDurableCoordinationService(runner)
 }
 
+func NewAdminDurableCoordinationService(pool *pgxpool.Pool) (*DurableCoordinationService, error) {
+	runner, err := NewTenantTransactionRunner(pool)
+	if err != nil {
+		return nil, err
+	}
+	runner.application = "admin"
+	return newDurableCoordinationService(runner)
+}
+
 func newDurableCoordinationService(runner *TenantTransactionRunner) (*DurableCoordinationService, error) {
 	if runner == nil {
 		return nil, ErrNilCoordinationRunner

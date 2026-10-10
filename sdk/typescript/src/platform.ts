@@ -29,6 +29,317 @@ export type Problem = Readonly<{
 export type Pagination = Readonly<{ pageSize: number; pageToken?: string }>;
 export type WatchCursor = Readonly<{ cursor: string; resourceVersion: string; expiresAt: string }>;
 export type Idempotency = Readonly<{ key: string; requestDigest: `sha256:${string}` }>;
+export type IdentityApplication = "admin" | "user";
+export type PasswordLoginRequest = Readonly<{ email: string; password: string }>;
+export type CurrentUser = Readonly<{
+  id: string;
+  email: string;
+  displayName: string;
+  displayRoles: readonly "platform.admin"[];
+}>;
+export type BrowserTenant = Readonly<{
+  id: string;
+  name: string;
+  displayRoles: readonly "tenant.admin"[];
+}>;
+export type BrowserTenantPage = Readonly<{
+  tenants: readonly BrowserTenant[];
+  nextPageToken?: string;
+}>;
+export type BrowserSession = Readonly<{
+  application: IdentityApplication;
+  user: CurrentUser;
+  tenants: readonly BrowserTenant[];
+  nextPageToken?: string;
+  csrfToken: string;
+}>;
+export type EmailSuffixPolicy = Readonly<{
+  tenantId: string;
+  resourceVersion: string;
+  allowedDomains: readonly string[];
+}>;
+export type EmailSuffixPolicyUpdate = Readonly<{
+  expectedResourceVersion: string;
+  allowedDomains: readonly string[];
+}>;
+export type IdentityAccount = Readonly<{
+  id: string;
+  subject: SubjectRef;
+  email: string;
+  displayName: string;
+  state: "active" | "disabled";
+  platformAdmin: boolean;
+  emailVerifiedAt: string;
+  createdAt: string;
+}>;
+export type IdentityAccountPage = Readonly<{
+  accounts: readonly IdentityAccount[];
+  nextPageToken?: string;
+}>;
+export type PasswordChangeRequest = Readonly<{ currentPassword: string; newPassword: string }>;
+export type PasswordResetCreated = Readonly<{
+  userId: string;
+  resetCode: string;
+  expiresAt: string;
+}>;
+export type PasswordResetAcceptRequest = Readonly<{ resetCode: string; newPassword: string }>;
+export type IdentityAuditEvent = Readonly<{
+  id: string;
+  eventKind: string;
+  actorUserId?: string;
+  targetUserId?: string;
+  tenantId?: string;
+  application?: IdentityApplication;
+  decision: "allow" | "deny";
+  reasonCode: string;
+  correlationId: string;
+  occurredAt: string;
+}>;
+export type IdentityAuditPage = Readonly<{
+  events: readonly IdentityAuditEvent[];
+  nextPageToken?: string;
+}>;
+export type LoginProvider = Readonly<{
+  id: string;
+  kind: "oidc" | "github" | "gitlab" | "feishu" | "dingtalk" | "wecom";
+  displayName: string;
+}>;
+export type LoginProviderPage = Readonly<{ providers: readonly LoginProvider[] }>;
+export type ProviderAuthorizationRequest = Readonly<{
+  providerId: string;
+  purpose: "login" | "invitation" | "reauth" | "link";
+  invitationCode?: string;
+  displayName?: string;
+}>;
+export type ProviderAuthorization = Readonly<{ authorizationUrl: string; expiresAt: string }>;
+export type ProviderAuthorizationResult = Readonly<{
+  authorization: ProviderAuthorization;
+  state: string;
+}>;
+export type ProviderCallbackRequest = Readonly<{
+  state: string;
+  code: string;
+  issuer?: string;
+  sessionState?: string;
+}>;
+export type LoginMethod = Readonly<{
+  id: string;
+  providerId: string;
+  issuer: string;
+  subject: string;
+  createdAt: string;
+}>;
+export type LoginMethodList = Readonly<{
+  passwordEnabled: boolean;
+  loginMethods: readonly LoginMethod[];
+}>;
+export type ProviderCallback =
+  | Readonly<{ action: "login" | "invitation"; session: BrowserSession }>
+  | Readonly<{ action: "reauth"; expiresAt: string }>
+  | Readonly<{ action: "link"; loginMethod: LoginMethod }>;
+export type ProviderCallbackResult =
+  | Readonly<{ action: "login" | "invitation"; session: BrowserSession; sessionHandle: string }>
+  | Readonly<{ action: "reauth"; expiresAt: string; reauthProof: string; sessionHandle: string }>
+  | Readonly<{ action: "link"; loginMethod: LoginMethod }>;
+export type PasswordReauthRequest = Readonly<{ password: string }>;
+export type Reauthentication = Readonly<{ expiresAt: string }>;
+export type ReauthenticationResult = Reauthentication &
+  Readonly<{ reauthProof: string; sessionHandle: string }>;
+export type EnablePasswordRequest = Readonly<{ newPassword: string }>;
+export type ProviderClient = Readonly<{
+  providerId: string;
+  application: IdentityApplication;
+  displayName: string;
+  providerKind: LoginProvider["kind"];
+  issuer: string;
+  clientId: string;
+  redirectUri: string;
+  secretRef: string;
+  rootCaRef?: string;
+  agentId?: string;
+  scopes: readonly string[];
+  trustProviderEmail: boolean;
+  allowedOrganizationIds: readonly string[];
+  enabled: boolean;
+  resourceVersion: string;
+}>;
+export type ProviderClientPage = Readonly<{ providers: readonly ProviderClient[] }>;
+export type ProviderClientUpdate = Readonly<{
+  displayName: string;
+  providerKind: LoginProvider["kind"];
+  issuer: string;
+  clientId: string;
+  redirectUri: string;
+  secretRef: string;
+  rootCaRef?: string;
+  agentId?: string;
+  scopes: readonly string[];
+  trustProviderEmail: boolean;
+  allowedOrganizationIds: readonly string[];
+  enabled: boolean;
+  expectedResourceVersion: string;
+}>;
+export type TenantTokenIssueRequest = Readonly<{ tenantId: string; projectId?: string }>;
+export type TenantToken = Readonly<{ accessToken: string; tokenType: "Bearer"; expiresAt: string }>;
+export type IdentityLoginResult = Readonly<{ session: BrowserSession; sessionHandle: string }>;
+export type TokenStatusRequest = Readonly<{
+  tokenSha256: `sha256:${string}`;
+  expectedClientId:
+    | "cloud-agents-admin-web"
+    | "cloud-agents-user-web"
+    | "cloud-agents-cli"
+    | "cloud-agents-automation";
+  expectedApplication: IdentityApplication;
+  expectedTenantId: string;
+  expectedProjectId?: string;
+}>;
+export type TokenStatus = Readonly<{ status: "active" | "inactive" }>;
+export type TenantTokenAuthorizationRequest = Readonly<{
+  application: IdentityApplication;
+  sessionSha256: `sha256:${string}`;
+  tenantId: string;
+  projectId?: string;
+}>;
+export type TenantTokenAuthorization = Readonly<{
+  userId: string;
+  issuer: string;
+  tenantId: string;
+  projectId?: string;
+  application: IdentityApplication;
+  scopes: readonly string[];
+}>;
+export type CLIAuthorizationStartRequest = Readonly<{
+  application: IdentityApplication;
+  callbackPort: number;
+  state: string;
+  codeChallenge: string;
+}>;
+export type CLILogin = Readonly<{
+  authorizationId: string;
+  verificationUrl: string;
+  expiresAt: string;
+}>;
+export type CLIAuthorizationRequest = Readonly<{
+  pending: boolean;
+  application: IdentityApplication;
+}>;
+export type CLIAuthorization = Readonly<{ authorizationId: string; expiresAt: string }>;
+export type CLIAuthorizationApproveRequest = Readonly<{ state: string }>;
+export type CLIAuthorizationApproved = Readonly<{
+  callbackPort: number;
+  state: string;
+  authorizationCode: string;
+  expiresAt: string;
+}>;
+export type CLIGrantExchangeRequest = Readonly<{
+  authorizationId: string;
+  authorizationCode: string;
+  codeVerifier: string;
+}>;
+export type CLIGrant = Readonly<{
+  credential: string;
+  application: IdentityApplication;
+  expiresAt: string;
+}>;
+export type ServiceAccount = Readonly<{
+  id: string;
+  tenantId: string;
+  displayName: string;
+  application: IdentityApplication;
+  scopeLevel: "tenant" | "organization" | "project";
+  scopeId: string;
+  roleName: string;
+  state: "active" | "disabled";
+  resourceVersion: string;
+  subject: SubjectRef;
+  createdAt: string;
+  updatedAt: string;
+}>;
+export type ServiceAccountCreateRequest = Readonly<{
+  serviceAccountId: string;
+  displayName: string;
+  application: IdentityApplication;
+  roleName: string;
+  scopeLevel: "tenant" | "organization" | "project";
+  scopeId: string;
+}>;
+export type ServiceAccountCreated = Readonly<{
+  serviceAccount: ServiceAccount;
+  credential: string;
+  credentialExpiresAt: string;
+}>;
+export type ServiceAccountRotateRequest = Readonly<{ expectedResourceVersion: string }>;
+export type ServiceAccountDisableRequest = Readonly<{ expectedResourceVersion: string }>;
+export type ServiceAccountRotated = Readonly<{
+  resourceVersion: string;
+  credentialVersion: string;
+  credential: string;
+  credentialExpiresAt: string;
+}>;
+export type ServiceAccountPage = Readonly<{
+  serviceAccounts: readonly ServiceAccount[];
+  nextPageToken?: string;
+}>;
+export type PrincipalTokenAuthorizationRequest = Readonly<{
+  application: IdentityApplication;
+  clientId: "cloud-agents-cli" | "cloud-agents-automation";
+  credentialSha256: `sha256:${string}`;
+  tenantId: string;
+  projectId?: string;
+}>;
+export type PrincipalTokenAuthorization = Readonly<{
+  principalId: string;
+  subject: SubjectRef;
+  issuer: string;
+  tenantId: string;
+  projectId?: string;
+  application: IdentityApplication;
+  scopes: readonly string[];
+}>;
+export type ControlPlaneAuditEvent = Readonly<{
+  id: string;
+  action: string;
+  actor?: SubjectRef;
+  application?: IdentityApplication;
+  resourceKind: "membership" | "role_binding";
+  resourceId: string;
+  tenantId: string;
+  decision: "allow";
+  reasonCode: string;
+  correlationId?: string;
+  occurredAt: string;
+}>;
+export type ControlPlaneAuditPage = Readonly<{
+  events: readonly ControlPlaneAuditEvent[];
+  nextPageToken?: string;
+}>;
+export type IdentityJWK = Readonly<{
+  alg: "RS256";
+  e: "AQAB";
+  key_ops: readonly ["verify"];
+  kid: string;
+  kty: "RSA";
+  n: string;
+  use: "sig";
+}>;
+export type IdentityJWKSLineageKey = Readonly<{
+  jwk: IdentityJWK;
+  enabled: boolean;
+  notBefore: number;
+  notAfter: number;
+}>;
+export type IdentityJWKSAuthority = Readonly<{
+  issuer: string;
+  revision: string;
+  securityEpoch: string;
+  notBefore: number;
+  expiresAt: number;
+  lineage: readonly IdentityJWKSLineageKey[];
+}>;
+export type IdentityJWKS = Readonly<{
+  keys: readonly IdentityJWK[];
+  cloudAgentsAuthority: IdentityJWKSAuthority;
+}>;
 
 export class JSONContractError extends TypeError {
   readonly code: string;
@@ -1445,12 +1756,19 @@ export type WorkspaceSnapshotPage = Readonly<{
   workspaceSnapshots: readonly WorkspaceSnapshot[];
   nextPageToken?: string;
 }>;
+export type DeploymentTargetKubernetesCredential = Readonly<{
+  certificateAuthorityData: string;
+  token?: string;
+  clientCertificateData?: string;
+  clientKeyData?: string;
+}>;
 export type DeploymentTargetRegisterRequest = Readonly<{
   targetId: string;
   targetName: string;
   targetKind: "docker" | "kubernetes" | "ssh";
   endpoint: string;
   credentialRef: string;
+  kubernetesCredential?: DeploymentTargetKubernetesCredential;
 }>;
 export type DeploymentTargetProbeRequest = Readonly<{ expectedGeneration: number }>;
 export type DeploymentTargetCleanupRequest = Readonly<{
@@ -1597,6 +1915,10 @@ const adminDeniedWriteActions = [
   "adminCreateRemoteWorkerEnrollment",
   "adminRevokeRemoteWorkerEnrollment",
   "adminTransitionRemoteWorkerScheduling",
+  "adminCreateMcpServer",
+  "adminRevokeMcpServer",
+  "adminCreateSkillBundle",
+  "adminRevokeSkillBundle",
 ] as const;
 export type AdminDeniedWriteEvent = Readonly<{
   apiVersion: typeof platformApiVersion;
@@ -5385,12 +5707,55 @@ export function encodeAdminEnvironmentLeaseUpgradeRequest(
 ): string {
   return JSON.stringify(decodeAdminEnvironmentLeaseUpgradeRequest(value));
 }
+const kubernetesCredentialDataPattern =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$/u;
+function kubernetesCredentialData(value: unknown, path: string): string {
+  const text = string(value, path);
+  if (text.length < 4 || text.length > 65536 || !kubernetesCredentialDataPattern.test(text))
+    error("INVALID_KUBERNETES_CREDENTIAL", path);
+  return text;
+}
+function decodeDeploymentTargetKubernetesCredential(
+  value: unknown,
+): DeploymentTargetKubernetesCredential {
+  const path = "/kubernetesCredential";
+  const source = strictRecord(
+    value,
+    ["certificateAuthorityData", "token", "clientCertificateData", "clientKeyData"],
+    ["certificateAuthorityData"],
+    path,
+  );
+  const certificateAuthorityData = kubernetesCredentialData(
+    source.certificateAuthorityData,
+    `${path}/certificateAuthorityData`,
+  );
+  const hasToken = Object.hasOwn(source, "token");
+  if (
+    hasToken ===
+    (Object.hasOwn(source, "clientCertificateData") || Object.hasOwn(source, "clientKeyData"))
+  )
+    error("INVALID_KUBERNETES_CREDENTIAL", path);
+  if (hasToken) {
+    const token = string(source.token, `${path}/token`);
+    if (token.length < 1 || token.length > 16384 || !/^[\x21-\x7e]+$/u.test(token))
+      error("INVALID_KUBERNETES_CREDENTIAL", `${path}/token`);
+    return Object.freeze({ certificateAuthorityData, token });
+  }
+  return Object.freeze({
+    certificateAuthorityData,
+    clientCertificateData: kubernetesCredentialData(
+      source.clientCertificateData,
+      `${path}/clientCertificateData`,
+    ),
+    clientKeyData: kubernetesCredentialData(source.clientKeyData, `${path}/clientKeyData`),
+  });
+}
 export function decodeDeploymentTargetRegisterRequest(
   value: unknown,
 ): DeploymentTargetRegisterRequest {
   const source = strictRecord(
     value,
-    ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
+    ["targetId", "targetName", "targetKind", "endpoint", "credentialRef", "kubernetesCredential"],
     ["targetId", "targetName", "targetKind", "endpoint", "credentialRef"],
   );
   const targetKind = enumValue(
@@ -5398,12 +5763,18 @@ export function decodeDeploymentTargetRegisterRequest(
     ["docker", "kubernetes", "ssh"] as const,
     "/targetKind",
   );
-  return Object.freeze({
+  const request = {
     targetId: identifier(source.targetId, "/targetId"),
     targetName: identifier(source.targetName, "/targetName"),
     targetKind,
     endpoint: registeredTargetEndpoint(source.endpoint, targetKind, "/endpoint"),
     credentialRef: identifier(source.credentialRef, "/credentialRef"),
+  };
+  if (!Object.hasOwn(source, "kubernetesCredential")) return Object.freeze(request);
+  if (targetKind !== "kubernetes") error("INVALID_KUBERNETES_CREDENTIAL", "/kubernetesCredential");
+  return Object.freeze({
+    ...request,
+    kubernetesCredential: decodeDeploymentTargetKubernetesCredential(source.kubernetesCredential),
   });
 }
 export function encodeDeploymentTargetRegisterRequest(
@@ -12227,6 +12598,852 @@ function interactionAnswer(value: unknown, path: string): string {
   return text;
 }
 
+function email(value: unknown, path: string): string {
+  const text = boundedString(value, 3, 320, path);
+  if (!/^[^\s@]+@[^\s@]+$/u.test(text)) error("INVALID_EMAIL", path);
+  return text;
+}
+function csrfToken(value: unknown, path: string): string {
+  const text = string(value, path);
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(text)) error("INVALID_CSRF_TOKEN", path);
+  return text;
+}
+function clientIP(value: unknown, path: string): string {
+  const text = boundedString(value, 2, 45, path);
+  if (text.trim() !== text || /[\s%\[\]]/u.test(text)) error("INVALID_CLIENT_IP", path);
+  const octets = text.split(".");
+  if (!text.includes(":") && octets.length === 4) {
+    if (octets.some((octet) => !/^(?:0|[1-9][0-9]{0,2})$/u.test(octet) || Number(octet) > 255))
+      error("INVALID_CLIENT_IP", path);
+    return text;
+  }
+  if (text.startsWith("::ffff:") && text.includes(".")) {
+    const mapped = text.slice(7);
+    const mappedOctets = mapped.split(".");
+    if (
+      mappedOctets.length !== 4 ||
+      mappedOctets.some((octet) => !/^(?:0|[1-9][0-9]{0,2})$/u.test(octet) || Number(octet) > 255)
+    )
+      error("INVALID_CLIENT_IP", path);
+    return text;
+  }
+  try {
+    const hostname = new URL(`http://[${text}]/`).hostname;
+    if (hostname !== `[${text}]`) error("INVALID_CLIENT_IP", path);
+  } catch {
+    error("INVALID_CLIENT_IP", path);
+  }
+  return text;
+}
+function uniqueStrings<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  maximum: number,
+  path: string,
+): readonly T[] {
+  if (!Array.isArray(value)) error("INVALID_FIELD_TYPE", path);
+  const values = value as unknown[];
+  if (values.length > maximum) error("INVALID_FIELD_TYPE", path);
+  const result = values.map((entry: unknown, index: number) =>
+    enumValue(entry, allowed, `${path}/${index}`),
+  );
+  if (new Set(result).size !== result.length) error("DUPLICATE_FIELD", path);
+  return Object.freeze(result);
+}
+export function decodeCurrentUser(value: unknown): CurrentUser {
+  const source = strictRecord(
+    value,
+    ["id", "email", "displayName", "displayRoles"],
+    ["id", "email", "displayName", "displayRoles"],
+  );
+  return Object.freeze({
+    id: identifier(source.id, "/id"),
+    email: email(source.email, "/email"),
+    displayName: boundedString(source.displayName, 0, 200, "/displayName"),
+    displayRoles: uniqueStrings(
+      source.displayRoles,
+      ["platform.admin"] as const,
+      8,
+      "/displayRoles",
+    ),
+  });
+}
+function decodeBrowserTenantAt(value: unknown, path: string): BrowserTenant {
+  const source = strictRecord(
+    value,
+    ["id", "name", "displayRoles"],
+    ["id", "name", "displayRoles"],
+    path,
+  );
+  return Object.freeze({
+    id: identifier(source.id, `${path}/id`),
+    name: boundedString(source.name, 1, 200, `${path}/name`),
+    displayRoles: uniqueStrings(
+      source.displayRoles,
+      ["tenant.admin"] as const,
+      8,
+      `${path}/displayRoles`,
+    ),
+  });
+}
+export function decodeBrowserTenant(value: unknown): BrowserTenant {
+  return decodeBrowserTenantAt(value, "");
+}
+export function decodeBrowserTenantPage(value: unknown): BrowserTenantPage {
+  const source = strictRecord(value, ["tenants", "nextPageToken"], ["tenants"]);
+  if (!Array.isArray(source.tenants)) error("INVALID_FIELD_TYPE", "/tenants");
+  const rawTenants = source.tenants as unknown[];
+  if (rawTenants.length > 200) error("INVALID_FIELD_TYPE", "/tenants");
+  const tenants = rawTenants.map((tenant: unknown, index: number) =>
+    decodeBrowserTenantAt(tenant, `/tenants/${index}`),
+  );
+  if (new Set(tenants.map(({ id }: BrowserTenant) => id)).size !== tenants.length)
+    error("DUPLICATE_TENANT", "/tenants");
+  const page = { tenants: Object.freeze(tenants) };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? page
+      : { ...page, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodeBrowserSession(value: unknown): BrowserSession {
+  const source = strictRecord(
+    value,
+    ["application", "user", "tenants", "nextPageToken", "csrfToken"],
+    ["application", "user", "tenants", "csrfToken"],
+  );
+  const page = decodeBrowserTenantPage(
+    source.nextPageToken === undefined
+      ? { tenants: source.tenants }
+      : { tenants: source.tenants, nextPageToken: source.nextPageToken },
+  );
+  const session = {
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    user: decodeCurrentUser(source.user),
+    tenants: page.tenants,
+    csrfToken: csrfToken(source.csrfToken, "/csrfToken"),
+  };
+  return Object.freeze(
+    page.nextPageToken === undefined ? session : { ...session, nextPageToken: page.nextPageToken },
+  );
+}
+export function parseBrowserSession(text: string): BrowserSession {
+  return decodeBrowserSession(parseStrictJSON(text));
+}
+export function parseCurrentUser(text: string): CurrentUser {
+  return decodeCurrentUser(parseStrictJSON(text));
+}
+export function parseBrowserTenantPage(text: string): BrowserTenantPage {
+  return decodeBrowserTenantPage(parseStrictJSON(text));
+}
+function emailPolicyDomains(value: unknown, path: string): readonly string[] {
+  if (!Array.isArray(value) || value.length > 64) error("INVALID_EMAIL_POLICY_DOMAINS", path);
+  const domains = (value as unknown[]).map((entry, index) => {
+    const domain = boundedString(entry, 1, 253, `${path}/${index}`);
+    if (
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/u.test(
+        domain,
+      )
+    )
+      error("INVALID_EMAIL_POLICY_DOMAIN", `${path}/${index}`);
+    return domain;
+  });
+  for (let index = 1; index < domains.length; index++)
+    if (domains[index - 1]! >= domains[index]!) error("INVALID_EMAIL_POLICY_DOMAINS", path);
+  return Object.freeze(domains);
+}
+function emailPolicyResourceVersion(value: unknown, path: string): string {
+  const version = string(value, path);
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(version) || version.length > 20)
+    error("INVALID_RESOURCE_VERSION", path);
+  return version;
+}
+export function decodeEmailSuffixPolicy(value: unknown): EmailSuffixPolicy {
+  const source = strictRecord(
+    value,
+    ["tenantId", "resourceVersion", "allowedDomains"],
+    ["tenantId", "resourceVersion", "allowedDomains"],
+  );
+  return Object.freeze({
+    tenantId: identifier(source.tenantId, "/tenantId"),
+    resourceVersion: emailPolicyResourceVersion(source.resourceVersion, "/resourceVersion"),
+    allowedDomains: emailPolicyDomains(source.allowedDomains, "/allowedDomains"),
+  });
+}
+export function decodeEmailSuffixPolicyUpdate(value: unknown): EmailSuffixPolicyUpdate {
+  const source = strictRecord(
+    value,
+    ["expectedResourceVersion", "allowedDomains"],
+    ["expectedResourceVersion", "allowedDomains"],
+  );
+  return Object.freeze({
+    expectedResourceVersion: emailPolicyResourceVersion(
+      source.expectedResourceVersion,
+      "/expectedResourceVersion",
+    ),
+    allowedDomains: emailPolicyDomains(source.allowedDomains, "/allowedDomains"),
+  });
+}
+export function parseEmailSuffixPolicy(text: string): EmailSuffixPolicy {
+  return decodeEmailSuffixPolicy(parseStrictJSON(text));
+}
+export function encodeEmailSuffixPolicyUpdate(value: EmailSuffixPolicyUpdate): string {
+  return JSON.stringify(decodeEmailSuffixPolicyUpdate(value));
+}
+export function decodePasswordLoginRequest(value: unknown): PasswordLoginRequest {
+  const source = strictRecord(value, ["email", "password"], ["email", "password"]);
+  return Object.freeze({
+    email: email(source.email, "/email"),
+    password: boundedString(source.password, 1, 1024, "/password"),
+  });
+}
+export function decodeTenantTokenIssueRequest(value: unknown): TenantTokenIssueRequest {
+  const source = strictRecord(value, ["tenantId", "projectId"], ["tenantId"]);
+  const base = { tenantId: identifier(source.tenantId, "/tenantId") };
+  return Object.freeze(
+    source.projectId === undefined
+      ? base
+      : { ...base, projectId: identifier(source.projectId, "/projectId") },
+  );
+}
+export function decodeTenantToken(value: unknown): TenantToken {
+  const source = strictRecord(
+    value,
+    ["accessToken", "tokenType", "expiresAt"],
+    ["accessToken", "tokenType", "expiresAt"],
+  );
+  const accessToken = boundedString(source.accessToken, 64, 8192, "/accessToken");
+  if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(accessToken))
+    error("INVALID_ACCESS_TOKEN", "/accessToken");
+  if (source.tokenType !== "Bearer") error("INVALID_TOKEN_TYPE", "/tokenType");
+  return Object.freeze({
+    accessToken,
+    tokenType: "Bearer",
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function parseTenantToken(text: string): TenantToken {
+  return decodeTenantToken(parseStrictJSON(text));
+}
+export function decodeTokenStatusRequest(value: unknown): TokenStatusRequest {
+  const source = strictRecord(
+    value,
+    [
+      "tokenSha256",
+      "expectedClientId",
+      "expectedApplication",
+      "expectedTenantId",
+      "expectedProjectId",
+    ],
+    ["tokenSha256", "expectedClientId", "expectedApplication", "expectedTenantId"],
+  );
+  const tokenSha256 = string(source.tokenSha256, "/tokenSha256");
+  if (!/^sha256:[0-9a-f]{64}$/u.test(tokenSha256)) error("INVALID_TOKEN_DIGEST", "/tokenSha256");
+  const base = {
+    tokenSha256: tokenSha256 as `sha256:${string}`,
+    expectedClientId: enumValue(
+      source.expectedClientId,
+      [
+        "cloud-agents-admin-web",
+        "cloud-agents-user-web",
+        "cloud-agents-cli",
+        "cloud-agents-automation",
+      ] as const,
+      "/expectedClientId",
+    ),
+    expectedApplication: enumValue(
+      source.expectedApplication,
+      ["admin", "user"] as const,
+      "/expectedApplication",
+    ),
+    expectedTenantId: identifier(source.expectedTenantId, "/expectedTenantId"),
+  };
+  return Object.freeze(
+    source.expectedProjectId === undefined
+      ? base
+      : { ...base, expectedProjectId: identifier(source.expectedProjectId, "/expectedProjectId") },
+  );
+}
+export function decodeTokenStatus(value: unknown): TokenStatus {
+  const source = strictRecord(value, ["status"], ["status"]);
+  return Object.freeze({
+    status: enumValue(source.status, ["active", "inactive"] as const, "/status"),
+  });
+}
+export function parseTokenStatus(text: string): TokenStatus {
+  return decodeTokenStatus(parseStrictJSON(text));
+}
+export function decodeTenantTokenAuthorizationRequest(
+  value: unknown,
+): TenantTokenAuthorizationRequest {
+  const source = strictRecord(
+    value,
+    ["application", "sessionSha256", "tenantId", "projectId"],
+    ["application", "sessionSha256", "tenantId"],
+  );
+  const sessionSha256 = string(source.sessionSha256, "/sessionSha256");
+  if (!/^sha256:[0-9a-f]{64}$/u.test(sessionSha256))
+    error("INVALID_SESSION_DIGEST", "/sessionSha256");
+  const base = {
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    sessionSha256: sessionSha256 as `sha256:${string}`,
+    tenantId: identifier(source.tenantId, "/tenantId"),
+  };
+  return Object.freeze(
+    source.projectId === undefined
+      ? base
+      : { ...base, projectId: identifier(source.projectId, "/projectId") },
+  );
+}
+function identityAuthorizationScopes(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 64)
+    error("INVALID_AUTHORIZATION_SCOPES", "/scopes");
+  const scopes = (value as unknown[]).map((entry, index) => {
+    const scope = boundedString(entry, 5, 128, `/scopes/${index}`);
+    if (!/^[a-z][a-z0-9-]*\.(?:create|get|list|watch|update|delete|act|bind)$/u.test(scope))
+      error("INVALID_AUTHORIZATION_SCOPES", `/scopes/${index}`);
+    return scope;
+  });
+  for (let index = 1; index < scopes.length; index++)
+    if (scopes[index - 1]! >= scopes[index]!) error("INVALID_AUTHORIZATION_SCOPES", "/scopes");
+  return Object.freeze(scopes);
+}
+export function decodeTenantTokenAuthorization(value: unknown): TenantTokenAuthorization {
+  const source = strictRecord(
+    value,
+    ["userId", "issuer", "tenantId", "projectId", "application", "scopes"],
+    ["userId", "issuer", "tenantId", "application", "scopes"],
+  );
+  const base = {
+    userId: identifier(source.userId, "/userId"),
+    issuer: absoluteURI(source.issuer, "/issuer"),
+    tenantId: identifier(source.tenantId, "/tenantId"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    scopes: identityAuthorizationScopes(source.scopes),
+  };
+  return Object.freeze(
+    source.projectId === undefined
+      ? base
+      : { ...base, projectId: identifier(source.projectId, "/projectId") },
+  );
+}
+export function parseTenantTokenAuthorization(text: string): TenantTokenAuthorization {
+  return decodeTenantTokenAuthorization(parseStrictJSON(text));
+}
+function cliProof(value: unknown, path: string): string {
+  const text = string(value, path);
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(text)) error("INVALID_CLI_PROOF", path);
+  return text;
+}
+export function decodeCLIAuthorizationStartRequest(value: unknown): CLIAuthorizationStartRequest {
+  const source = strictRecord(
+    value,
+    ["application", "callbackPort", "state", "codeChallenge"],
+    ["application", "callbackPort", "state", "codeChallenge"],
+  );
+  return Object.freeze({
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    callbackPort: integer(source.callbackPort, 1024, 65535, "/callbackPort"),
+    state: cliProof(source.state, "/state"),
+    codeChallenge: cliProof(source.codeChallenge, "/codeChallenge"),
+  });
+}
+export function decodeCLILogin(value: unknown): CLILogin {
+  const source = strictRecord(
+    value,
+    ["authorizationId", "verificationUrl", "expiresAt"],
+    ["authorizationId", "verificationUrl", "expiresAt"],
+  );
+  const verificationUrl = boundedString(source.verificationUrl, 1, 2048, "/verificationUrl");
+  let parsed: URL;
+  try {
+    parsed = new URL(verificationUrl);
+  } catch {
+    return error("INVALID_CLI_LOGIN", "/verificationUrl");
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== ""
+  )
+    error("INVALID_CLI_LOGIN", "/verificationUrl");
+  return Object.freeze({
+    authorizationId: identifier(source.authorizationId, "/authorizationId"),
+    verificationUrl,
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeCLIAuthorizationRequest(value: unknown): CLIAuthorizationRequest {
+  const source = strictRecord(value, ["pending", "application"], ["pending", "application"]);
+  if (typeof source.pending !== "boolean") error("INVALID_FIELD_TYPE", "/pending");
+  return Object.freeze({
+    pending: source.pending as boolean,
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+  });
+}
+export function decodeCLIAuthorization(value: unknown): CLIAuthorization {
+  const source = strictRecord(
+    value,
+    ["authorizationId", "expiresAt"],
+    ["authorizationId", "expiresAt"],
+  );
+  return Object.freeze({
+    authorizationId: identifier(source.authorizationId, "/authorizationId"),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeCLIAuthorizationApproveRequest(
+  value: unknown,
+): CLIAuthorizationApproveRequest {
+  const source = strictRecord(value, ["state"], ["state"]);
+  return Object.freeze({ state: cliProof(source.state, "/state") });
+}
+export function decodeCLIAuthorizationApproved(value: unknown): CLIAuthorizationApproved {
+  const source = strictRecord(
+    value,
+    ["callbackPort", "state", "authorizationCode", "expiresAt"],
+    ["callbackPort", "state", "authorizationCode", "expiresAt"],
+  );
+  return Object.freeze({
+    callbackPort: integer(source.callbackPort, 1024, 65535, "/callbackPort"),
+    state: cliProof(source.state, "/state"),
+    authorizationCode: cliProof(source.authorizationCode, "/authorizationCode"),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeCLIGrantExchangeRequest(value: unknown): CLIGrantExchangeRequest {
+  const source = strictRecord(
+    value,
+    ["authorizationId", "authorizationCode", "codeVerifier"],
+    ["authorizationId", "authorizationCode", "codeVerifier"],
+  );
+  return Object.freeze({
+    authorizationId: identifier(source.authorizationId, "/authorizationId"),
+    authorizationCode: cliProof(source.authorizationCode, "/authorizationCode"),
+    codeVerifier: cliProof(source.codeVerifier, "/codeVerifier"),
+  });
+}
+export function decodeCLIGrant(value: unknown): CLIGrant {
+  const source = strictRecord(
+    value,
+    ["credential", "application", "expiresAt"],
+    ["credential", "application", "expiresAt"],
+  );
+  return Object.freeze({
+    credential: cliProof(source.credential, "/credential"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+function serviceAccountScopeLevel(
+  value: unknown,
+  path: string,
+): "tenant" | "organization" | "project" {
+  return enumValue(value, ["tenant", "organization", "project"] as const, path);
+}
+export function decodeServiceAccount(value: unknown): ServiceAccount {
+  const source = strictRecord(
+    value,
+    [
+      "id",
+      "tenantId",
+      "displayName",
+      "application",
+      "scopeLevel",
+      "scopeId",
+      "roleName",
+      "state",
+      "resourceVersion",
+      "subject",
+      "createdAt",
+      "updatedAt",
+    ],
+    [
+      "id",
+      "tenantId",
+      "displayName",
+      "application",
+      "scopeLevel",
+      "scopeId",
+      "roleName",
+      "state",
+      "resourceVersion",
+      "subject",
+      "createdAt",
+      "updatedAt",
+    ],
+  );
+  const id = identifier(source.id, "/id"),
+    tenantId = identifier(source.tenantId, "/tenantId"),
+    scopeLevel = serviceAccountScopeLevel(source.scopeLevel, "/scopeLevel"),
+    scopeId = identifier(source.scopeId, "/scopeId"),
+    serviceSubject = subject(source.subject);
+  if (
+    (scopeLevel === "tenant" && scopeId !== tenantId) ||
+    serviceSubject.kind !== "serviceAccount" ||
+    serviceSubject.subject !== `service-${id}`
+  )
+    error("INVALID_SERVICE_ACCOUNT", "");
+  return Object.freeze({
+    id,
+    tenantId,
+    displayName: boundedString(source.displayName, 1, 160, "/displayName"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    scopeLevel,
+    scopeId,
+    roleName: identifier(source.roleName, "/roleName"),
+    state: enumValue(source.state, ["active", "disabled"] as const, "/state"),
+    resourceVersion: identityRevision(source.resourceVersion, "/resourceVersion"),
+    subject: serviceSubject,
+    createdAt: dateTime(source.createdAt, "/createdAt"),
+    updatedAt: dateTime(source.updatedAt, "/updatedAt"),
+  });
+}
+export function decodeServiceAccountCreateRequest(value: unknown): ServiceAccountCreateRequest {
+  const source = strictRecord(
+    value,
+    ["serviceAccountId", "displayName", "application", "roleName", "scopeLevel", "scopeId"],
+    ["serviceAccountId", "displayName", "application", "roleName", "scopeLevel", "scopeId"],
+  );
+  const roleName = identifier(source.roleName, "/roleName");
+  if (roleName === "platform.admin") error("INVALID_ROLE", "/roleName");
+  return Object.freeze({
+    serviceAccountId: identifier(source.serviceAccountId, "/serviceAccountId"),
+    displayName: boundedString(source.displayName, 1, 160, "/displayName"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    roleName,
+    scopeLevel: serviceAccountScopeLevel(source.scopeLevel, "/scopeLevel"),
+    scopeId: identifier(source.scopeId, "/scopeId"),
+  });
+}
+export function decodeServiceAccountCreated(value: unknown): ServiceAccountCreated {
+  const source = strictRecord(
+    value,
+    ["serviceAccount", "credential", "credentialExpiresAt"],
+    ["serviceAccount", "credential", "credentialExpiresAt"],
+  );
+  return Object.freeze({
+    serviceAccount: decodeServiceAccount(source.serviceAccount),
+    credential: cliProof(source.credential, "/credential"),
+    credentialExpiresAt: dateTime(source.credentialExpiresAt, "/credentialExpiresAt"),
+  });
+}
+export function decodeServiceAccountRotateRequest(value: unknown): ServiceAccountRotateRequest {
+  const source = strictRecord(value, ["expectedResourceVersion"], ["expectedResourceVersion"]);
+  return Object.freeze({
+    expectedResourceVersion: identityRevision(
+      source.expectedResourceVersion,
+      "/expectedResourceVersion",
+    ),
+  });
+}
+export function decodeServiceAccountDisableRequest(value: unknown): ServiceAccountDisableRequest {
+  const source = strictRecord(value, ["expectedResourceVersion"], ["expectedResourceVersion"]);
+  return Object.freeze({
+    expectedResourceVersion: identityRevision(
+      source.expectedResourceVersion,
+      "/expectedResourceVersion",
+    ),
+  });
+}
+export function decodeServiceAccountRotated(value: unknown): ServiceAccountRotated {
+  const source = strictRecord(
+    value,
+    ["resourceVersion", "credentialVersion", "credential", "credentialExpiresAt"],
+    ["resourceVersion", "credentialVersion", "credential", "credentialExpiresAt"],
+  );
+  return Object.freeze({
+    resourceVersion: identityRevision(source.resourceVersion, "/resourceVersion"),
+    credentialVersion: identityRevision(source.credentialVersion, "/credentialVersion"),
+    credential: cliProof(source.credential, "/credential"),
+    credentialExpiresAt: dateTime(source.credentialExpiresAt, "/credentialExpiresAt"),
+  });
+}
+export function decodeServiceAccountPage(value: unknown): ServiceAccountPage {
+  const source = strictRecord(value, ["serviceAccounts", "nextPageToken"], ["serviceAccounts"]);
+  if (!Array.isArray(source.serviceAccounts) || source.serviceAccounts.length > 200)
+    error("INVALID_SERVICE_ACCOUNT_PAGE", "/serviceAccounts");
+  const serviceAccounts = (source.serviceAccounts as unknown[]).map(decodeServiceAccount);
+  if (new Set(serviceAccounts.map(({ id }) => id)).size !== serviceAccounts.length)
+    error("DUPLICATE_SERVICE_ACCOUNT", "/serviceAccounts");
+  const base = { serviceAccounts: Object.freeze(serviceAccounts) };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? base
+      : { ...base, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function decodePrincipalTokenAuthorizationRequest(
+  value: unknown,
+): PrincipalTokenAuthorizationRequest {
+  const source = strictRecord(
+    value,
+    ["application", "clientId", "credentialSha256", "tenantId", "projectId"],
+    ["application", "clientId", "credentialSha256", "tenantId"],
+  );
+  const credentialSha256 = string(source.credentialSha256, "/credentialSha256");
+  if (!/^sha256:[0-9a-f]{64}$/u.test(credentialSha256))
+    error("INVALID_CREDENTIAL_DIGEST", "/credentialSha256");
+  const base = {
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    clientId: enumValue(
+      source.clientId,
+      ["cloud-agents-cli", "cloud-agents-automation"] as const,
+      "/clientId",
+    ),
+    credentialSha256: credentialSha256 as `sha256:${string}`,
+    tenantId: identifier(source.tenantId, "/tenantId"),
+  };
+  return Object.freeze(
+    source.projectId === undefined
+      ? base
+      : { ...base, projectId: identifier(source.projectId, "/projectId") },
+  );
+}
+export function decodePrincipalTokenAuthorization(value: unknown): PrincipalTokenAuthorization {
+  const source = strictRecord(
+    value,
+    ["principalId", "subject", "issuer", "tenantId", "projectId", "application", "scopes"],
+    ["principalId", "subject", "issuer", "tenantId", "application", "scopes"],
+  );
+  const issuer = absoluteURI(source.issuer, "/issuer"),
+    principalSubject = subject(source.subject);
+  if (principalSubject.issuer !== issuer) error("PRINCIPAL_ISSUER_MISMATCH", "/subject/issuer");
+  const base = {
+    principalId: identifier(source.principalId, "/principalId"),
+    subject: principalSubject,
+    issuer,
+    tenantId: identifier(source.tenantId, "/tenantId"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    scopes: identityAuthorizationScopes(source.scopes),
+  };
+  return Object.freeze(
+    source.projectId === undefined
+      ? base
+      : { ...base, projectId: identifier(source.projectId, "/projectId") },
+  );
+}
+export function decodeControlPlaneAuditPage(value: unknown): ControlPlaneAuditPage {
+  const source = strictRecord(value, ["events", "nextPageToken"], ["events"]);
+  if (!Array.isArray(source.events) || source.events.length > 200)
+    error("INVALID_AUDIT_PAGE", "/events");
+  const events = Object.freeze(
+    (source.events as unknown[]).map((entry, index): ControlPlaneAuditEvent => {
+      const path = `/events/${index}`,
+        event = strictRecord(
+          entry,
+          [
+            "id",
+            "action",
+            "actor",
+            "application",
+            "resourceKind",
+            "resourceId",
+            "tenantId",
+            "decision",
+            "reasonCode",
+            "correlationId",
+            "occurredAt",
+          ],
+          [
+            "id",
+            "action",
+            "resourceKind",
+            "resourceId",
+            "tenantId",
+            "decision",
+            "reasonCode",
+            "occurredAt",
+          ],
+          path,
+        );
+      const authorityCount =
+        Number(event.actor !== undefined) +
+        Number(event.application !== undefined) +
+        Number(event.correlationId !== undefined);
+      if (authorityCount !== 0 && authorityCount !== 3) error("INVALID_AUDIT_AUTHORITY", path);
+      const base = {
+        id: identifier(event.id, `${path}/id`),
+        action: boundedString(event.action, 1, 128, `${path}/action`),
+        resourceKind: enumValue(
+          event.resourceKind,
+          ["membership", "role_binding"] as const,
+          `${path}/resourceKind`,
+        ),
+        resourceId: identifier(event.resourceId, `${path}/resourceId`),
+        tenantId: identifier(event.tenantId, `${path}/tenantId`),
+        decision: enumValue(event.decision, ["allow"] as const, `${path}/decision`),
+        reasonCode: identifier(event.reasonCode, `${path}/reasonCode`),
+        occurredAt: dateTime(event.occurredAt, `${path}/occurredAt`),
+      };
+      return Object.freeze(
+        authorityCount === 0
+          ? base
+          : {
+              ...base,
+              actor: subject(event.actor, `${path}/actor`),
+              application: enumValue(
+                event.application,
+                ["admin", "user"] as const,
+                `${path}/application`,
+              ),
+              correlationId: identifier(event.correlationId, `${path}/correlationId`),
+            },
+      );
+    }),
+  );
+  const base = { events };
+  return Object.freeze(
+    source.nextPageToken === undefined
+      ? base
+      : { ...base, nextPageToken: token(source.nextPageToken, "/nextPageToken") },
+  );
+}
+export function parseControlPlaneAuditPage(text: string): ControlPlaneAuditPage {
+  return decodeControlPlaneAuditPage(parseStrictJSON(text));
+}
+function identityRevision(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 19, path);
+  if (!/^[1-9][0-9]*$/u.test(text)) error("INVALID_IDENTITY_REVISION", path);
+  return text;
+}
+function identityNumericDate(value: unknown, path: string): number {
+  return integer(value, 0, 253402300799, path);
+}
+function identityKID(value: unknown, path: string): string {
+  const text = boundedString(value, 1, 128, path);
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._~-]{0,126}[A-Za-z0-9])?$/u.test(text))
+    error("INVALID_IDENTITY_JWK", path);
+  return text;
+}
+function identityModulus(value: unknown, path: string): string {
+  const text = boundedString(value, 342, 683, path);
+  if (!/^[A-Za-z0-9_-]+$/u.test(text) || text.length % 4 === 1) error("INVALID_IDENTITY_JWK", path);
+  let binary: string;
+  try {
+    binary = globalThis.atob(
+      text.replace(/-/gu, "+").replace(/_/gu, "/") + "=".repeat((4 - (text.length % 4)) % 4),
+    );
+  } catch {
+    return error("INVALID_IDENTITY_JWK", path);
+  }
+  if (
+    binary.length < 256 ||
+    binary.length > 512 ||
+    binary.charCodeAt(0) === 0 ||
+    (binary.charCodeAt(binary.length - 1) & 1) === 0
+  )
+    error("INVALID_IDENTITY_JWK", path);
+  const first = binary.charCodeAt(0);
+  const bitLength = (binary.length - 1) * 8 + (32 - Math.clz32(first));
+  if (
+    bitLength < 2048 ||
+    bitLength > 4096 ||
+    globalThis.btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "") !== text
+  )
+    error("INVALID_IDENTITY_JWK", path);
+  return text;
+}
+function decodeIdentityJWKAt(value: unknown, path: string): IdentityJWK {
+  const source = strictRecord(
+    value,
+    ["alg", "e", "key_ops", "kid", "kty", "n", "use"],
+    ["alg", "e", "key_ops", "kid", "kty", "n", "use"],
+    path,
+  );
+  if (
+    source.alg !== "RS256" ||
+    source.e !== "AQAB" ||
+    source.kty !== "RSA" ||
+    source.use !== "sig" ||
+    !Array.isArray(source.key_ops) ||
+    source.key_ops.length !== 1 ||
+    source.key_ops[0] !== "verify"
+  )
+    error("INVALID_IDENTITY_JWK", path);
+  return Object.freeze({
+    alg: "RS256",
+    e: "AQAB",
+    key_ops: Object.freeze(["verify"] as const),
+    kid: identityKID(source.kid, `${path}/kid`),
+    kty: "RSA",
+    n: identityModulus(source.n, `${path}/n`),
+    use: "sig",
+  });
+}
+export function decodeIdentityJWKS(value: unknown): IdentityJWKS {
+  const source = strictRecord(
+    value,
+    ["keys", "cloudAgentsAuthority"],
+    ["keys", "cloudAgentsAuthority"],
+  );
+  if (!Array.isArray(source.keys) || source.keys.length > 32)
+    error("INVALID_IDENTITY_JWKS", "/keys");
+  const keys = (source.keys as unknown[]).map((key, index) =>
+    decodeIdentityJWKAt(key, `/keys/${index}`),
+  );
+  if (new Set(keys.map(({ kid }) => kid)).size !== keys.length)
+    error("DUPLICATE_IDENTITY_KEY", "/keys");
+  const authority = strictRecord(
+    source.cloudAgentsAuthority,
+    ["issuer", "revision", "securityEpoch", "notBefore", "expiresAt", "lineage"],
+    ["issuer", "revision", "securityEpoch", "notBefore", "expiresAt", "lineage"],
+    "/cloudAgentsAuthority",
+  );
+  const notBefore = identityNumericDate(authority.notBefore, "/cloudAgentsAuthority/notBefore"),
+    expiresAt = identityNumericDate(authority.expiresAt, "/cloudAgentsAuthority/expiresAt");
+  if (expiresAt <= notBefore || expiresAt - notBefore > 86400)
+    error("INVALID_IDENTITY_JWKS_AUTHORITY", "/cloudAgentsAuthority");
+  if (
+    !Array.isArray(authority.lineage) ||
+    authority.lineage.length < 1 ||
+    authority.lineage.length > 32
+  )
+    error("INVALID_IDENTITY_JWKS_LINEAGE", "/cloudAgentsAuthority/lineage");
+  const lineage = (authority.lineage as unknown[]).map((entry, index): IdentityJWKSLineageKey => {
+    const path = `/cloudAgentsAuthority/lineage/${index}`;
+    const record = strictRecord(
+      entry,
+      ["jwk", "enabled", "notBefore", "notAfter"],
+      ["jwk", "enabled", "notBefore", "notAfter"],
+      path,
+    );
+    if (typeof record.enabled !== "boolean") error("INVALID_FIELD_TYPE", `${path}/enabled`);
+    const recordNotBefore = identityNumericDate(record.notBefore, `${path}/notBefore`),
+      notAfter = identityNumericDate(record.notAfter, `${path}/notAfter`);
+    if (notAfter <= recordNotBefore) error("INVALID_IDENTITY_JWKS_LINEAGE", path);
+    return Object.freeze({
+      jwk: decodeIdentityJWKAt(record.jwk, `${path}/jwk`),
+      enabled: record.enabled as boolean,
+      notBefore: recordNotBefore,
+      notAfter,
+    });
+  });
+  if (new Set(lineage.map(({ jwk }) => jwk.kid)).size !== lineage.length)
+    error("DUPLICATE_IDENTITY_KEY", "/cloudAgentsAuthority/lineage");
+  return Object.freeze({
+    keys: Object.freeze(keys),
+    cloudAgentsAuthority: Object.freeze({
+      issuer: absoluteURI(authority.issuer, "/cloudAgentsAuthority/issuer"),
+      revision: identityRevision(authority.revision, "/cloudAgentsAuthority/revision"),
+      securityEpoch: identityRevision(
+        authority.securityEpoch,
+        "/cloudAgentsAuthority/securityEpoch",
+      ),
+      notBefore,
+      expiresAt,
+      lineage: Object.freeze(lineage),
+    }),
+  });
+}
+export function parseIdentityJWKS(text: string): IdentityJWKS {
+  return decodeIdentityJWKS(parseStrictJSON(text));
+}
+export function encodeIdentityJWKS(value: IdentityJWKS): string {
+  return JSON.stringify(decodeIdentityJWKS(value));
+}
+
 export type FixtureRequest = Readonly<{
   method: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
@@ -12246,8 +13463,76 @@ export type FixtureTransport = (
 ) => Promise<FixtureResponse>;
 const maxHTTPResponseBytes = 2 * 1024 * 1024;
 const maxManagedAgentArtifactBytes = 16 * 1024 * 1024;
+function normalizedHTTPResponseHeaders(headers: Headers): Readonly<Record<string, string>> {
+  const normalized: Record<string, string> = Object.fromEntries(headers.entries());
+  const resourceVersion = headers.get("X-Resource-Version");
+  if (resourceVersion !== null) normalized["X-Resource-Version"] = resourceVersion;
+  return normalized;
+}
 export function createHTTPClient(baseURL: string, bearerToken: string): Client {
   return createAuthorizedHTTPClient(baseURL, `Bearer ${bearerToken}`, bearerToken);
+}
+export function createBrowserHTTPClient(baseURL: string, csrfProof: string): Client {
+  if (typeof baseURL !== "string" || typeof csrfProof !== "string")
+    throw new TypeError("invalid browser HTTP client configuration");
+  let endpoint: URL;
+  try {
+    endpoint = new URL(baseURL);
+  } catch {
+    throw new TypeError("invalid browser HTTP client configuration");
+  }
+  if (
+    baseURL.trim() !== baseURL ||
+    (endpoint.protocol !== "https:" &&
+      !(
+        endpoint.protocol === "http:" &&
+        (endpoint.hostname === "[::1]" || /^127(?:\.[0-9]{1,3}){3}$/u.test(endpoint.hostname))
+      )) ||
+    endpoint.host === "" ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.pathname !== "/" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== "" ||
+    baseURL.endsWith("/") ||
+    typeof globalThis.fetch !== "function"
+  )
+    throw new TypeError("invalid browser HTTP client configuration");
+  const checkedCSRF = csrfToken(csrfProof, "/X-CSRF-Token");
+  return new Client(async (request, signal) => {
+    if (!request.path.startsWith("/v1/") || /[\r\n]/u.test(request.path))
+      throw new TypeError("invalid browser HTTP request");
+    const headers = new Headers(request.headers);
+    if (headers.has("Authorization"))
+      throw new TypeError("browser HTTP client rejects Authorization");
+    headers.set("X-CSRF-Token", checkedCSRF);
+    if (request.body !== undefined) headers.set("Content-Type", "application/json");
+    const response = await globalThis.fetch(baseURL + request.path, {
+      method: request.method,
+      headers,
+      signal,
+      redirect: "manual",
+      credentials: "same-origin",
+      ...(request.body === undefined ? {} : { body: request.body }),
+    });
+    return controlPlaneResponse(request, response);
+  });
+}
+export function createIdentityServiceHTTPClient(
+  baseURL: string,
+  serviceToken: string,
+): IdentityServiceClient {
+  return new IdentityServiceClient(
+    createAuthorizedTransport(baseURL, `Bearer ${serviceToken}`, serviceToken),
+  );
+}
+export function createIdentityAuthorizationHTTPClient(
+  baseURL: string,
+  serviceToken: string,
+): IdentityAuthorizationClient {
+  return new IdentityAuthorizationClient(
+    createAuthorizedTransport(baseURL, `Bearer ${serviceToken}`, serviceToken),
+  );
 }
 export function createRemoteWorkerBootstrapHTTPClient(
   baseURL: string,
@@ -12266,6 +13551,13 @@ function createAuthorizedHTTPClient(
   authorization: string,
   credential: string,
 ): Client {
+  return new Client(createAuthorizedTransport(baseURL, authorization, credential));
+}
+function createAuthorizedTransport(
+  baseURL: string,
+  authorization: string,
+  credential: string,
+): FixtureTransport {
   if (typeof baseURL !== "string" || typeof credential !== "string")
     throw new TypeError("invalid Cloud Agents HTTP client configuration");
   let endpoint: URL;
@@ -12292,7 +13584,7 @@ function createAuthorizedHTTPClient(
     typeof globalThis.fetch !== "function"
   )
     throw new TypeError("invalid Cloud Agents HTTP client configuration");
-  return new Client(async (request, signal) => {
+  return async (request, signal) => {
     if (!request.path.startsWith("/") || /[\r\n]/u.test(request.path))
       throw new TypeError("invalid Cloud Agents HTTP request");
     const headers = new Headers(request.headers);
@@ -12305,21 +13597,25 @@ function createAuthorizedHTTPClient(
       redirect: "manual",
       ...(request.body === undefined ? {} : { body: request.body }),
     });
-    const responseHeaders: Record<string, string> = Object.fromEntries(response.headers.entries());
-    const resourceVersion = response.headers.get("X-Resource-Version");
-    if (resourceVersion !== null) responseHeaders["X-Resource-Version"] = resourceVersion;
-    const binary = request.responseType === "binary" && response.status === 200;
-    const data = await readHTTPResponseBytes(
-      response,
-      binary ? maxManagedAgentArtifactBytes : maxHTTPResponseBytes,
-    );
-    return {
-      status: response.status,
-      headers: responseHeaders,
-      body: binary ? "" : new TextDecoder().decode(data),
-      ...(binary ? { data } : {}),
-    };
-  });
+    return controlPlaneResponse(request, response);
+  };
+}
+async function controlPlaneResponse(
+  request: FixtureRequest,
+  response: Response,
+): Promise<FixtureResponse> {
+  const responseHeaders = normalizedHTTPResponseHeaders(response.headers);
+  const binary = request.responseType === "binary" && response.status === 200;
+  const data = await readHTTPResponseBytes(
+    response,
+    binary ? maxManagedAgentArtifactBytes : maxHTTPResponseBytes,
+  );
+  return {
+    status: response.status,
+    headers: responseHeaders,
+    body: binary ? "" : new TextDecoder().decode(data),
+    ...(binary ? { data } : {}),
+  };
 }
 async function readHTTPResponseBytes(response: Response, maximum: number): Promise<Uint8Array> {
   if (response.body === null) return new Uint8Array();
@@ -12349,6 +13645,63 @@ async function readHTTPResponseBytes(response: Response, maximum: number): Promi
     reader.releaseLock();
   }
 }
+function identityRequestID(): string {
+  if (typeof globalThis.crypto?.randomUUID !== "function")
+    throw new TypeError("secure random request IDs are unavailable");
+  return `web-${globalThis.crypto.randomUUID()}`;
+}
+export function createSessionHTTPClient(baseURL: string, csrfProof?: string): BrowserSessionClient {
+  if (typeof baseURL !== "string" || (csrfProof !== undefined && typeof csrfProof !== "string"))
+    throw new TypeError("invalid browser session HTTP client configuration");
+  let endpoint: URL;
+  try {
+    endpoint = new URL(baseURL);
+  } catch {
+    throw new TypeError("invalid browser session HTTP client configuration");
+  }
+  if (
+    baseURL.trim() !== baseURL ||
+    (endpoint.protocol !== "https:" &&
+      !(
+        endpoint.protocol === "http:" &&
+        (endpoint.hostname === "[::1]" || /^127(?:\.[0-9]{1,3}){3}$/u.test(endpoint.hostname))
+      )) ||
+    endpoint.host === "" ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.pathname !== "/" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== "" ||
+    baseURL.endsWith("/") ||
+    typeof globalThis.fetch !== "function"
+  )
+    throw new TypeError("invalid browser session HTTP client configuration");
+  const checkedCSRF = csrfProof === undefined ? undefined : csrfToken(csrfProof, "/X-CSRF-Token");
+  const transport: FixtureTransport = async (request, signal) => {
+    const allowedPath =
+      request.path.startsWith("/v1/identity/") ||
+      (request.method === "GET" && request.path === "/v1/auth/cli/request");
+    if (!allowedPath || /[\r\n]/u.test(request.path))
+      throw new TypeError("invalid browser session HTTP request");
+    const headers = new Headers(request.headers);
+    if (request.body !== undefined) headers.set("Content-Type", "application/json");
+    const response = await globalThis.fetch(baseURL + request.path, {
+      method: request.method,
+      headers,
+      signal,
+      redirect: "manual",
+      credentials: "same-origin",
+      ...(request.body === undefined ? {} : { body: request.body }),
+    });
+    const data = await readHTTPResponseBytes(response, maxHTTPResponseBytes);
+    return {
+      status: response.status,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: new TextDecoder().decode(data),
+    };
+  };
+  return new BrowserSessionClient(transport, checkedCSRF);
+}
 export class ClientError extends Error {
   constructor(
     readonly operation: string,
@@ -12363,6 +13716,1523 @@ export class ClientError extends Error {
     this.name = "ClientError";
   }
 }
+export class BrowserSessionClient {
+  constructor(
+    private readonly transport: FixtureTransport,
+    private readonly csrfProof?: string,
+  ) {
+    if (typeof transport !== "function") throw new TypeError("fixture transport is required");
+    if (csrfProof !== undefined) csrfToken(csrfProof, "/X-CSRF-Token");
+  }
+  async passwordLogin(body: PasswordLoginRequest, signal?: AbortSignal): Promise<BrowserSession> {
+    const checked = decodePasswordLoginRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/login/password",
+        headers: { "X-Request-ID": identityRequestID() },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityPasswordLogin", response);
+    return parseBrowserSession(response.body);
+  }
+  async getBrowserSession(signal?: AbortSignal): Promise<BrowserSession> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/session",
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetBrowserSession", response);
+    return parseBrowserSession(response.body);
+  }
+  async logoutBrowserSession(signal?: AbortSignal): Promise<void> {
+    const proof = csrfToken(this.csrfProof, "/X-CSRF-Token");
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: "/v1/identity/session",
+        headers: { "X-Request-ID": identityRequestID(), "X-CSRF-Token": proof },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityLogoutBrowserSession", response);
+  }
+  async getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
+    const response = await this.call(
+      { method: "GET", path: "/v1/identity/me", headers: { "X-Request-ID": identityRequestID() } },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetCurrentUser", response);
+    return parseCurrentUser(response.body);
+  }
+  async listBrowserTenants(
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserTenantPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identityTenantListPath(pageSize, pageToken),
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListBrowserTenants", response);
+    return parseBrowserTenantPage(response.body);
+  }
+  async getEmailSuffixPolicy(tenantId: string, signal?: AbortSignal): Promise<EmailSuffixPolicy> {
+    const path = identityEmailPolicyPath(tenantId);
+    const response = await this.call(
+      { method: "GET", path, headers: { "X-Request-ID": identityRequestID() } },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetEmailSuffixPolicy", response);
+    const value = parseEmailSuffixPolicy(response.body);
+    if (value.tenantId !== tenantId) error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async updateEmailSuffixPolicy(
+    tenantId: string,
+    body: EmailSuffixPolicyUpdate,
+    signal?: AbortSignal,
+  ): Promise<EmailSuffixPolicy> {
+    const path = identityEmailPolicyPath(tenantId),
+      proof = csrfToken(this.csrfProof, "/X-CSRF-Token"),
+      checked = decodeEmailSuffixPolicyUpdate(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path,
+        headers: { "X-Request-ID": identityRequestID(), "X-CSRF-Token": proof },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityUpdateEmailSuffixPolicy", response);
+    const value = parseEmailSuffixPolicy(response.body);
+    if (value.tenantId !== tenantId) error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async createInvitation(
+    tenantId: string,
+    body: InvitationCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<InvitationCreated> {
+    const path = identityInvitationPath(tenantId),
+      checked = decodeInvitationCreateRequest(body);
+    if (checked.scopeLevel === "tenant" && checked.scopeId !== tenantId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path,
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw this.problem("identityCreateInvitation", response);
+    const value = parseInvitationCreated(response.body);
+    if (value.invitation.tenantId !== tenantId) error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async listInvitations(
+    tenantId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<InvitationPage> {
+    integer(pageSize, 1, 200, "/pageSize");
+    const query = new URLSearchParams({ pageSize: String(pageSize) });
+    if (pageToken !== undefined && pageToken !== "")
+      query.set("pageToken", token(pageToken, "/pageToken"));
+    const response = await this.call(
+      {
+        method: "GET",
+        path: `${identityInvitationPath(tenantId)}?${query}`,
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListInvitations", response);
+    const value = parseInvitationPage(response.body);
+    if (value.invitations.some((invitation) => invitation.tenantId !== tenantId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async revokeInvitation(
+    tenantId: string,
+    invitationId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: identityInvitationPath(tenantId, invitationId),
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityRevokeInvitation", response);
+  }
+  async acceptInvitation(body: InvitationAcceptRequest, signal?: AbortSignal): Promise<void> {
+    const checked = decodeInvitationAcceptRequest(body),
+      headers = {
+        "X-Request-ID": identityRequestID(),
+        ...(this.csrfProof === undefined
+          ? {}
+          : { "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token") }),
+      };
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/invitations/accept",
+        headers,
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityAcceptInvitation", response);
+  }
+  async listIdentityAccounts(
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAccountPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath("/v1/identity/accounts", pageSize, pageToken),
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListAccounts", response);
+    return parseIdentityAccountPage(response.body);
+  }
+  async listTenantIdentityAccounts(
+    tenantId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAccountPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath(
+          `/v1/identity/tenants/${identifier(tenantId, "/tenantId")}/accounts`,
+          pageSize,
+          pageToken,
+        ),
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListTenantAccounts", response);
+    return parseIdentityAccountPage(response.body);
+  }
+  async disableIdentityAccount(userId: string, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/identity/accounts/${identifier(userId, "/userId")}/disable`,
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+        body: "{}",
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityDisableAccount", response);
+  }
+  async issuePasswordReset(userId: string, signal?: AbortSignal): Promise<PasswordResetCreated> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/identity/accounts/${identifier(userId, "/userId")}/password-reset`,
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+        body: "{}",
+      },
+      signal,
+    );
+    if (response.status !== 201) throw this.problem("identityIssuePasswordReset", response);
+    return parsePasswordResetCreated(response.body);
+  }
+  async changePassword(body: PasswordChangeRequest, signal?: AbortSignal): Promise<void> {
+    const checked = decodePasswordChangeRequest(body),
+      response = await this.call(
+        {
+          method: "PUT",
+          path: "/v1/identity/me/password",
+          headers: {
+            "X-Request-ID": identityRequestID(),
+            "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+          },
+          body: JSON.stringify(checked),
+        },
+        signal,
+      );
+    if (response.status !== 204) throw this.problem("identityChangePassword", response);
+  }
+  async acceptPasswordReset(body: PasswordResetAcceptRequest, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/password-resets/accept",
+        headers: { "X-Request-ID": identityRequestID() },
+        body: JSON.stringify(decodePasswordResetAcceptRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityAcceptPasswordReset", response);
+  }
+  async listIdentityAuditEvents(
+    tenantId: string | undefined,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAuditPage> {
+    const base =
+      tenantId === undefined
+        ? "/v1/identity/audit-events"
+        : `/v1/identity/tenants/${identifier(tenantId, "/tenantId")}/audit-events`;
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath(base, pageSize, pageToken),
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListAuditEvents", response);
+    return parseIdentityAuditPage(response.body);
+  }
+  async listControlPlaneAuditEvents(
+    tenantId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ControlPlaneAuditPage> {
+    const base = `/v1/identity/tenants/${identifier(tenantId, "/tenantId")}/control-plane-audit-events`;
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath(base, pageSize, pageToken),
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw this.problem("identityListControlPlaneAuditEvents", response);
+    return parseControlPlaneAuditPage(response.body);
+  }
+  async getCLIAuthorizationRequest(signal?: AbortSignal): Promise<CLIAuthorizationRequest> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/auth/cli/request",
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("getCLIAuthorizationRequest", response);
+    return decodeCLIAuthorizationRequest(parseStrictJSON(response.body));
+  }
+  async listLoginProviders(signal?: AbortSignal): Promise<LoginProviderPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/login/providers",
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListLoginProviders", response);
+    return decodeLoginProviderPage(parseStrictJSON(response.body));
+  }
+  async startProviderAuthorization(
+    body: ProviderAuthorizationRequest,
+    signal?: AbortSignal,
+  ): Promise<ProviderAuthorization> {
+    const checked = decodeProviderAuthorizationRequest(body),
+      headers: Record<string, string> = { "X-Request-ID": identityRequestID() };
+    if (checked.purpose === "reauth" || checked.purpose === "link")
+      headers["X-CSRF-Token"] = csrfToken(this.csrfProof, "/X-CSRF-Token");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/login/provider/start",
+        headers,
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityStartProviderAuthorization", response);
+    return decodeProviderAuthorization(parseStrictJSON(response.body));
+  }
+  async listLoginMethods(signal?: AbortSignal): Promise<LoginMethodList> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/me/login-methods",
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListLoginMethods", response);
+    return decodeLoginMethodList(parseStrictJSON(response.body));
+  }
+  async passwordReauthenticate(
+    body: PasswordReauthRequest,
+    signal?: AbortSignal,
+  ): Promise<Reauthentication> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/me/reauthenticate/password",
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+        body: JSON.stringify(decodePasswordReauthRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityPasswordReauthenticate", response);
+    return decodeReauthentication(parseStrictJSON(response.body));
+  }
+  async unlinkLoginMethod(methodId: string, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: `/v1/identity/me/login-methods/${identifier(methodId, "/loginMethodId")}`,
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityUnlinkLoginMethod", response);
+  }
+  async enablePassword(body: EnablePasswordRequest, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/me/password",
+        headers: {
+          "X-Request-ID": identityRequestID(),
+          "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+        },
+        body: JSON.stringify(decodeEnablePasswordRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityEnablePassword", response);
+  }
+  async listProviderClients(signal?: AbortSignal): Promise<ProviderClientPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/providers",
+        headers: { "X-Request-ID": identityRequestID() },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListProviderClients", response);
+    return decodeProviderClientPage(parseStrictJSON(response.body));
+  }
+  async updateProviderClient(
+    providerId: string,
+    application: IdentityApplication,
+    body: ProviderClientUpdate,
+    signal?: AbortSignal,
+  ): Promise<ProviderClient> {
+    const checkedApplication = enumValue(application, ["admin", "user"] as const, "/application"),
+      response = await this.call(
+        {
+          method: "PUT",
+          path: `/v1/identity/providers/${identifier(providerId, "/providerId")}/applications/${checkedApplication}`,
+          headers: {
+            "X-Request-ID": identityRequestID(),
+            "X-CSRF-Token": csrfToken(this.csrfProof, "/X-CSRF-Token"),
+          },
+          body: JSON.stringify(decodeProviderClientUpdate(body)),
+        },
+        signal,
+      );
+    if (response.status !== 200) throw this.problem("identityUpdateProviderClient", response);
+    const value = decodeProviderClient(parseStrictJSON(response.body));
+    if (value.providerId !== providerId || value.application !== checkedApplication)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "");
+    return value;
+  }
+  private async call(request: FixtureRequest, signal?: AbortSignal): Promise<FixtureResponse> {
+    const fallback = new AbortController();
+    return this.transport(request, signal ?? fallback.signal);
+  }
+  private problem(operation: string, response: FixtureResponse): ClientError {
+    try {
+      return new ClientError(operation, response.status, parseProblem(response.body));
+    } catch (cause) {
+      return new ClientError(operation, response.status, undefined, cause);
+    }
+  }
+}
+export class IdentityServiceClient {
+  constructor(private readonly transport: FixtureTransport) {
+    if (typeof transport !== "function") throw new TypeError("fixture transport is required");
+  }
+  async passwordLogin(
+    requestId: string,
+    clientIp: string,
+    body: PasswordLoginRequest,
+    signal?: AbortSignal,
+  ): Promise<IdentityLoginResult> {
+    identifier(requestId, "/X-Request-ID");
+    const checkedIP = clientIP(clientIp, "/X-Cloud-Agents-Client-IP");
+    const checked = decodePasswordLoginRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/login/password",
+        headers: { "X-Request-ID": requestId, "X-Cloud-Agents-Client-IP": checkedIP },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityPasswordLogin", response);
+    return Object.freeze({
+      session: parseBrowserSession(response.body),
+      sessionHandle: identitySessionHandle(response),
+    });
+  }
+  async getBrowserSession(
+    sessionHandle: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserSession> {
+    const headers = identitySessionHeaders(sessionHandle, requestId);
+    const response = await this.call(
+      { method: "GET", path: "/v1/identity/session", headers },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetBrowserSession", response);
+    return parseBrowserSession(response.body);
+  }
+  async logoutBrowserSession(
+    sessionHandle: string,
+    requestId: string,
+    csrfProof: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers = {
+      ...identitySessionHeaders(sessionHandle, requestId),
+      "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+    };
+    const response = await this.call(
+      { method: "DELETE", path: "/v1/identity/session", headers },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityLogoutBrowserSession", response);
+  }
+  async getCurrentUser(
+    sessionHandle: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<CurrentUser> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/me",
+        headers: identitySessionHeaders(sessionHandle, requestId),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetCurrentUser", response);
+    return parseCurrentUser(response.body);
+  }
+  async listBrowserTenants(
+    sessionHandle: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserTenantPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identityTenantListPath(pageSize, pageToken),
+        headers: identitySessionHeaders(sessionHandle, requestId),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListBrowserTenants", response);
+    return parseBrowserTenantPage(response.body);
+  }
+  async getEmailSuffixPolicy(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<EmailSuffixPolicy> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identityEmailPolicyPath(tenantId),
+        headers: identitySessionHeaders(sessionHandle, requestId),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityGetEmailSuffixPolicy", response);
+    const value = parseEmailSuffixPolicy(response.body);
+    if (value.tenantId !== tenantId) error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async updateEmailSuffixPolicy(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    csrfProof: string,
+    body: EmailSuffixPolicyUpdate,
+    signal?: AbortSignal,
+  ): Promise<EmailSuffixPolicy> {
+    const headers = {
+        ...identitySessionHeaders(sessionHandle, requestId),
+        "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+      },
+      checked = decodeEmailSuffixPolicyUpdate(body);
+    const response = await this.call(
+      {
+        method: "PUT",
+        path: identityEmailPolicyPath(tenantId),
+        headers,
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityUpdateEmailSuffixPolicy", response);
+    const value = parseEmailSuffixPolicy(response.body);
+    if (value.tenantId !== tenantId) error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    return value;
+  }
+  async issueTenantToken(
+    sessionHandle: string,
+    requestId: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    const session = token(sessionHandle, "/X-Cloud-Agents-Session");
+    identifier(requestId, "/X-Request-ID");
+    const checked = decodeTenantTokenIssueRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/tenant-token",
+        headers: { "X-Request-ID": requestId, "X-Cloud-Agents-Session": session },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityIssueTenantToken", response);
+    return parseTenantToken(response.body);
+  }
+  async checkTokenStatus(
+    requestId: string,
+    body: TokenStatusRequest,
+    signal?: AbortSignal,
+  ): Promise<TokenStatus> {
+    identifier(requestId, "/X-Request-ID");
+    const checked = decodeTokenStatusRequest(body);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/token-status",
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityCheckTokenStatus", response);
+    return parseTokenStatus(response.body);
+  }
+  async startCLIAuthorization(
+    requestId: string,
+    clientIp: string,
+    body: CLIAuthorizationStartRequest,
+    signal?: AbortSignal,
+  ): Promise<CLIAuthorization> {
+    identifier(requestId, "/X-Request-ID");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/cli/authorizations",
+        headers: {
+          "X-Request-ID": requestId,
+          "X-Cloud-Agents-Client-IP": clientIP(clientIp, "/X-Cloud-Agents-Client-IP"),
+        },
+        body: JSON.stringify(decodeCLIAuthorizationStartRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityStartCLIAuthorization", response);
+    return decodeCLIAuthorization(parseStrictJSON(response.body));
+  }
+  async approveCLIAuthorization(
+    sessionHandle: string,
+    authorizationId: string,
+    requestId: string,
+    csrfProof: string,
+    body: CLIAuthorizationApproveRequest,
+    signal?: AbortSignal,
+  ): Promise<CLIAuthorizationApproved> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/identity/cli/authorizations/${identifier(authorizationId, "/cliAuthorizationId")}/approve`,
+        headers: {
+          ...identitySessionHeaders(sessionHandle, requestId),
+          "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+        },
+        body: JSON.stringify(decodeCLIAuthorizationApproveRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityApproveCLIAuthorization", response);
+    return decodeCLIAuthorizationApproved(parseStrictJSON(response.body));
+  }
+  async exchangeCLIGrant(
+    requestId: string,
+    clientIp: string,
+    body: CLIGrantExchangeRequest,
+    signal?: AbortSignal,
+  ): Promise<CLIGrant> {
+    identifier(requestId, "/X-Request-ID");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/cli/grants/exchange",
+        headers: {
+          "X-Request-ID": requestId,
+          "X-Cloud-Agents-Client-IP": clientIP(clientIp, "/X-Cloud-Agents-Client-IP"),
+        },
+        body: JSON.stringify(decodeCLIGrantExchangeRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityExchangeCLIGrant", response);
+    return decodeCLIGrant(parseStrictJSON(response.body));
+  }
+  async listCLITenants(
+    requestId: string,
+    grant: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserTenantPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath("/v1/identity/cli/tenants", pageSize, pageToken),
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          "X-Cloud-Agents-CLI-Grant": cliProof(grant, "/X-Cloud-Agents-CLI-Grant"),
+        },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListCLITenants", response);
+    return parseBrowserTenantPage(response.body);
+  }
+  async issueCLITenantToken(
+    requestId: string,
+    grant: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    return this.issuePrincipalTenantToken(
+      "identityIssueCLITenantToken",
+      "/v1/identity/cli/tenant-token",
+      "X-Cloud-Agents-CLI-Grant",
+      requestId,
+      grant,
+      body,
+      signal,
+    );
+  }
+  async revokeCLIGrant(requestId: string, grant: string, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: "/v1/identity/cli/grant",
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          "X-Cloud-Agents-CLI-Grant": cliProof(grant, "/X-Cloud-Agents-CLI-Grant"),
+        },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityRevokeCLIGrant", response);
+  }
+  async issueAutomationTenantToken(
+    requestId: string,
+    credential: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    return this.issuePrincipalTenantToken(
+      "identityIssueAutomationTenantToken",
+      "/v1/identity/automation/tenant-token",
+      "X-Cloud-Agents-Automation-Credential",
+      requestId,
+      credential,
+      body,
+      signal,
+    );
+  }
+  private async issuePrincipalTenantToken(
+    operation: string,
+    path: string,
+    headerName: string,
+    requestId: string,
+    credential: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path,
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          [headerName]: cliProof(credential, `/${headerName}`),
+        },
+        body: JSON.stringify(decodeTenantTokenIssueRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem(operation, response);
+    return parseTenantToken(response.body);
+  }
+  private invitationClient(
+    sessionHandle: string,
+    requestId: string,
+    csrfProof?: string,
+  ): BrowserSessionClient {
+    const headers = identitySessionHeaders(sessionHandle, requestId);
+    return new BrowserSessionClient(
+      (request, signal) =>
+        this.transport({ ...request, headers: { ...request.headers, ...headers } }, signal),
+      csrfProof,
+    );
+  }
+  async createInvitation(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    csrfProof: string,
+    body: InvitationCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<InvitationCreated> {
+    return this.invitationClient(sessionHandle, requestId, csrfProof).createInvitation(
+      tenantId,
+      body,
+      signal,
+    );
+  }
+  async listInvitations(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<InvitationPage> {
+    return this.invitationClient(sessionHandle, requestId).listInvitations(
+      tenantId,
+      pageSize,
+      pageToken,
+      signal,
+    );
+  }
+  async revokeInvitation(
+    sessionHandle: string,
+    tenantId: string,
+    invitationId: string,
+    requestId: string,
+    csrfProof: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.invitationClient(sessionHandle, requestId, csrfProof).revokeInvitation(
+      tenantId,
+      invitationId,
+      signal,
+    );
+  }
+  async acceptInvitation(
+    sessionHandle: string | undefined,
+    requestId: string,
+    clientIp: string,
+    csrfProof: string | undefined,
+    body: InvitationAcceptRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    identifier(requestId, "/X-Request-ID");
+    const headers: Record<string, string> = {
+      "X-Request-ID": requestId,
+      "X-Cloud-Agents-Client-IP": clientIP(clientIp, "/X-Cloud-Agents-Client-IP"),
+    };
+    if (sessionHandle !== undefined && sessionHandle !== "") {
+      headers["X-Cloud-Agents-Session"] = token(sessionHandle, "/X-Cloud-Agents-Session");
+      headers["X-CSRF-Token"] = csrfToken(csrfProof, "/X-CSRF-Token");
+    }
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/invitations/accept",
+        headers,
+        body: JSON.stringify(decodeInvitationAcceptRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityAcceptInvitation", response);
+  }
+  async listIdentityAccounts(
+    sessionHandle: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAccountPage> {
+    return this.invitationClient(sessionHandle, requestId).listIdentityAccounts(
+      pageSize,
+      pageToken,
+      signal,
+    );
+  }
+  async listTenantIdentityAccounts(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAccountPage> {
+    return this.invitationClient(sessionHandle, requestId).listTenantIdentityAccounts(
+      tenantId,
+      pageSize,
+      pageToken,
+      signal,
+    );
+  }
+  async disableIdentityAccount(
+    sessionHandle: string,
+    userId: string,
+    requestId: string,
+    csrfProof: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.invitationClient(sessionHandle, requestId, csrfProof).disableIdentityAccount(
+      userId,
+      signal,
+    );
+  }
+  async issuePasswordReset(
+    sessionHandle: string,
+    userId: string,
+    requestId: string,
+    csrfProof: string,
+    signal?: AbortSignal,
+  ): Promise<PasswordResetCreated> {
+    return this.invitationClient(sessionHandle, requestId, csrfProof).issuePasswordReset(
+      userId,
+      signal,
+    );
+  }
+  async changePassword(
+    sessionHandle: string,
+    requestId: string,
+    csrfProof: string,
+    body: PasswordChangeRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.invitationClient(sessionHandle, requestId, csrfProof).changePassword(body, signal);
+  }
+  async acceptPasswordReset(
+    requestId: string,
+    clientIp: string,
+    body: PasswordResetAcceptRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    identifier(requestId, "/X-Request-ID");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/password-resets/accept",
+        headers: {
+          "X-Request-ID": requestId,
+          "X-Cloud-Agents-Client-IP": clientIP(clientIp, "/X-Cloud-Agents-Client-IP"),
+        },
+        body: JSON.stringify(decodePasswordResetAcceptRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityAcceptPasswordReset", response);
+  }
+  async listIdentityAuditEvents(
+    sessionHandle: string,
+    tenantId: string | undefined,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<IdentityAuditPage> {
+    return this.invitationClient(sessionHandle, requestId).listIdentityAuditEvents(
+      tenantId,
+      pageSize,
+      pageToken,
+      signal,
+    );
+  }
+  async listControlPlaneAuditEvents(
+    sessionHandle: string,
+    tenantId: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ControlPlaneAuditPage> {
+    return this.invitationClient(sessionHandle, requestId).listControlPlaneAuditEvents(
+      tenantId,
+      pageSize,
+      pageToken,
+      signal,
+    );
+  }
+  async listLoginProviders(requestId: string, signal?: AbortSignal): Promise<LoginProviderPage> {
+    identifier(requestId, "/X-Request-ID");
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/login/providers",
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListLoginProviders", response);
+    return decodeLoginProviderPage(parseStrictJSON(response.body));
+  }
+  async startProviderAuthorization(
+    sessionHandle: string | undefined,
+    requestId: string,
+    clientIp: string | undefined,
+    csrfProof: string | undefined,
+    reauthProof: string | undefined,
+    body: ProviderAuthorizationRequest,
+    signal?: AbortSignal,
+  ): Promise<ProviderAuthorizationResult> {
+    identifier(requestId, "/X-Request-ID");
+    const checked = decodeProviderAuthorizationRequest(body),
+      headers: Record<string, string> = { "X-Request-ID": requestId };
+    if (checked.purpose === "login") {
+      if (
+        sessionHandle !== undefined ||
+        clientIp !== undefined ||
+        csrfProof !== undefined ||
+        reauthProof !== undefined
+      )
+        error("INVALID_PROVIDER_AUTHORIZATION", "");
+    } else if (checked.purpose === "invitation") {
+      if (
+        sessionHandle !== undefined ||
+        clientIp === undefined ||
+        csrfProof !== undefined ||
+        reauthProof !== undefined
+      )
+        error("INVALID_PROVIDER_AUTHORIZATION", "");
+      headers["X-Cloud-Agents-Client-IP"] = clientIP(clientIp!, "/X-Cloud-Agents-Client-IP");
+    } else {
+      if (
+        sessionHandle === undefined ||
+        clientIp !== undefined ||
+        csrfProof === undefined ||
+        (checked.purpose === "link") !== (reauthProof !== undefined)
+      )
+        error("INVALID_PROVIDER_AUTHORIZATION", "");
+      Object.assign(headers, identitySessionHeaders(sessionHandle!, requestId), {
+        "X-CSRF-Token": csrfToken(csrfProof!, "/X-CSRF-Token"),
+      });
+      if (reauthProof !== undefined)
+        headers["X-Cloud-Agents-Reauthentication"] = privateProof(
+          reauthProof,
+          "/X-Cloud-Agents-Reauthentication",
+        );
+    }
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/login/provider/start",
+        headers,
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityStartProviderAuthorization", response);
+    return Object.freeze({
+      authorization: decodeProviderAuthorization(parseStrictJSON(response.body)),
+      state: privateResponseProof(response, "X-Cloud-Agents-OAuth-State"),
+    });
+  }
+  async completeProviderAuthorization(
+    requestId: string,
+    body: ProviderCallbackRequest,
+    signal?: AbortSignal,
+  ): Promise<ProviderCallbackResult> {
+    identifier(requestId, "/X-Request-ID");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/login/provider/callback",
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(decodeProviderCallbackRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw this.problem("identityCompleteProviderAuthorization", response);
+    const value = decodeProviderCallback(parseStrictJSON(response.body));
+    if (value.action === "login" || value.action === "invitation")
+      return Object.freeze({ ...value, sessionHandle: identitySessionHandle(response) });
+    if (value.action === "reauth")
+      return Object.freeze({
+        ...value,
+        reauthProof: privateResponseProof(response, "X-Cloud-Agents-Reauthentication"),
+        sessionHandle: identitySessionHandle(response),
+      });
+    if (value.action !== "link") return error("INVALID_PROVIDER_CALLBACK", "/action");
+    return Object.freeze({ action: "link", loginMethod: value.loginMethod });
+  }
+  async listLoginMethods(
+    sessionHandle: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<LoginMethodList> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/me/login-methods",
+        headers: identitySessionHeaders(sessionHandle, requestId),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListLoginMethods", response);
+    return decodeLoginMethodList(parseStrictJSON(response.body));
+  }
+  async passwordReauthenticate(
+    sessionHandle: string,
+    requestId: string,
+    csrfProof: string,
+    body: PasswordReauthRequest,
+    signal?: AbortSignal,
+  ): Promise<ReauthenticationResult> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/me/reauthenticate/password",
+        headers: {
+          ...identitySessionHeaders(sessionHandle, requestId),
+          "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+        },
+        body: JSON.stringify(decodePasswordReauthRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityPasswordReauthenticate", response);
+    return Object.freeze({
+      ...decodeReauthentication(parseStrictJSON(response.body)),
+      reauthProof: privateResponseProof(response, "X-Cloud-Agents-Reauthentication"),
+      sessionHandle: identitySessionHandle(response),
+    });
+  }
+  async unlinkLoginMethod(
+    sessionHandle: string,
+    methodId: string,
+    requestId: string,
+    csrfProof: string,
+    reauthProof: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: `/v1/identity/me/login-methods/${identifier(methodId, "/loginMethodId")}`,
+        headers: {
+          ...identitySessionHeaders(sessionHandle, requestId),
+          "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+          "X-Cloud-Agents-Reauthentication": privateProof(
+            reauthProof,
+            "/X-Cloud-Agents-Reauthentication",
+          ),
+        },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityUnlinkLoginMethod", response);
+  }
+  async enablePassword(
+    sessionHandle: string,
+    requestId: string,
+    csrfProof: string,
+    reauthProof: string,
+    body: EnablePasswordRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/identity/me/password",
+        headers: {
+          ...identitySessionHeaders(sessionHandle, requestId),
+          "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+          "X-Cloud-Agents-Reauthentication": privateProof(
+            reauthProof,
+            "/X-Cloud-Agents-Reauthentication",
+          ),
+        },
+        body: JSON.stringify(decodeEnablePasswordRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("identityEnablePassword", response);
+  }
+  async listProviderClients(
+    sessionHandle: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ProviderClientPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: "/v1/identity/providers",
+        headers: identitySessionHeaders(sessionHandle, requestId),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("identityListProviderClients", response);
+    return decodeProviderClientPage(parseStrictJSON(response.body));
+  }
+  async updateProviderClient(
+    sessionHandle: string,
+    providerId: string,
+    application: IdentityApplication,
+    requestId: string,
+    csrfProof: string,
+    body: ProviderClientUpdate,
+    signal?: AbortSignal,
+  ): Promise<ProviderClient> {
+    const checkedApplication = enumValue(application, ["admin", "user"] as const, "/application"),
+      response = await this.call(
+        {
+          method: "PUT",
+          path: `/v1/identity/providers/${identifier(providerId, "/providerId")}/applications/${checkedApplication}`,
+          headers: {
+            ...identitySessionHeaders(sessionHandle, requestId),
+            "X-CSRF-Token": csrfToken(csrfProof, "/X-CSRF-Token"),
+          },
+          body: JSON.stringify(decodeProviderClientUpdate(body)),
+        },
+        signal,
+      );
+    if (response.status !== 200) throw this.problem("identityUpdateProviderClient", response);
+    const value = decodeProviderClient(parseStrictJSON(response.body));
+    if (value.providerId !== providerId || value.application !== checkedApplication)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "");
+    return value;
+  }
+  private async call(request: FixtureRequest, signal?: AbortSignal): Promise<FixtureResponse> {
+    const fallback = new AbortController();
+    return this.transport(request, signal ?? fallback.signal);
+  }
+  private problem(operation: string, response: FixtureResponse): ClientError {
+    try {
+      return new ClientError(operation, response.status, parseProblem(response.body));
+    } catch (cause) {
+      return new ClientError(operation, response.status, undefined, cause);
+    }
+  }
+}
+export class IdentityAuthorizationClient {
+  constructor(private readonly transport: FixtureTransport) {
+    if (typeof transport !== "function") throw new TypeError("fixture transport is required");
+  }
+  async authorizeTenantToken(
+    requestId: string,
+    body: TenantTokenAuthorizationRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantTokenAuthorization> {
+    identifier(requestId, "/X-Request-ID");
+    const checked = decodeTenantTokenAuthorizationRequest(body);
+    const fallback = new AbortController();
+    const response = await this.transport(
+      {
+        method: "POST",
+        path: "/v1/identity/authorize-tenant-token",
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(checked),
+      },
+      signal ?? fallback.signal,
+    );
+    if (response.status !== 200) {
+      try {
+        throw new ClientError(
+          "identityAuthorizeTenantToken",
+          response.status,
+          parseProblem(response.body),
+        );
+      } catch (cause) {
+        if (cause instanceof ClientError) throw cause;
+        throw new ClientError("identityAuthorizeTenantToken", response.status, undefined, cause);
+      }
+    }
+    const result = parseTenantTokenAuthorization(response.body);
+    if (
+      result.application !== checked.application ||
+      result.tenantId !== checked.tenantId ||
+      result.projectId !== checked.projectId
+    )
+      error("IDENTITY_AUTHORIZATION_MISMATCH", "");
+    return result;
+  }
+  async authorizePrincipalToken(
+    requestId: string,
+    body: PrincipalTokenAuthorizationRequest,
+    signal?: AbortSignal,
+  ): Promise<PrincipalTokenAuthorization> {
+    identifier(requestId, "/X-Request-ID");
+    const checked = decodePrincipalTokenAuthorizationRequest(body),
+      fallback = new AbortController(),
+      response = await this.transport(
+        {
+          method: "POST",
+          path: "/v1/identity/authorize-principal-token",
+          headers: { "X-Request-ID": requestId },
+          body: JSON.stringify(checked),
+        },
+        signal ?? fallback.signal,
+      );
+    if (response.status !== 200) {
+      try {
+        throw new ClientError(
+          "identityAuthorizePrincipalToken",
+          response.status,
+          parseProblem(response.body),
+        );
+      } catch (cause) {
+        if (cause instanceof ClientError) throw cause;
+        throw new ClientError("identityAuthorizePrincipalToken", response.status, undefined, cause);
+      }
+    }
+    const result = decodePrincipalTokenAuthorization(parseStrictJSON(response.body));
+    if (
+      result.application !== checked.application ||
+      result.tenantId !== checked.tenantId ||
+      result.projectId !== checked.projectId
+    )
+      error("IDENTITY_AUTHORIZATION_MISMATCH", "");
+    return result;
+  }
+}
+
+// CLIIdentityClient targets only the public Web BFF CLI facade. Its transport
+// owns either no Authorization header (start/exchange) or one CLI grant.
+export class CLIIdentityClient {
+  constructor(private readonly transport: FixtureTransport) {
+    if (typeof transport !== "function") throw new TypeError("fixture transport is required");
+  }
+  async startLogin(
+    requestId: string,
+    body: CLIAuthorizationStartRequest,
+    signal?: AbortSignal,
+  ): Promise<CLILogin> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/auth/cli/start",
+        headers: { "X-Request-ID": identifier(requestId, "/X-Request-ID") },
+        body: JSON.stringify(decodeCLIAuthorizationStartRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("startCLILogin", response);
+    return decodeCLILogin(parseStrictJSON(response.body));
+  }
+  async exchangeGrant(
+    requestId: string,
+    body: CLIGrantExchangeRequest,
+    signal?: AbortSignal,
+  ): Promise<CLIGrant> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/auth/cli/exchange",
+        headers: { "X-Request-ID": identifier(requestId, "/X-Request-ID") },
+        body: JSON.stringify(decodeCLIGrantExchangeRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("exchangeCLIGrant", response);
+    return decodeCLIGrant(parseStrictJSON(response.body));
+  }
+  async listTenants(
+    requestId: string,
+    grant: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserTenantPage> {
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath("/v1/auth/cli/tenants", pageSize, pageToken),
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          Authorization: `Bearer ${privateProof(grant, "/Authorization")}`,
+        },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("listCLITenants", response);
+    return parseBrowserTenantPage(response.body);
+  }
+  async issueTenantToken(
+    requestId: string,
+    grant: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/auth/cli/tenant-token",
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          Authorization: `Bearer ${privateProof(grant, "/Authorization")}`,
+        },
+        body: JSON.stringify(decodeTenantTokenIssueRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("issueCLITenantToken", response);
+    return parseTenantToken(response.body);
+  }
+  async issueAutomationTenantToken(
+    requestId: string,
+    credential: string,
+    body: TenantTokenIssueRequest,
+    signal?: AbortSignal,
+  ): Promise<TenantToken> {
+    const response = await this.call(
+      {
+        method: "POST",
+        path: "/v1/auth/automation/tenant-token",
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          Authorization: `Bearer ${privateProof(credential, "/Authorization")}`,
+        },
+        body: JSON.stringify(decodeTenantTokenIssueRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200) throw this.problem("issueAutomationTenantToken", response);
+    return parseTenantToken(response.body);
+  }
+  async revokeGrant(requestId: string, grant: string, signal?: AbortSignal): Promise<void> {
+    const response = await this.call(
+      {
+        method: "DELETE",
+        path: "/v1/auth/cli/grant",
+        headers: {
+          "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+          Authorization: `Bearer ${privateProof(grant, "/Authorization")}`,
+        },
+      },
+      signal,
+    );
+    if (response.status !== 204) throw this.problem("revokeCLIGrant", response);
+  }
+  private async call(request: FixtureRequest, signal?: AbortSignal): Promise<FixtureResponse> {
+    const fallback = new AbortController();
+    return this.transport(request, signal ?? fallback.signal);
+  }
+  private problem(operation: string, response: FixtureResponse): ClientError {
+    try {
+      return new ClientError(operation, response.status, parseProblem(response.body));
+    } catch (cause) {
+      return new ClientError(operation, response.status, undefined, cause);
+    }
+  }
+}
+function identitySessionHeaders(
+  sessionHandle: string,
+  requestId: string,
+): Readonly<Record<string, string>> {
+  return Object.freeze({
+    "X-Request-ID": identifier(requestId, "/X-Request-ID"),
+    "X-Cloud-Agents-Session": token(sessionHandle, "/X-Cloud-Agents-Session"),
+  });
+}
+function identityTenantListPath(pageSize: number, pageToken?: string): string {
+  integer(pageSize, 1, 200, "/pageSize");
+  const query = new URLSearchParams({ pageSize: String(pageSize) });
+  if (pageToken !== undefined && pageToken !== "")
+    query.set("pageToken", token(pageToken, "/pageToken"));
+  return `/v1/identity/me/tenants?${query.toString()}`;
+}
+function identityEmailPolicyPath(tenantId: string): string {
+  return `/v1/identity/tenants/${identifier(tenantId, "/tenantId")}/email-policy`;
+}
+function identitySecurityPagePath(base: string, pageSize: number, pageToken?: string): string {
+  integer(pageSize, 1, 200, "/pageSize");
+  const query = new URLSearchParams({ pageSize: String(pageSize) });
+  if (pageToken !== undefined && pageToken !== "")
+    query.set("pageToken", token(pageToken, "/pageToken"));
+  return `${base}?${query.toString()}`;
+}
+function identitySessionHandle(response: FixtureResponse): string {
+  const value =
+    response.headers["X-Cloud-Agents-Session"] ?? response.headers["x-cloud-agents-session"];
+  if (value === undefined) error("SESSION_HANDLE_MISSING", "/X-Cloud-Agents-Session");
+  return token(value, "/X-Cloud-Agents-Session");
+}
+function privateProof(value: unknown, path: string): string {
+  const proof = token(value, path);
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(proof)) error("INVALID_PRIVATE_PROOF", path);
+  return proof;
+}
+function privateResponseProof(
+  response: FixtureResponse,
+  name: "X-Cloud-Agents-OAuth-State" | "X-Cloud-Agents-Reauthentication",
+): string {
+  const value = response.headers[name] ?? response.headers[name.toLowerCase()];
+  if (value === undefined) error("PRIVATE_PROOF_MISSING", `/${name}`);
+  return privateProof(value, `/${name}`);
+}
 export class Client {
   constructor(private readonly transport: FixtureTransport) {
     if (typeof transport !== "function") throw new TypeError("fixture transport is required");
@@ -12374,24 +15244,15 @@ export class Client {
     body: ProjectCreateRequest,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope<Project>> {
-    validatePath(tenantId, requestId);
-    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
-      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/tenants/${tenantId}/projects`,
-        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
-        body: encodeProjectCreateRequest(body),
-      },
+    return this.createProjectAt(
+      `/v1/tenants/${tenantId}/projects`,
+      "managedAgentCreateProject",
+      tenantId,
+      requestId,
+      idempotencyKey,
+      body,
       signal,
     );
-    if (response.status !== 201) throw await this.problem("managedAgentCreateProject", response);
-    const result = parseProject(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (result.value.metadata.tenantRef.id !== tenantId || result.value.metadata.name !== body.name)
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
   }
   async createManagedAgentSession(
     tenantId: string,
@@ -13234,6 +16095,27 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/projects");
     return result;
   }
+  async listMyProjects(
+    tenantId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ProjectPage>> {
+    return this.managementPage(
+      `/v1/tenants/${tenantId}/my-projects`,
+      "managedAgentListMyProjects",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      undefined,
+      parseProjectPage,
+      (page) => page.projects.every(({ metadata }) => metadata.tenantRef.id === tenantId),
+      "/projects",
+      signal,
+    );
+  }
   async getOrganization(
     tenantId: string,
     organizationId: string,
@@ -13285,27 +16167,14 @@ export class Client {
     body: OrganizationCreateRequest,
     signal?: AbortSignal,
   ): Promise<ResponseEnvelope<Organization>> {
-    validatePath(tenantId, requestId);
-    const response = await this.call(
-      {
-        method: "POST",
-        path: `/v1/tenants/${tenantId}/organizations`,
-        headers: { "X-Request-ID": requestId },
-        body: encodeOrganizationCreateRequest(body),
-      },
+    return this.createOrganizationAt(
+      `/v1/tenants/${tenantId}/organizations`,
+      "managedAgentCreateOrganization",
+      tenantId,
+      requestId,
+      body,
       signal,
     );
-    if (response.status !== 201)
-      throw await this.problem("managedAgentCreateOrganization", response);
-    const result = parseOrganization(response.body);
-    requireVersion(response, result.value.metadata.resourceVersion);
-    if (
-      result.value.metadata.tenantRef.id !== tenantId ||
-      result.value.metadata.uid !== body.organizationId ||
-      result.value.metadata.name !== body.name
-    )
-      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
-    return result;
   }
   async getPlatformTenant(
     tenantId: string,
@@ -13453,6 +16322,457 @@ export class Client {
     if (result.value.roleBindings.some(({ metadata }) => metadata.tenantRef.id !== tenantId))
       error("PATH_BODY_AUTHORITY_MISMATCH", "/roleBindings");
     return result;
+  }
+  async getAdminPlatformTenant(
+    tenantId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<PlatformTenant>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}`,
+      tenantId,
+      tenantId,
+      requestId,
+      "adminGetPlatformTenant",
+      parsePlatformTenant,
+      signal,
+    );
+  }
+  async getAdminOrganization(
+    tenantId: string,
+    organizationId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Organization>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}/organizations/${organizationId}`,
+      tenantId,
+      organizationId,
+      requestId,
+      "adminGetOrganization",
+      parseOrganization,
+      signal,
+    );
+  }
+  async listAdminOrganizations(
+    tenantId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<OrganizationPage>> {
+    return this.managementPage(
+      `/v1/admin/tenants/${tenantId}/organizations`,
+      "adminListOrganizations",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      undefined,
+      parseOrganizationPage,
+      (page) => page.organizations.every(({ metadata }) => metadata.tenantRef.id === tenantId),
+      "/organizations",
+      signal,
+    );
+  }
+  async createAdminOrganization(
+    tenantId: string,
+    requestId: string,
+    body: OrganizationCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Organization>> {
+    return this.createOrganizationAt(
+      `/v1/admin/tenants/${tenantId}/organizations`,
+      "adminCreateOrganization",
+      tenantId,
+      requestId,
+      body,
+      signal,
+    );
+  }
+  async getAdminProject(
+    tenantId: string,
+    projectId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Project>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}/projects/${projectId}`,
+      tenantId,
+      projectId,
+      requestId,
+      "adminGetProject",
+      parseProject,
+      signal,
+    );
+  }
+  async listAdminProjects(
+    tenantId: string,
+    organizationId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<ProjectPage>> {
+    identifier(organizationId, "/organizationId");
+    return this.managementPage(
+      `/v1/admin/tenants/${tenantId}/projects`,
+      "adminListProjects",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      { organizationId },
+      parseProjectPage,
+      (page) =>
+        page.projects.every(
+          ({ metadata, spec }) =>
+            metadata.tenantRef.id === tenantId && spec.organizationRef.id === organizationId,
+        ),
+      "/projects",
+      signal,
+    );
+  }
+  async createAdminProject(
+    tenantId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: ProjectCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Project>> {
+    return this.createProjectAt(
+      `/v1/admin/tenants/${tenantId}/projects`,
+      "adminCreateProject",
+      tenantId,
+      requestId,
+      idempotencyKey,
+      body,
+      signal,
+    );
+  }
+  async getAdminMembership(
+    tenantId: string,
+    membershipId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Membership>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}/memberships/${membershipId}`,
+      tenantId,
+      membershipId,
+      requestId,
+      "adminGetMembership",
+      parseMembership,
+      signal,
+    );
+  }
+  async listAdminMemberships(
+    tenantId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<MembershipPage>> {
+    return this.managementPage(
+      `/v1/admin/tenants/${tenantId}/memberships`,
+      "adminListMemberships",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      undefined,
+      parseMembershipPage,
+      (page) => page.memberships.every(({ metadata }) => metadata.tenantRef.id === tenantId),
+      "/memberships",
+      signal,
+    );
+  }
+  async createAdminMembership(
+    tenantId: string,
+    requestId: string,
+    body: MembershipCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/memberships`,
+      tenantId,
+      undefined,
+      requestId,
+      "adminCreateMembership",
+      201,
+      encodeMembershipCreateRequest(body),
+      signal,
+    );
+  }
+  async createAdminServiceAccount(
+    tenantId: string,
+    requestId: string,
+    body: ServiceAccountCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ServiceAccountCreated> {
+    validatePath(tenantId, requestId);
+    const checked = decodeServiceAccountCreateRequest(body);
+    if (checked.scopeLevel === "tenant" && checked.scopeId !== tenantId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId");
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/service-accounts`,
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(checked),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem("adminCreateServiceAccount", response);
+    const value = decodeServiceAccountCreated(parseStrictJSON(response.body));
+    if (value.serviceAccount.tenantId !== tenantId)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId");
+    requireVersion(response, value.serviceAccount.resourceVersion);
+    return value;
+  }
+  async listAdminServiceAccounts(
+    tenantId: string,
+    requestId: string,
+    pageSize: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ServiceAccountPage> {
+    validatePath(tenantId, requestId);
+    const response = await this.call(
+      {
+        method: "GET",
+        path: identitySecurityPagePath(
+          `/v1/admin/tenants/${tenantId}/service-accounts`,
+          pageSize,
+          pageToken,
+        ),
+        headers: { "X-Request-ID": requestId },
+      },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem("adminListServiceAccounts", response);
+    const value = decodeServiceAccountPage(parseStrictJSON(response.body));
+    if (value.serviceAccounts.some((account) => account.tenantId !== tenantId))
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/serviceAccounts");
+    return value;
+  }
+  async rotateAdminServiceAccountCredential(
+    tenantId: string,
+    serviceAccountId: string,
+    requestId: string,
+    body: ServiceAccountRotateRequest,
+    signal?: AbortSignal,
+  ): Promise<ServiceAccountRotated> {
+    validatePath(tenantId, requestId);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/service-accounts/${identifier(serviceAccountId, "/serviceAccountId")}:rotate-credential`,
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(decodeServiceAccountRotateRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 200)
+      throw await this.problem("adminRotateServiceAccountCredential", response);
+    const value = decodeServiceAccountRotated(parseStrictJSON(response.body));
+    requireVersion(response, value.resourceVersion);
+    return value;
+  }
+  async disableAdminServiceAccount(
+    tenantId: string,
+    serviceAccountId: string,
+    requestId: string,
+    body: ServiceAccountDisableRequest,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    validatePath(tenantId, requestId);
+    const response = await this.call(
+      {
+        method: "POST",
+        path: `/v1/admin/tenants/${tenantId}/service-accounts/${identifier(serviceAccountId, "/serviceAccountId")}:disable`,
+        headers: { "X-Request-ID": requestId },
+        body: JSON.stringify(decodeServiceAccountDisableRequest(body)),
+      },
+      signal,
+    );
+    if (response.status !== 204) throw await this.problem("adminDisableServiceAccount", response);
+    const version = response.headers["X-Resource-Version"];
+    if (version === undefined) error("RESOURCE_VERSION_MISMATCH", "/X-Resource-Version");
+    return identityRevision(version, "/X-Resource-Version");
+  }
+  async resumeAdminMembership(
+    tenantId: string,
+    membershipId: string,
+    requestId: string,
+    body: MembershipTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    identifier(membershipId, "/membershipId");
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/memberships/${membershipId}:resume`,
+      tenantId,
+      membershipId,
+      requestId,
+      "adminResumeMembership",
+      200,
+      encodeMembershipTransitionRequest(body),
+      signal,
+    );
+  }
+  async suspendAdminMembership(
+    tenantId: string,
+    membershipId: string,
+    requestId: string,
+    body: MembershipTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    identifier(membershipId, "/membershipId");
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/memberships/${membershipId}:suspend`,
+      tenantId,
+      membershipId,
+      requestId,
+      "adminSuspendMembership",
+      200,
+      encodeMembershipTransitionRequest(body),
+      signal,
+    );
+  }
+  async revokeAdminMembership(
+    tenantId: string,
+    membershipId: string,
+    requestId: string,
+    body: MembershipTransitionRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    identifier(membershipId, "/membershipId");
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/memberships/${membershipId}:revoke`,
+      tenantId,
+      membershipId,
+      requestId,
+      "adminRevokeMembership",
+      200,
+      encodeMembershipTransitionRequest(body),
+      signal,
+    );
+  }
+  async getAdminRole(
+    tenantId: string,
+    roleId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Role>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}/roles/${roleId}`,
+      tenantId,
+      roleId,
+      requestId,
+      "adminGetRole",
+      parseRole,
+      signal,
+    );
+  }
+  async listAdminRoles(
+    tenantId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RolePage>> {
+    return this.managementPage(
+      `/v1/admin/tenants/${tenantId}/roles`,
+      "adminListRoles",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      undefined,
+      parseRolePage,
+      (page) => page.roles.every(({ metadata }) => metadata.tenantRef.id === tenantId),
+      "/roles",
+      signal,
+    );
+  }
+  async getAdminRoleBinding(
+    tenantId: string,
+    roleBindingId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RoleBinding>> {
+    return this.get(
+      `/v1/admin/tenants/${tenantId}/role-bindings/${roleBindingId}`,
+      tenantId,
+      roleBindingId,
+      requestId,
+      "adminGetRoleBinding",
+      parseRoleBinding,
+      signal,
+    );
+  }
+  async listAdminRoleBindings(
+    tenantId: string,
+    requestId: string,
+    pageSize?: number,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RoleBindingPage>> {
+    return this.managementPage(
+      `/v1/admin/tenants/${tenantId}/role-bindings`,
+      "adminListRoleBindings",
+      tenantId,
+      requestId,
+      pageSize,
+      pageToken,
+      undefined,
+      parseRoleBindingPage,
+      (page) => page.roleBindings.every(({ metadata }) => metadata.tenantRef.id === tenantId),
+      "/roleBindings",
+      signal,
+    );
+  }
+  async bindAdminRole(
+    tenantId: string,
+    requestId: string,
+    body: RoleBindingCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/role-bindings`,
+      tenantId,
+      undefined,
+      requestId,
+      "adminBindRole",
+      201,
+      encodeRoleBindingCreateRequest(body),
+      signal,
+    );
+  }
+  async revokeAdminRoleBinding(
+    tenantId: string,
+    roleBindingId: string,
+    requestId: string,
+    body: RoleBindingRevokeRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<RBACMutationResult>> {
+    validatePath(tenantId, requestId);
+    identifier(roleBindingId, "/roleBindingId");
+    return this.mutate(
+      `/v1/admin/tenants/${tenantId}/role-bindings/${roleBindingId}:revoke`,
+      tenantId,
+      roleBindingId,
+      requestId,
+      "adminRevokeRoleBinding",
+      200,
+      encodeRoleBindingRevokeRequest(body),
+      signal,
+    );
   }
   async listAdminDeniedWriteEvents(
     tenantId: string,
@@ -16481,6 +19801,92 @@ export class Client {
       error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
     return result;
   }
+  private async managementPage<T>(
+    basePath: string,
+    operation: string,
+    tenantId: string,
+    requestId: string,
+    pageSize: number | undefined,
+    pageToken: string | undefined,
+    extraQuery: Readonly<Record<string, string>> | undefined,
+    decode: (text: string) => ResponseEnvelope<T>,
+    valid: (page: T) => boolean,
+    pointer: string,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<T>> {
+    validatePath(tenantId, requestId);
+    if (pageSize !== undefined) integer(pageSize, 1, 200, "/pageSize");
+    if (pageToken !== undefined && pageToken !== "") token(pageToken, "/pageToken");
+    const query = new URLSearchParams(extraQuery);
+    if (pageSize !== undefined) query.set("pageSize", String(pageSize));
+    if (pageToken !== undefined && pageToken !== "") query.set("pageToken", pageToken);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const response = await this.call(
+      { method: "GET", path: `${basePath}${suffix}`, headers: { "X-Request-ID": requestId } },
+      signal,
+    );
+    if (response.status !== 200) throw await this.problem(operation, response);
+    const result = decode(response.body);
+    if (!valid(result.value)) error("PATH_BODY_AUTHORITY_MISMATCH", pointer);
+    return result;
+  }
+  private async createOrganizationAt(
+    path: string,
+    operation: string,
+    tenantId: string,
+    requestId: string,
+    body: OrganizationCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Organization>> {
+    validatePath(tenantId, requestId);
+    const response = await this.call(
+      {
+        method: "POST",
+        path,
+        headers: { "X-Request-ID": requestId },
+        body: encodeOrganizationCreateRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem(operation, response);
+    const result = parseOrganization(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (
+      result.value.metadata.tenantRef.id !== tenantId ||
+      result.value.metadata.uid !== body.organizationId ||
+      result.value.metadata.name !== body.name
+    )
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
+  private async createProjectAt(
+    path: string,
+    operation: string,
+    tenantId: string,
+    requestId: string,
+    idempotencyKey: string,
+    body: ProjectCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ResponseEnvelope<Project>> {
+    validatePath(tenantId, requestId);
+    if (!/^[A-Za-z0-9._~-]{16,128}$/u.test(idempotencyKey))
+      error("INVALID_IDEMPOTENCY_KEY", "/Idempotency-Key");
+    const response = await this.call(
+      {
+        method: "POST",
+        path,
+        headers: { "X-Request-ID": requestId, "Idempotency-Key": idempotencyKey },
+        body: encodeProjectCreateRequest(body),
+      },
+      signal,
+    );
+    if (response.status !== 201) throw await this.problem(operation, response);
+    const result = parseProject(response.body);
+    requireVersion(response, result.value.metadata.resourceVersion);
+    if (result.value.metadata.tenantRef.id !== tenantId || result.value.metadata.name !== body.name)
+      error("PATH_BODY_AUTHORITY_MISMATCH", "/metadata");
+    return result;
+  }
   private async mutate(
     path: string,
     tenantId: string,
@@ -17061,4 +20467,633 @@ function assertNoDuplicateKeys(text: string): void {
   value();
   whitespace();
   if (index !== text.length) error("TRAILING_JSON", "");
+}
+
+export type InvitationCreateRequest = Readonly<{
+  email: string;
+  roleName: string;
+  scopeLevel: "tenant" | "organization" | "project";
+  scopeId: string;
+  verification: "admin-attested" | "provider-required";
+}>;
+export type Invitation = InvitationCreateRequest &
+  Readonly<{
+    id: string;
+    tenantId: string;
+    state: "pending" | "accepted" | "revoked" | "expired";
+    createdAt: string;
+    expiresAt: string;
+  }>;
+export type InvitationCreated = Readonly<{ invitation: Invitation; invitationCode: string }>;
+export type InvitationPage = Readonly<{
+  invitations: readonly Invitation[];
+  nextPageToken?: string;
+}>;
+export type InvitationAcceptRequest = Readonly<{
+  invitationCode: string;
+  password?: string;
+  displayName?: string;
+}>;
+function invitationCode(value: unknown): string {
+  const code = string(value, "/invitationCode");
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(code)) error("INVALID_INVITATION_CODE", "/invitationCode");
+  return code;
+}
+function invitationFields(source: Record<string, unknown>): InvitationCreateRequest {
+  const address = email(source.email, "/email");
+  if (new TextEncoder().encode(address).length > 254) error("INVALID_EMAIL", "/email");
+  const roleName = boundedString(source.roleName, 1, 128, "/roleName");
+  if (!/^[a-z][a-z0-9.-]*$/u.test(roleName)) error("INVALID_ROLE", "/roleName");
+  return Object.freeze({
+    email: address,
+    roleName,
+    scopeLevel: enumValue(
+      source.scopeLevel,
+      ["tenant", "organization", "project"] as const,
+      "/scopeLevel",
+    ),
+    scopeId: identifier(source.scopeId, "/scopeId"),
+    verification: enumValue(
+      source.verification,
+      ["admin-attested", "provider-required"] as const,
+      "/verification",
+    ),
+  });
+}
+export function decodeInvitationCreateRequest(value: unknown): InvitationCreateRequest {
+  return invitationFields(
+    strictRecord(
+      value,
+      ["email", "roleName", "scopeLevel", "scopeId", "verification"],
+      ["email", "roleName", "scopeLevel", "scopeId", "verification"],
+    ),
+  );
+}
+export function decodeInvitation(value: unknown): Invitation {
+  const source = strictRecord(
+    value,
+    [
+      "id",
+      "tenantId",
+      "email",
+      "roleName",
+      "scopeLevel",
+      "scopeId",
+      "verification",
+      "state",
+      "createdAt",
+      "expiresAt",
+    ],
+    [
+      "id",
+      "tenantId",
+      "email",
+      "roleName",
+      "scopeLevel",
+      "scopeId",
+      "verification",
+      "state",
+      "createdAt",
+      "expiresAt",
+    ],
+  );
+  const fields = invitationFields(source),
+    tenantId = identifier(source.tenantId, "/tenantId");
+  if (fields.scopeLevel === "tenant" && fields.scopeId !== tenantId)
+    error("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId");
+  return Object.freeze({
+    ...fields,
+    id: identifier(source.id, "/id"),
+    tenantId,
+    state: enumValue(
+      source.state,
+      ["pending", "accepted", "revoked", "expired"] as const,
+      "/state",
+    ),
+    createdAt: dateTime(source.createdAt, "/createdAt"),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeInvitationCreated(value: unknown): InvitationCreated {
+  const source = strictRecord(
+    value,
+    ["invitation", "invitationCode"],
+    ["invitation", "invitationCode"],
+  );
+  return Object.freeze({
+    invitation: decodeInvitation(source.invitation),
+    invitationCode: invitationCode(source.invitationCode),
+  });
+}
+export function decodeInvitationPage(value: unknown): InvitationPage {
+  const source = strictRecord(value, ["invitations", "nextPageToken"], ["invitations"]);
+  if (!Array.isArray(source.invitations) || source.invitations.length > 200)
+    error("INVALID_FIELD_TYPE", "/invitations");
+  const invitations = (source.invitations as unknown[]).map(decodeInvitation);
+  if (new Set(invitations.map(({ id }) => id)).size !== invitations.length)
+    error("DUPLICATE_INVITATION", "/invitations");
+  return Object.freeze({
+    invitations: Object.freeze(invitations),
+    ...(source.nextPageToken === undefined
+      ? {}
+      : { nextPageToken: token(source.nextPageToken, "/nextPageToken") }),
+  });
+}
+export function decodeInvitationAcceptRequest(value: unknown): InvitationAcceptRequest {
+  const source = strictRecord(
+    value,
+    ["invitationCode", "password", "displayName"],
+    ["invitationCode"],
+  );
+  return Object.freeze({
+    invitationCode: invitationCode(source.invitationCode),
+    ...(source.password === undefined
+      ? {}
+      : { password: boundedString(source.password, 15, 128, "/password") }),
+    ...(source.displayName === undefined
+      ? {}
+      : { displayName: boundedString(source.displayName, 1, 160, "/displayName") }),
+  });
+}
+export function parseInvitationCreated(text: string): InvitationCreated {
+  return decodeInvitationCreated(parseStrictJSON(text));
+}
+export function parseInvitationPage(text: string): InvitationPage {
+  return decodeInvitationPage(parseStrictJSON(text));
+}
+function identityInvitationPath(tenantId: string, invitationId?: string): string {
+  const base = `/v1/identity/tenants/${identifier(tenantId, "/tenantId")}/invitations`;
+  return invitationId === undefined ? base : `${base}/${identifier(invitationId, "/invitationId")}`;
+}
+function passwordValue(value: unknown, minimum: number, maximum: number, path: string): string {
+  const result = boundedString(value, minimum, maximum, path);
+  if (result.includes("\u0000")) error("INVALID_PASSWORD", path);
+  return result;
+}
+export function decodePasswordChangeRequest(value: unknown): PasswordChangeRequest {
+  const source = strictRecord(
+    value,
+    ["currentPassword", "newPassword"],
+    ["currentPassword", "newPassword"],
+  );
+  return Object.freeze({
+    currentPassword: passwordValue(source.currentPassword, 1, 1024, "/currentPassword"),
+    newPassword: passwordValue(source.newPassword, 15, 128, "/newPassword"),
+  });
+}
+export function decodePasswordResetAcceptRequest(value: unknown): PasswordResetAcceptRequest {
+  const source = strictRecord(value, ["resetCode", "newPassword"], ["resetCode", "newPassword"]),
+    resetCode = token(source.resetCode, "/resetCode");
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(resetCode)) error("INVALID_PASSWORD_RESET", "/resetCode");
+  return Object.freeze({
+    resetCode,
+    newPassword: passwordValue(source.newPassword, 15, 128, "/newPassword"),
+  });
+}
+export function decodeIdentityAccount(value: unknown): IdentityAccount {
+  const source = strictRecord(
+      value,
+      [
+        "id",
+        "subject",
+        "email",
+        "displayName",
+        "state",
+        "platformAdmin",
+        "emailVerifiedAt",
+        "createdAt",
+      ],
+      [
+        "id",
+        "subject",
+        "email",
+        "displayName",
+        "state",
+        "platformAdmin",
+        "emailVerifiedAt",
+        "createdAt",
+      ],
+    ),
+    platformAdmin = source.platformAdmin,
+    id = identifier(source.id, "/id"),
+    accountSubject = subject(source.subject, "/subject");
+  if (typeof platformAdmin !== "boolean") error("INVALID_FIELD_TYPE", "/platformAdmin");
+  if (accountSubject.kind !== "user" || accountSubject.subject !== `user-${id}`)
+    error("SUBJECT_ID_MISMATCH", "/subject");
+  return Object.freeze({
+    id,
+    subject: accountSubject,
+    email: email(source.email, "/email"),
+    displayName: boundedString(source.displayName, 1, 160, "/displayName"),
+    state: enumValue(source.state, ["active", "disabled"] as const, "/state"),
+    platformAdmin: platformAdmin as boolean,
+    emailVerifiedAt: dateTime(source.emailVerifiedAt, "/emailVerifiedAt"),
+    createdAt: dateTime(source.createdAt, "/createdAt"),
+  });
+}
+export function decodeIdentityAccountPage(value: unknown): IdentityAccountPage {
+  const source = strictRecord(value, ["accounts", "nextPageToken"], ["accounts"]),
+    accounts = source.accounts;
+  if (!Array.isArray(accounts) || accounts.length > 200) error("INVALID_FIELD_TYPE", "/accounts");
+  return Object.freeze({
+    accounts: Object.freeze((accounts as unknown[]).map(decodeIdentityAccount)),
+    ...(source.nextPageToken === undefined
+      ? {}
+      : { nextPageToken: token(source.nextPageToken, "/nextPageToken") }),
+  });
+}
+export function parseIdentityAccountPage(text: string): IdentityAccountPage {
+  return decodeIdentityAccountPage(parseStrictJSON(text));
+}
+export function decodePasswordResetCreated(value: unknown): PasswordResetCreated {
+  const source = strictRecord(
+      value,
+      ["userId", "resetCode", "expiresAt"],
+      ["userId", "resetCode", "expiresAt"],
+    ),
+    resetCode = token(source.resetCode, "/resetCode");
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(resetCode)) error("INVALID_PASSWORD_RESET", "/resetCode");
+  return Object.freeze({
+    userId: identifier(source.userId, "/userId"),
+    resetCode,
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function parsePasswordResetCreated(text: string): PasswordResetCreated {
+  return decodePasswordResetCreated(parseStrictJSON(text));
+}
+export function decodeIdentityAuditEvent(value: unknown): IdentityAuditEvent {
+  const source = strictRecord(
+      value,
+      [
+        "id",
+        "eventKind",
+        "actorUserId",
+        "targetUserId",
+        "tenantId",
+        "application",
+        "decision",
+        "reasonCode",
+        "correlationId",
+        "occurredAt",
+      ],
+      ["id", "eventKind", "decision", "reasonCode", "correlationId", "occurredAt"],
+    ),
+    id = boundedString(source.id, 32, 32, "/id");
+  if (!/^[a-f0-9]{32}$/u.test(id)) error("INVALID_AUDIT_ID", "/id");
+  return Object.freeze({
+    id,
+    eventKind: boundedString(source.eventKind, 1, 64, "/eventKind"),
+    ...(source.actorUserId === undefined
+      ? {}
+      : { actorUserId: identifier(source.actorUserId, "/actorUserId") }),
+    ...(source.targetUserId === undefined
+      ? {}
+      : { targetUserId: identifier(source.targetUserId, "/targetUserId") }),
+    ...(source.tenantId === undefined
+      ? {}
+      : { tenantId: identifier(source.tenantId, "/tenantId") }),
+    ...(source.application === undefined
+      ? {}
+      : { application: enumValue(source.application, ["admin", "user"] as const, "/application") }),
+    decision: enumValue(source.decision, ["allow", "deny"] as const, "/decision"),
+    reasonCode: boundedString(source.reasonCode, 1, 64, "/reasonCode"),
+    correlationId: identifier(source.correlationId, "/correlationId"),
+    occurredAt: dateTime(source.occurredAt, "/occurredAt"),
+  });
+}
+export function decodeIdentityAuditPage(value: unknown): IdentityAuditPage {
+  const source = strictRecord(value, ["events", "nextPageToken"], ["events"]),
+    events = source.events;
+  if (!Array.isArray(events) || events.length > 200) error("INVALID_FIELD_TYPE", "/events");
+  return Object.freeze({
+    events: Object.freeze((events as unknown[]).map(decodeIdentityAuditEvent)),
+    ...(source.nextPageToken === undefined
+      ? {}
+      : { nextPageToken: token(source.nextPageToken, "/nextPageToken") }),
+  });
+}
+export function parseIdentityAuditPage(text: string): IdentityAuditPage {
+  return decodeIdentityAuditPage(parseStrictJSON(text));
+}
+
+const providerKinds = ["oidc", "github", "gitlab", "feishu", "dingtalk", "wecom"] as const;
+function httpsURL(value: unknown, maximum: number, path: string): string {
+  const raw = boundedString(value, 1, maximum, path);
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return error("INVALID_URL", path);
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.host === "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hash !== ""
+  )
+    error("INVALID_URL", path);
+  return raw;
+}
+function providerStringList(
+  value: unknown,
+  maximum: number,
+  maximumLength: number,
+  path: string,
+): readonly string[] {
+  if (!Array.isArray(value) || value.length > maximum) error("INVALID_FIELD_TYPE", path);
+  const values = (value as unknown[]).map((item, index) =>
+    boundedString(item, 1, maximumLength, `${path}/${index}`),
+  );
+  if (
+    new Set(values).size !== values.length ||
+    values.some((item, index) => index > 0 && item <= values[index - 1]!)
+  )
+    error("DUPLICATE_ITEM", path);
+  return Object.freeze(values);
+}
+export function decodeLoginProviderPage(value: unknown): LoginProviderPage {
+  const source = strictRecord(value, ["providers"], ["providers"]);
+  if (!Array.isArray(source.providers) || source.providers.length > 64)
+    error("INVALID_FIELD_TYPE", "/providers");
+  const providers = (source.providers as unknown[]).map((entry) => {
+    const provider = strictRecord(
+      entry,
+      ["id", "kind", "displayName"],
+      ["id", "kind", "displayName"],
+    );
+    return Object.freeze({
+      id: identifier(provider.id, "/id"),
+      kind: enumValue(provider.kind, providerKinds, "/kind"),
+      displayName: boundedString(provider.displayName, 1, 160, "/displayName"),
+    });
+  });
+  if (new Set(providers.map(({ id }) => id)).size !== providers.length)
+    error("DUPLICATE_LOGIN_PROVIDER", "/providers");
+  return Object.freeze({ providers: Object.freeze(providers) });
+}
+export function decodeProviderAuthorizationRequest(value: unknown): ProviderAuthorizationRequest {
+  const source = strictRecord(
+      value,
+      ["providerId", "purpose", "invitationCode", "displayName"],
+      ["providerId", "purpose"],
+    ),
+    purpose = enumValue(
+      source.purpose,
+      ["login", "invitation", "reauth", "link"] as const,
+      "/purpose",
+    );
+  if (purpose === "invitation") {
+    const invitationCode = token(source.invitationCode, "/invitationCode");
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(invitationCode))
+      error("INVALID_INVITATION_CODE", "/invitationCode");
+    return Object.freeze({
+      providerId: identifier(source.providerId, "/providerId"),
+      purpose,
+      invitationCode,
+      displayName: boundedString(source.displayName, 1, 160, "/displayName"),
+    });
+  }
+  if (source.invitationCode !== undefined || source.displayName !== undefined)
+    error("INVALID_PROVIDER_AUTHORIZATION", "");
+  return Object.freeze({ providerId: identifier(source.providerId, "/providerId"), purpose });
+}
+export function decodeProviderAuthorization(value: unknown): ProviderAuthorization {
+  const source = strictRecord(
+    value,
+    ["authorizationUrl", "expiresAt"],
+    ["authorizationUrl", "expiresAt"],
+  );
+  return Object.freeze({
+    authorizationUrl: httpsURL(source.authorizationUrl, 4096, "/authorizationUrl"),
+    expiresAt: dateTime(source.expiresAt, "/expiresAt"),
+  });
+}
+export function decodeProviderCallbackRequest(value: unknown): ProviderCallbackRequest {
+  const source = strictRecord(
+      value,
+      ["state", "code", "issuer", "sessionState"],
+      ["state", "code"],
+    ),
+    state = token(source.state, "/state");
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(state)) error("INVALID_PROVIDER_STATE", "/state");
+  return Object.freeze({
+    state,
+    code: boundedString(source.code, 1, 4096, "/code"),
+    ...(source.issuer === undefined ? {} : { issuer: httpsURL(source.issuer, 512, "/issuer") }),
+    ...(source.sessionState === undefined
+      ? {}
+      : { sessionState: boundedString(source.sessionState, 1, 512, "/sessionState") }),
+  });
+}
+export function decodeLoginMethod(value: unknown): LoginMethod {
+  const source = strictRecord(
+    value,
+    ["id", "providerId", "issuer", "subject", "createdAt"],
+    ["id", "providerId", "issuer", "subject", "createdAt"],
+  );
+  return Object.freeze({
+    id: identifier(source.id, "/id"),
+    providerId: identifier(source.providerId, "/providerId"),
+    issuer: boundedString(source.issuer, 1, 512, "/issuer"),
+    subject: boundedString(source.subject, 1, 512, "/subject"),
+    createdAt: dateTime(source.createdAt, "/createdAt"),
+  });
+}
+export function decodeLoginMethodList(value: unknown): LoginMethodList {
+  const source = strictRecord(
+    value,
+    ["passwordEnabled", "loginMethods"],
+    ["passwordEnabled", "loginMethods"],
+  );
+  if (
+    typeof source.passwordEnabled !== "boolean" ||
+    !Array.isArray(source.loginMethods) ||
+    source.loginMethods.length > 64
+  )
+    error("INVALID_LOGIN_METHODS", "");
+  const loginMethods = (source.loginMethods as unknown[]).map(decodeLoginMethod);
+  if (new Set(loginMethods.map(({ id }) => id)).size !== loginMethods.length)
+    error("DUPLICATE_LOGIN_METHOD", "/loginMethods");
+  return Object.freeze({
+    passwordEnabled: source.passwordEnabled as boolean,
+    loginMethods: Object.freeze(loginMethods),
+  });
+}
+export function decodeProviderCallback(value: unknown): ProviderCallback {
+  const source = strictRecord(value, ["action", "session", "expiresAt", "loginMethod"], ["action"]),
+    action = enumValue(
+      source.action,
+      ["login", "invitation", "reauth", "link"] as const,
+      "/action",
+    );
+  if (action === "login" || action === "invitation") {
+    if (
+      source.expiresAt !== undefined ||
+      source.loginMethod !== undefined ||
+      source.session === undefined
+    )
+      error("INVALID_PROVIDER_CALLBACK", "");
+    return Object.freeze({ action, session: decodeBrowserSession(source.session) });
+  }
+  if (action === "reauth") {
+    if (source.session !== undefined || source.loginMethod !== undefined)
+      error("INVALID_PROVIDER_CALLBACK", "");
+    return Object.freeze({ action, expiresAt: dateTime(source.expiresAt, "/expiresAt") });
+  }
+  if (
+    source.session !== undefined ||
+    source.expiresAt !== undefined ||
+    source.loginMethod === undefined
+  )
+    error("INVALID_PROVIDER_CALLBACK", "");
+  return Object.freeze({ action, loginMethod: decodeLoginMethod(source.loginMethod) });
+}
+export function decodePasswordReauthRequest(value: unknown): PasswordReauthRequest {
+  const source = strictRecord(value, ["password"], ["password"]);
+  return Object.freeze({ password: passwordValue(source.password, 1, 1024, "/password") });
+}
+export function decodeReauthentication(value: unknown): Reauthentication {
+  const source = strictRecord(value, ["expiresAt"], ["expiresAt"]);
+  return Object.freeze({ expiresAt: dateTime(source.expiresAt, "/expiresAt") });
+}
+export function decodeEnablePasswordRequest(value: unknown): EnablePasswordRequest {
+  const source = strictRecord(value, ["newPassword"], ["newPassword"]);
+  return Object.freeze({ newPassword: passwordValue(source.newPassword, 15, 128, "/newPassword") });
+}
+function providerClientFields(
+  source: Record<string, unknown>,
+): Omit<ProviderClient, "providerId" | "application" | "resourceVersion"> {
+  const providerKind = enumValue(source.providerKind, providerKinds, "/providerKind"),
+    agentId =
+      source.agentId === undefined ? undefined : boundedString(source.agentId, 1, 255, "/agentId"),
+    trustProviderEmail = source.trustProviderEmail;
+  if (
+    typeof trustProviderEmail !== "boolean" ||
+    typeof source.enabled !== "boolean" ||
+    (providerKind === "wecom") !== (agentId !== undefined)
+  )
+    error("INVALID_PROVIDER_CLIENT", "");
+  const allowedOrganizationIds = providerStringList(
+    source.allowedOrganizationIds,
+    32,
+    255,
+    "/allowedOrganizationIds",
+  );
+  if (trustProviderEmail && allowedOrganizationIds.length === 0)
+    error("INVALID_PROVIDER_CLIENT", "/allowedOrganizationIds");
+  return Object.freeze({
+    displayName: boundedString(source.displayName, 1, 160, "/displayName"),
+    providerKind,
+    issuer: httpsURL(source.issuer, 512, "/issuer"),
+    clientId: boundedString(source.clientId, 1, 512, "/clientId"),
+    redirectUri: httpsURL(source.redirectUri, 2048, "/redirectUri"),
+    secretRef: identifier(source.secretRef, "/secretRef"),
+    ...(source.rootCaRef === undefined
+      ? {}
+      : { rootCaRef: identifier(source.rootCaRef, "/rootCaRef") }),
+    ...(agentId === undefined ? {} : { agentId }),
+    scopes: providerStringList(source.scopes, 32, 128, "/scopes"),
+    trustProviderEmail: trustProviderEmail as boolean,
+    allowedOrganizationIds,
+    enabled: source.enabled as boolean,
+  });
+}
+export function decodeProviderClient(value: unknown): ProviderClient {
+  const source = strictRecord(
+    value,
+    [
+      "providerId",
+      "application",
+      "displayName",
+      "providerKind",
+      "issuer",
+      "clientId",
+      "redirectUri",
+      "secretRef",
+      "rootCaRef",
+      "agentId",
+      "scopes",
+      "trustProviderEmail",
+      "allowedOrganizationIds",
+      "enabled",
+      "resourceVersion",
+    ],
+    [
+      "providerId",
+      "application",
+      "displayName",
+      "providerKind",
+      "issuer",
+      "clientId",
+      "redirectUri",
+      "secretRef",
+      "scopes",
+      "trustProviderEmail",
+      "allowedOrganizationIds",
+      "enabled",
+      "resourceVersion",
+    ],
+  );
+  return Object.freeze({
+    providerId: identifier(source.providerId, "/providerId"),
+    application: enumValue(source.application, ["admin", "user"] as const, "/application"),
+    ...providerClientFields(source),
+    resourceVersion: identityResourceVersion(source.resourceVersion, "/resourceVersion"),
+  });
+}
+export function decodeProviderClientPage(value: unknown): ProviderClientPage {
+  const source = strictRecord(value, ["providers"], ["providers"]);
+  if (!Array.isArray(source.providers) || source.providers.length > 128)
+    error("INVALID_FIELD_TYPE", "/providers");
+  return Object.freeze({
+    providers: Object.freeze((source.providers as unknown[]).map(decodeProviderClient)),
+  });
+}
+export function decodeProviderClientUpdate(value: unknown): ProviderClientUpdate {
+  const source = strictRecord(
+    value,
+    [
+      "displayName",
+      "providerKind",
+      "issuer",
+      "clientId",
+      "redirectUri",
+      "secretRef",
+      "rootCaRef",
+      "agentId",
+      "scopes",
+      "trustProviderEmail",
+      "allowedOrganizationIds",
+      "enabled",
+      "expectedResourceVersion",
+    ],
+    [
+      "displayName",
+      "providerKind",
+      "issuer",
+      "clientId",
+      "redirectUri",
+      "secretRef",
+      "scopes",
+      "trustProviderEmail",
+      "allowedOrganizationIds",
+      "enabled",
+      "expectedResourceVersion",
+    ],
+  );
+  return Object.freeze({
+    ...providerClientFields(source),
+    expectedResourceVersion: identityResourceVersion(
+      source.expectedResourceVersion,
+      "/expectedResourceVersion",
+    ),
+  });
+}
+function identityResourceVersion(value: unknown, path: string): string {
+  const version = string(value, path);
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(version) || version.length > 20)
+    error("INVALID_RESOURCE_VERSION", path);
+  return version;
 }

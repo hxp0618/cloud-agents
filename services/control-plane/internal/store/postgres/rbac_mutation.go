@@ -23,17 +23,17 @@ const (
 	permissionRoleBindingDelete = "role-bindings.delete"
 
 	createMembershipSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.create_membership($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+FROM cloud_agents.create_membership_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
 	resumeMembershipSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.resume_membership($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.resume_membership_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	suspendMembershipSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.suspend_membership($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.suspend_membership_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	revokeMembershipSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.revoke_membership($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.revoke_membership_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	bindRoleSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.bind_role($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+FROM cloud_agents.bind_role_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 	revokeRoleBindingSQL = `SELECT resource_uid, resource_version, resource_state
-FROM cloud_agents.revoke_role_binding($1, $2, $3, $4, $5, $6)`
+FROM cloud_agents.revoke_role_binding_v2($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	readMembershipMutationScopeSQL = `SELECT
     membership.scope_level,
@@ -81,6 +81,7 @@ type MutationResult struct {
 // CreateMembershipInput is the complete ordinary tenant-scoped membership
 // creation contract. Platform scope is deliberately outside this service.
 type CreateMembershipInput struct {
+	CorrelationID          string
 	ExpectedTenantRevision int64
 	MembershipUID          string
 	MembershipName         string
@@ -94,6 +95,7 @@ type CreateMembershipInput struct {
 // MembershipTransitionInput is shared by the closed membership state
 // transitions. The public methods select the target state; callers cannot.
 type MembershipTransitionInput struct {
+	CorrelationID           string
 	ExpectedTenantRevision  int64
 	MembershipUID           string
 	ExpectedResourceVersion int64
@@ -104,6 +106,7 @@ type MembershipTransitionInput struct {
 // BindRoleInput is the complete ordinary tenant-scoped role binding contract.
 // The platform.admin role is reserved for the bootstrap authority boundary.
 type BindRoleInput struct {
+	CorrelationID          string
 	ExpectedTenantRevision int64
 	RoleBindingUID         string
 	RoleBindingName        string
@@ -118,6 +121,7 @@ type BindRoleInput struct {
 
 // RevokeRoleBindingInput is the only ordinary role-binding state transition.
 type RevokeRoleBindingInput struct {
+	CorrelationID           string
 	ExpectedTenantRevision  int64
 	RoleBindingUID          string
 	ExpectedResourceVersion int64
@@ -141,6 +145,15 @@ func NewRBACMutationService(pool *pgxpool.Pool) (*RBACMutationService, error) {
 	return newRBACMutationService(runner)
 }
 
+func NewAdminRBACMutationService(pool *pgxpool.Pool) (*RBACMutationService, error) {
+	runner, err := NewTenantTransactionRunner(pool)
+	if err != nil {
+		return nil, err
+	}
+	runner.application = "admin"
+	return newRBACMutationService(runner)
+}
+
 func newRBACMutationService(runner *TenantTransactionRunner) (*RBACMutationService, error) {
 	if runner == nil {
 		return nil, ErrNilMutationRunner
@@ -158,21 +171,25 @@ func (service *RBACMutationService) CreateMembership(
 ) (MutationResult, error) {
 	var result MutationResult
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
-		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode, input.CorrelationID); err != nil {
 			return err
 		}
-		if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
+		if !validDirectMembershipSubject(input.Subject) || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
 			!validMutationIdentifier(input.MembershipUID) || !validMutationIdentifier(input.MembershipName) ||
 			!validMutationExpiry(input.ExpiresAt, service.runner.clock()) {
 			return fmt.Errorf("%w: membership create", ErrMutationInvalidInput)
 		}
 		var mutationErr error
-		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionMembershipCreate, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
-			return createMembershipInTransaction(ctx, handle, tenantID, input)
+		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionMembershipCreate, input.Scope, func(handle *tenantReadHandle, actor authz.SubjectRef) (MutationResult, error) {
+			return createMembershipInTransaction(ctx, handle, tenantID, actor, input)
 		})
 		return mutationErr
 	})
 	return settledMutationResult(result, mapVerifiedMutationError(err))
+}
+
+func validDirectMembershipSubject(subject authz.SubjectRef) bool {
+	return subject.Kind != "user" && subject.Validate() == nil
 }
 
 // SuspendMembership authorizes memberships.update at the stored target scope
@@ -219,15 +236,15 @@ func (service *RBACMutationService) transitionMembership(
 ) (MutationResult, error) {
 	var result MutationResult
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
-		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode, input.CorrelationID); err != nil {
 			return err
 		}
 		if !validMutationIdentifier(input.MembershipUID) || input.ExpectedResourceVersion < 1 {
 			return fmt.Errorf("%w: membership transition", ErrMutationInvalidInput)
 		}
 		var mutationErr error
-		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permission, input.MembershipUID, readMembershipMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
-			return transitionMembershipInTransaction(ctx, handle, tenantID, input, statement, targetState)
+		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permission, input.MembershipUID, readMembershipMutationScopeSQL, func(handle *tenantReadHandle, actor authz.SubjectRef) (MutationResult, error) {
+			return transitionMembershipInTransaction(ctx, handle, tenantID, actor, input, statement, targetState)
 		})
 		return mutationErr
 	})
@@ -244,7 +261,7 @@ func (service *RBACMutationService) BindRole(
 ) (MutationResult, error) {
 	var result MutationResult
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
-		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode, input.CorrelationID); err != nil {
 			return err
 		}
 		if err := input.Subject.Validate(); err != nil || input.Scope.Validate(tenantID) != nil || input.Scope.Level == authz.ScopePlatform ||
@@ -254,8 +271,8 @@ func (service *RBACMutationService) BindRole(
 			return fmt.Errorf("%w: role binding create", ErrMutationInvalidInput)
 		}
 		var mutationErr error
-		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionRoleBindingBind, input.Scope, func(handle *tenantReadHandle) (MutationResult, error) {
-			return bindRoleInTransaction(ctx, handle, tenantID, input)
+		result, mutationErr = service.withKnownScopeMutation(ctx, tenantID, binder, permissionRoleBindingBind, input.Scope, func(handle *tenantReadHandle, actor authz.SubjectRef) (MutationResult, error) {
+			return bindRoleInTransaction(ctx, handle, tenantID, actor, input)
 		})
 		return mutationErr
 	})
@@ -272,15 +289,15 @@ func (service *RBACMutationService) RevokeRoleBinding(
 ) (MutationResult, error) {
 	var result MutationResult
 	err := authz.WithVerifiedOperation(principal, func(binder *authz.VerifiedOperationBinder) error {
-		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode); err != nil {
+		if err := service.validateCommon(ctx, tenantID, input.ExpectedTenantRevision, input.AuditFactUID, input.ReasonCode, input.CorrelationID); err != nil {
 			return err
 		}
 		if !validMutationIdentifier(input.RoleBindingUID) || input.ExpectedResourceVersion < 1 {
 			return fmt.Errorf("%w: role binding revoke", ErrMutationInvalidInput)
 		}
 		var mutationErr error
-		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permissionRoleBindingDelete, input.RoleBindingUID, readRoleBindingMutationScopeSQL, func(handle *tenantReadHandle) (MutationResult, error) {
-			return revokeRoleBindingInTransaction(ctx, handle, tenantID, input)
+		result, mutationErr = service.withStoredScopeMutation(ctx, tenantID, binder, permissionRoleBindingDelete, input.RoleBindingUID, readRoleBindingMutationScopeSQL, func(handle *tenantReadHandle, actor authz.SubjectRef) (MutationResult, error) {
+			return revokeRoleBindingInTransaction(ctx, handle, tenantID, actor, input)
 		})
 		return mutationErr
 	})
@@ -293,6 +310,7 @@ func (service *RBACMutationService) validateCommon(
 	expectedTenantRevision int64,
 	auditFactUID string,
 	reasonCode string,
+	correlationID string,
 ) error {
 	if ctx == nil {
 		return ErrNilContext
@@ -305,18 +323,19 @@ func (service *RBACMutationService) validateCommon(
 	}
 	if !validMutationIdentifier(tenantID) || expectedTenantRevision < 1 ||
 		expectedTenantRevision == math.MaxInt64 || !validMutationIdentifier(auditFactUID) ||
-		!validMutationIdentifier(reasonCode) {
+		!validMutationIdentifier(reasonCode) || !validMutationIdentifier(correlationID) {
 		return ErrMutationInvalidInput
 	}
 	return nil
 }
 
-type tenantMutationOperation func(*tenantReadHandle) (MutationResult, error)
+type tenantMutationOperation func(*tenantReadHandle, authz.SubjectRef) (MutationResult, error)
 
 func createMembershipInTransaction(
 	ctx context.Context,
 	handle *tenantReadHandle,
 	tenantID string,
+	actor authz.SubjectRef,
 	input CreateMembershipInput,
 ) (MutationResult, error) {
 	return scanMutationResult(
@@ -335,6 +354,11 @@ func createMembershipInTransaction(
 			input.ExpiresAt,
 			input.AuditFactUID,
 			input.ReasonCode,
+			actor.Kind,
+			actor.Issuer,
+			actor.Subject,
+			handle.application,
+			input.CorrelationID,
 		),
 		tenantID,
 		input.MembershipUID,
@@ -348,6 +372,7 @@ func transitionMembershipInTransaction(
 	ctx context.Context,
 	handle *tenantReadHandle,
 	tenantID string,
+	actor authz.SubjectRef,
 	input MembershipTransitionInput,
 	statement string,
 	targetState string,
@@ -362,6 +387,11 @@ func transitionMembershipInTransaction(
 			input.ExpectedResourceVersion,
 			input.AuditFactUID,
 			input.ReasonCode,
+			actor.Kind,
+			actor.Issuer,
+			actor.Subject,
+			handle.application,
+			input.CorrelationID,
 		),
 		tenantID,
 		input.MembershipUID,
@@ -375,6 +405,7 @@ func bindRoleInTransaction(
 	ctx context.Context,
 	handle *tenantReadHandle,
 	tenantID string,
+	actor authz.SubjectRef,
 	input BindRoleInput,
 ) (MutationResult, error) {
 	return scanMutationResult(
@@ -395,6 +426,11 @@ func bindRoleInTransaction(
 			input.ExpiresAt,
 			input.AuditFactUID,
 			input.ReasonCode,
+			actor.Kind,
+			actor.Issuer,
+			actor.Subject,
+			handle.application,
+			input.CorrelationID,
 		),
 		tenantID,
 		input.RoleBindingUID,
@@ -408,6 +444,7 @@ func revokeRoleBindingInTransaction(
 	ctx context.Context,
 	handle *tenantReadHandle,
 	tenantID string,
+	actor authz.SubjectRef,
 	input RevokeRoleBindingInput,
 ) (MutationResult, error) {
 	return scanMutationResult(
@@ -420,6 +457,11 @@ func revokeRoleBindingInTransaction(
 			input.ExpectedResourceVersion,
 			input.AuditFactUID,
 			input.ReasonCode,
+			actor.Kind,
+			actor.Issuer,
+			actor.Subject,
+			handle.application,
+			input.CorrelationID,
 		),
 		tenantID,
 		input.RoleBindingUID,
@@ -444,8 +486,12 @@ func (service *RBACMutationService) withKnownScopeMutation(
 	}
 	err = service.runner.withTenantMutation(ctx, tenantID, func(handle *tenantReadHandle) error {
 		var mutationErr error
+		actor, ok := verified.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
 		return executeVerifiedRBACOperation(ctx, handle, verified, scope, func() error {
-			result, mutationErr = operation(handle)
+			result, mutationErr = operation(handle, actor)
 			return mutationErr
 		})
 	})
@@ -471,8 +517,12 @@ func (service *RBACMutationService) withStoredScopeMutation(
 		if err != nil {
 			return err
 		}
+		actor, ok := verified.Actor()
+		if !ok {
+			return authz.ErrOperationDenied
+		}
 		return executeVerifiedRBACOperation(ctx, handle, verified, scope, func() error {
-			result, err = operation(handle)
+			result, err = operation(handle, actor)
 			return err
 		})
 	})
@@ -651,7 +701,7 @@ func (runner *TenantTransactionRunner) withTenantMutationBinderIsolation(
 	}
 
 	handle := &tenantReadHandle{
-		active: true, transaction: transaction, tenantID: tenantID, clock: runner.clock,
+		active: true, transaction: transaction, tenantID: tenantID, clock: runner.clock, application: runner.application,
 	}
 	callbackErr, panicValue, panicked := invokeTenantMutationCallback(callback, handle)
 	handle.invalidate()
@@ -713,7 +763,7 @@ func (runner *TenantTransactionRunner) withGlobalMutation(
 		runner.discard(connection, &settled)
 		return fmt.Errorf("begin global mutation transaction: %w", err)
 	}
-	handle := &tenantReadHandle{active: true, transaction: transaction, clock: runner.clock}
+	handle := &tenantReadHandle{active: true, transaction: transaction, clock: runner.clock, application: runner.application}
 	callbackErr, panicValue, panicked := invokeTenantMutationCallback(callback, handle)
 	handle.invalidate()
 	if panicked {

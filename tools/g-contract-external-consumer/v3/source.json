@@ -13,10 +13,10 @@
   },
   "contractSuccessor": {
     "path": "contracts/generation.lock.successor-v3.json",
-    "sha256": "sha256:404f884b8b19c47f0605354f573aae6d04c464697edb6aecce092b084e95bd0b",
+    "sha256": "sha256:63bc7d574babddd53b3f8c3bca55cc7e5971e5e91351a279d91f7512e25c9904",
     "sizeBytes": 13219,
     "outputCount": 47,
-    "outputManifestSha256": "sha256:faa17d2883409cda0723c0f7ff01a23ec70610bba8682f29389a85f9c77def8b"
+    "outputManifestSha256": "sha256:368c7a8829065285a28b98cbdba49ee4e64e432c45765bc3acf7216ac90d131c"
   },
   "semanticInputs": [
     {
@@ -26,8 +26,8 @@
     },
     {
       "path": "bun.lock",
-      "sha256": "sha256:0e821ec0e0eb5e4ea11b258d43904aa40375116cceb66e2561b196631d95e06d",
-      "sizeBytes": 371231
+      "sha256": "sha256:c97b01255295db82df85edb7c4010ae05b6ac8d9003acfe4c703be4cea8a2de4",
+      "sizeBytes": 371256
     },
     {
       "path": "contracts/common/v1alpha1/fixtures/golden/authorization-scope.json",
@@ -261,18 +261,483 @@
     },
     {
       "path": "contracts/generated/proto/manifest.json",
-      "sha256": "sha256:bf753e591a91ee275242ddb0b1b78bdc8263172666cfae2c2e1c72a8828f6f52",
+      "sha256": "sha256:a6ce812e85f537dcc9c6f26f60ebb00c0a9363b3bc9527c22e2065f52e324b25",
       "sizeBytes": 6413
     },
     {
       "path": "contracts/generation.lock.successor-v3.json",
-      "sha256": "sha256:404f884b8b19c47f0605354f573aae6d04c464697edb6aecce092b084e95bd0b",
+      "sha256": "sha256:63bc7d574babddd53b3f8c3bca55cc7e5971e5e91351a279d91f7512e25c9904",
       "sizeBytes": 13219
     },
     {
+      "path": "contracts/identity/v1alpha1/README.md",
+      "sha256": "sha256:dd341ee5fd363a9f06baad4f1dcd17907a81cec2c4b88401e2ef6f7170872d95",
+      "sizeBytes": 7456
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/browser-session.json",
+      "sha256": "sha256:c18bdabdb8d20128bb3d3eb062ce52e15b8ca47f0851b11116853f306ead5d58",
+      "sizeBytes": 396
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/browser-tenant-page.json",
+      "sha256": "sha256:427603e9f0ee75dd17396821294d6131041940bff0e57db41f96d63489ae0305",
+      "sizeBytes": 174
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/current-user.json",
+      "sha256": "sha256:685f152b774878bc26932ac7566ad51cdb52e02e14dc8c72f644041c9d44a288",
+      "sizeBytes": 127
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/email-suffix-policy-update.json",
+      "sha256": "sha256:d0723c5bb3045d4e4bba2f39bae570f445d6b9675dc4e612a9c10e6ad103e66f",
+      "sizeBytes": 99
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/email-suffix-policy.json",
+      "sha256": "sha256:95c064e92df9465fba469d67732cf71a9dfc90c3904983eb54db5715652350f8",
+      "sizeBytes": 121
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/enable-password-request.json",
+      "sha256": "sha256:6944b5ee1e365f27738c8ef73d2b3a18dca24f8c2bb0ee12ae42c2365eac40f8",
+      "sizeBytes": 52
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/identity-account-page.json",
+      "sha256": "sha256:5ab6a4d032426c8c9f6c5c86268137058ae63dd9d94d395d824b20aa8d369bd9",
+      "sizeBytes": 430
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/identity-account.json",
+      "sha256": "sha256:e9743e5f836cdec663cdb0dbd3fea55048eb69fae0d225c768a7e51945e288f2",
+      "sizeBytes": 350
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/identity-audit-event.json",
+      "sha256": "sha256:45e9f03dbd9da78fcdd459b8a8801e709750022c7bcfee4393fbabecae4b529f",
+      "sizeBytes": 318
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/identity-audit-page.json",
+      "sha256": "sha256:aad437a99ede3a76f8d054d5dd128392bf89dfc03ba811e7535b8477dddd934d",
+      "sizeBytes": 384
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/identity-jwks.json",
+      "sha256": "sha256:db61b45a79f033d3ac96984011aaf970da18529426130b7465dfe82469524b76",
+      "sizeBytes": 1403
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation-accept-existing.json",
+      "sha256": "sha256:ada8eb87abd170942db5fa93467df39e0cd63192110236070e51f6debeaaba54",
+      "sizeBytes": 70
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation-accept-request.json",
+      "sha256": "sha256:c9b35606fd10b8a9002bde05e96a13977766979429600b1cf046ee59b6e05c87",
+      "sizeBytes": 149
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation-create-request.json",
+      "sha256": "sha256:160367c9417817a74a57d6712f29d55b881ac67605f081a02b33f48468c8f0be",
+      "sizeBytes": 163
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation-created.json",
+      "sha256": "sha256:d4c5ee7df4f69a5d2833ade13d8a6a791ea37695c918286b4c84b4dab81fc4eb",
+      "sizeBytes": 422
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation-page.json",
+      "sha256": "sha256:60056e5295b48c3cd5b0da53b0737001bc991ebe473cc70d932179428d1feba8",
+      "sizeBytes": 388
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/invitation.json",
+      "sha256": "sha256:5abb450f1b720654339e323abcbd9452e9f417c6eab6847cab5f79209557b35d",
+      "sizeBytes": 313
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/login-method-list.json",
+      "sha256": "sha256:c9c6f769a676d1c3f4e1f5288ff9b32a557e1790e85284c239a5fc965629850f",
+      "sizeBytes": 240
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/login-provider-page.json",
+      "sha256": "sha256:e91d1c77754423e794dc6c3d53085b0df2ddf06f1e971e198092b9a1c3a1a8c2",
+      "sizeBytes": 118
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/password-change-request.json",
+      "sha256": "sha256:299e1157021f0d2939908ce4b3b5a9f576278c36988b942293fa748310ec7604",
+      "sizeBytes": 109
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/password-login-request.json",
+      "sha256": "sha256:d2ad274b92c35aa37bef8ab3f5708e97abfa62382bb078c346146f05edb5bb39",
+      "sizeBytes": 81
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/password-reauth-request.json",
+      "sha256": "sha256:ab96615f0629f1240fcc7481cb5d16a97204002fec7f349fa7ded19d3a1e51e4",
+      "sizeBytes": 49
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/password-reset-accept-request.json",
+      "sha256": "sha256:7f627c8b336424e4a6ad2a01e3b14899293ed58d6598b91a26e2c7ab41a401ff",
+      "sizeBytes": 118
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/password-reset-created.json",
+      "sha256": "sha256:301ec4998d1018bab32ebc68f48355fc649144afb7578a576728ded8dafd7133",
+      "sizeBytes": 135
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-authorization-request.json",
+      "sha256": "sha256:c77438324d51aef9361e66955a56374ad0e682fffd0ce1f1b39143c20381f968",
+      "sizeBytes": 161
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-authorization.json",
+      "sha256": "sha256:98f92b6821763f811e7905e23a470161a9b732edec754381cf7517f825d5e0a9",
+      "sizeBytes": 138
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-callback-request.json",
+      "sha256": "sha256:aa2a4cf67c3d150b7e6ed9421597ca69a241d2fa75f5c9eaffbbe9ee55000968",
+      "sizeBytes": 160
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-callback.json",
+      "sha256": "sha256:d8d913911d49770077227f000ed3d69424601f0b59548b5458c18ce8f42dd162",
+      "sizeBytes": 64
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-client-page.json",
+      "sha256": "sha256:165b238d1a1d9599ea4a77d30709955d1ee9671d1c1dac9a3b0fe8bcde644b63",
+      "sizeBytes": 620
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/provider-client-update.json",
+      "sha256": "sha256:38aa72bb5efa34d9e0081641e82f840ff75ac9d2a646ab182a2ffd6fddd68f80",
+      "sizeBytes": 468
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/reauthentication.json",
+      "sha256": "sha256:b2bb876f72c6dfc1671cfa4a9bdcd65a5674aa79386a30cb4b9c27ed7fad0e4e",
+      "sizeBytes": 42
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/tenant-token-authorization-request.json",
+      "sha256": "sha256:079bb1554e4a6926721ddf309f51663e3a4345fb32187ec2110734c1d19f0990",
+      "sizeBytes": 185
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/tenant-token-authorization.json",
+      "sha256": "sha256:8f14a43ba5f6b84ecc5584c08ad1577a2d9df4be56282020b1b369e12f8e3a65",
+      "sizeBytes": 208
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/tenant-token-issue-request.json",
+      "sha256": "sha256:51a35275e97fb25b7c9290630372e970dea30d54cf9c3222c6692d9439e62ca0",
+      "sizeBytes": 65
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/tenant-token.json",
+      "sha256": "sha256:0eabb90a9c7d1e8bd59030a94b651a5b51e75ec796d1976353b1cb8af63c9974",
+      "sizeBytes": 159
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/token-status-request.json",
+      "sha256": "sha256:a01fee407f29cd6e8bc96ab7c34c5ff554854e3fe795f4ae7c1cd4a864f4d4e2",
+      "sizeBytes": 255
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/golden/token-status.json",
+      "sha256": "sha256:01b8f429695e131ec3ef771f5c514d4e6f0013db861ad5b10fff85c27a45f334",
+      "sizeBytes": 25
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/manifest.json",
+      "sha256": "sha256:68424fc82995c64ae8f78d26130f397753484d2e2cfbfde17ff22ad976b82da2",
+      "sizeBytes": 15986
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/browser-session-boolean-authority.json",
+      "sha256": "sha256:bf79152a4ea5df60b6ae62c39ca9ad703e2c294b60dcb7571b5dcd7b14b38ef9",
+      "sizeBytes": 264
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/email-suffix-policy-duplicate.json",
+      "sha256": "sha256:5d3d2e4d57ea635dc6d7cf84553ab4a6d48fdf2dd2844e868a02ad1e6c9c32f6",
+      "sizeBytes": 111
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/email-suffix-policy-wildcard.json",
+      "sha256": "sha256:d4ccdc7a10c8fd08c298dfa7445a46412086998feb52ab95dd0514ea9c4c58d9",
+      "sizeBytes": 98
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/identity-account-password-hash.json",
+      "sha256": "sha256:69d417535b4e1d82764c3890ff68f384bd332b9918cafd08114e1a20a37b7eec",
+      "sizeBytes": 370
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/identity-audit-event-reset-code.json",
+      "sha256": "sha256:0d0ac0524bb95ac834aa501a615177b63415c14083181245bdee651b390eab45",
+      "sizeBytes": 291
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/identity-jwks-private-key.json",
+      "sha256": "sha256:8a72b9e4e3814e2479098cc0fda7ad0ff1054b98134f13801eb5d9dbfd995ae5",
+      "sizeBytes": 1434
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/invitation-proof-exposure.json",
+      "sha256": "sha256:3ed3bc74354952e9919f114e6253d0b3576f795b4b0937f5f1c63f59f6bf2649",
+      "sizeBytes": 380
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/invitation-subject-injection.json",
+      "sha256": "sha256:0f74252a993861ea7a925256ac411db04bb4363d06fb8ff456b5c849c18172b7",
+      "sizeBytes": 191
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/password-login-client-purpose.json",
+      "sha256": "sha256:b3f76a752989f164ca796350ffa75df62b6d8948fbc8796f2f9d8920aa1e1680",
+      "sizeBytes": 107
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/provider-client-secret.json",
+      "sha256": "sha256:ee755ddae868d5173cbacdefabb079c273ba60c544039338fe567c5d495e3e01",
+      "sizeBytes": 506
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/tenant-token-authorization-authority-injection.json",
+      "sha256": "sha256:e1e83636b941c71c46863696b09acf1e83c2287080197d3fe8241a68a1806687",
+      "sizeBytes": 248
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/tenant-token-scope-injection.json",
+      "sha256": "sha256:45e47d0ba3b5225d61270360a98ef5c25c8e2962f11f944929e97f59ecdc58e5",
+      "sizeBytes": 97
+    },
+    {
+      "path": "contracts/identity/v1alpha1/fixtures/negative/token-status-raw-token.json",
+      "sha256": "sha256:096e1ea1f04cf777e4dacf9edebd2eed3ded7d1a0f9526750ffc93d75d912e87",
+      "sizeBytes": 120
+    },
+    {
+      "path": "contracts/identity/v1alpha1/openapi.json",
+      "sha256": "sha256:47c2946e23213e2d8593bf0e8206c6a04bf70f283c875034d5bae10548a4fe41",
+      "sizeBytes": 68843
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/browser-session.schema.json",
+      "sha256": "sha256:dd62c863f1e542facce886bef64b360e78cd7867239817b895c6e5ed15119699",
+      "sizeBytes": 934
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/browser-tenant-page.schema.json",
+      "sha256": "sha256:c70fe6cada068dc58ab5e16269eb7c9003262e18f9396ec91cbe1e9956d08ab7",
+      "sizeBytes": 519
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/browser-tenant.schema.json",
+      "sha256": "sha256:7a364b8c24a6574bda8127c997b169af1b1f3716a1937b2e15a2184a9c59f600",
+      "sizeBytes": 840
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/current-user.schema.json",
+      "sha256": "sha256:aefdd13aac44718411e05c138d6ab8cf64dc83d36f4c118b885070325b3d78f2",
+      "sizeBytes": 913
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/email-suffix-policy-update.schema.json",
+      "sha256": "sha256:e57910ba554a56d912e99de61e91160b841758f472e75e1e889edde00a09e7b6",
+      "sizeBytes": 774
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/email-suffix-policy.schema.json",
+      "sha256": "sha256:da48a6de3a437b12b992468c39d96a22fda76943e22a35536d1dea86fee4dc72",
+      "sizeBytes": 996
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/enable-password-request.schema.json",
+      "sha256": "sha256:46549b3213ebd8794bcd809f01e2e4283e48e11065a85d09abffa364c5b68ae4",
+      "sizeBytes": 419
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/identity-account-page.schema.json",
+      "sha256": "sha256:08ef70150d17bcd9a62bf3c067217d8c172f2de2747e74a6265c931b293369f0",
+      "sizeBytes": 471
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/identity-account.schema.json",
+      "sha256": "sha256:b17bc0fd64756e3052c979328bf79de858031a8918cc94e258e33c4ed6e4024b",
+      "sizeBytes": 908
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/identity-audit-event.schema.json",
+      "sha256": "sha256:bfc9c619fcde20d8852c1875915da15934ee124034eaf8bc04e93b3eb2572131",
+      "sizeBytes": 1061
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/identity-audit-page.schema.json",
+      "sha256": "sha256:fc250e1a7e501db4dc57d3461a71ef97e4f83d0fabb5f0c61d655302afc426dd",
+      "sizeBytes": 469
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/identity-jwks.schema.json",
+      "sha256": "sha256:320028a31f83752626d8480a9fa5be39ccf6c4358245f8a6c67b4a5bf28d342c",
+      "sizeBytes": 2643
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/invitation-accept-request.schema.json",
+      "sha256": "sha256:2917e9d5cab5cc94662b9ea76a7e3c2b3fc9f697c4e43f2f59ee47f93e45a600",
+      "sizeBytes": 652
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/invitation-create-request.schema.json",
+      "sha256": "sha256:fab1202881fbcfc6f3ec2d464aa9260088be1bd35b5acf2b19f391a8024dea8b",
+      "sizeBytes": 934
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/invitation-created.schema.json",
+      "sha256": "sha256:83ae11178f0060d5b6ccf92ee7e072b2084280763b114015f93d649b30762566",
+      "sizeBytes": 527
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/invitation-page.schema.json",
+      "sha256": "sha256:218dbe38489b144f859c9a2c0f0a5db76a5f383a38086efae3f1cde7c14705a4",
+      "sizeBytes": 540
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/invitation.schema.json",
+      "sha256": "sha256:a5b2448d73f900b1cc90fac66bc4fab7d2d0587ef86443841149b98224fb67fc",
+      "sizeBytes": 1453
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/login-method-list.schema.json",
+      "sha256": "sha256:9eccf52643190b5888bbe3489c3570d75741074d70c260ac183b3ff091e5537e",
+      "sizeBytes": 531
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/login-method.schema.json",
+      "sha256": "sha256:d5ab7a004c7244a462fcb3f14846d786eb81766462aeffd4dd4e4a03db43f675",
+      "sizeBytes": 827
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/login-provider-page.schema.json",
+      "sha256": "sha256:3ca296fa45ab9e4d3bcf998e0fe3ddd8be8d7f252e06a7ebf50852ee24f1bcc4",
+      "sizeBytes": 452
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/login-provider.schema.json",
+      "sha256": "sha256:7c9fb10af5994c81cbe7ac17d44d68c7dda74c8b9c8086e667f11574f0ecd9f7",
+      "sizeBytes": 689
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/password-change-request.schema.json",
+      "sha256": "sha256:939620382f8b35e30e4dd90975055db41cbc47ddf3e93208ef0b7624414f66aa",
+      "sizeBytes": 452
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/password-login-request.schema.json",
+      "sha256": "sha256:3525d3e0c654775f25ff06b566e0f24399648692cc2a9f0786917d0f464d43a3",
+      "sizeBytes": 543
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/password-reauth-request.schema.json",
+      "sha256": "sha256:0bde8c92e75f02f7c95f0ae20186a560b6b44cc514619f032237aed3241fd25f",
+      "sizeBytes": 413
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/password-reset-accept-request.schema.json",
+      "sha256": "sha256:091dfa8539a5454c054086744120cf7493979d55d4611dade14674fcb31020f3",
+      "sizeBytes": 445
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/password-reset-created.schema.json",
+      "sha256": "sha256:bfc98d5876fee459fdc6c2bba8d1724957380e31b1136a104f490876d573e505",
+      "sizeBytes": 517
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-authorization-request.schema.json",
+      "sha256": "sha256:41c2e3ba073d1670e1859e45d0775ecfa6748318fcbd70d08554470cb1dae76b",
+      "sizeBytes": 1340
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-authorization.schema.json",
+      "sha256": "sha256:ff0966b0b9dfca34543d670ea0250d953c0e751b41fcce59a7321205fa6d306b",
+      "sizeBytes": 573
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-callback-request.schema.json",
+      "sha256": "sha256:71140df9c6624299b3aca4dfca809d2f7cd784b007e8a38f102baeca609fddaa",
+      "sizeBytes": 728
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-callback.schema.json",
+      "sha256": "sha256:3a577d0d17fb2618548256c8171443d38dc2db3af2e050a023ac98e080691810",
+      "sizeBytes": 1246
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-client-page.schema.json",
+      "sha256": "sha256:6c79170db7566a734007e363dc21105b6b8327525ea2d42d9b15200cc28c730e",
+      "sizeBytes": 456
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-client-update.schema.json",
+      "sha256": "sha256:ed6a984507109cf3d2256de7d875b617ec39f1c72b66d0193d874bfe833234b9",
+      "sizeBytes": 2411
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/provider-client.schema.json",
+      "sha256": "sha256:97c799a253495de9b60327b8b0f3f1f8f0a1b69d429d986b6d7d42e4ed27d030",
+      "sizeBytes": 2626
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/reauthentication.schema.json",
+      "sha256": "sha256:b090309b930d216ab5aa147f0df272e3551316151b93c097d549a8e06c8d6e98",
+      "sizeBytes": 404
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/tenant-token-authorization-request.schema.json",
+      "sha256": "sha256:7d3c7af332e78e1727b4097086e87e2d994a51b4dd51ac9ecf84ca7b57318be4",
+      "sizeBytes": 889
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/tenant-token-authorization.schema.json",
+      "sha256": "sha256:8e2d9fbe564807a3c8bbccd0c6d71d65919139ead245f3563f42c47643e4c233",
+      "sizeBytes": 1293
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/tenant-token-issue-request.schema.json",
+      "sha256": "sha256:d4ca643a92cea98890d47359fb90d017bf1a625d014ac27025692aa7dbe45578",
+      "sizeBytes": 649
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/tenant-token.schema.json",
+      "sha256": "sha256:64c881346be1686418d49e249fbbca04d5ecee6e8858b25990480f37b1854ac9",
+      "sizeBytes": 640
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/token-status-request.schema.json",
+      "sha256": "sha256:e177bbd2df2d3c458c104ae51698ff8ec38e3cc7fdc3d6e623ecb4226a9002c7",
+      "sizeBytes": 1023
+    },
+    {
+      "path": "contracts/identity/v1alpha1/schemas/token-status.schema.json",
+      "sha256": "sha256:dc276ae315bd487b995660d9c70a3dc011cd38e48d3b15bc8d830a8f4efd8224",
+      "sizeBytes": 474
+    },
+    {
       "path": "contracts/managed-agent/v1alpha1/openapi.json",
-      "sha256": "sha256:d4f1a0170f382e08ce3fa2d03df6721eff1163697bd4020445343dd4c34118c2",
-      "sizeBytes": 52388
+      "sha256": "sha256:f9535dc8b804a1c3ad1702bfdf196c162f9e05d399ff1570fa67b656dbd5fd01",
+      "sizeBytes": 92314
     },
     {
       "path": "contracts/managed-agent/v1alpha1/schemas/artifact-content-disposition.schema.json",
@@ -456,8 +921,8 @@
     },
     {
       "path": "contracts/platform/v1alpha1/fixtures/manifest.json",
-      "sha256": "sha256:10e63bcb22a6cb6fc6de4427a94f5d1347eae68c810fcf1300947247c709a270",
-      "sizeBytes": 18049
+      "sha256": "sha256:9262483e660d35e6b480be119544787de2fe73c3ca874acaa40674dafe5cb8bd",
+      "sizeBytes": 18297
     },
     {
       "path": "contracts/platform/v1alpha1/fixtures/negative/cross-tenant-project.json",
@@ -511,8 +976,8 @@
     },
     {
       "path": "contracts/platform/v1alpha1/schemas/admin-denied-write-event.schema.json",
-      "sha256": "sha256:cd9bc07d95e3125156bbbdf6e6d05530fc1dc37893697c3674b477e6e0e9a14b",
-      "sizeBytes": 2935
+      "sha256": "sha256:ae580caaddf15c86ba1b961be0516dbf332f62e22acc5fb04663f6f52e473f89",
+      "sizeBytes": 3067
     },
     {
       "path": "contracts/platform/v1alpha1/schemas/admin-environment-lease-upgrade-request.schema.json",
@@ -561,8 +1026,8 @@
     },
     {
       "path": "contracts/platform/v1alpha1/schemas/deployment-target-register-request.schema.json",
-      "sha256": "sha256:b59bff08257de951485deee618bde30ac43d663d1f456b6bf4ba570886e2872f",
-      "sizeBytes": 845
+      "sha256": "sha256:33ed1f01c4f669f396aed5c7e9a852fef40f6a35c4aae84e9c199158c8ba636f",
+      "sizeBytes": 2532
     },
     {
       "path": "contracts/platform/v1alpha1/schemas/deployment-target-scheduling-preview.schema.json",
@@ -1186,8 +1651,8 @@
     },
     {
       "path": "docs/plan/cloud-agents-platform/05-gates-and-acceptance.md",
-      "sha256": "sha256:d2a678699c8590e664af2ed1128dd9e7b0533a0acdb96e60ab132b61f9bc525b",
-      "sizeBytes": 27476
+      "sha256": "sha256:103b27543931fd10abe6ebd158ba88157861ffda1c7d37dfe79cca1fb5ef5661",
+      "sizeBytes": 34190
     },
     {
       "path": "docs/plan/p1/g-contract-external-consumer-v3-replay-implementation-20261006.md",
@@ -1266,13 +1731,13 @@
     },
     {
       "path": "scripts/lib/platform-json-sdk.ts",
-      "sha256": "sha256:a58fc085dcd582bc15200139bcdaa05c8c3a6841c2ca9f69ab2ccd1da14aa278",
-      "sizeBytes": 24756
+      "sha256": "sha256:b47771d8a57ca25ba27e326a6dee823ba5a2358787c7bb3ba1dfb5f902438efc",
+      "sizeBytes": 29132
     },
     {
       "path": "scripts/lib/platform-json-semantics.ts",
-      "sha256": "sha256:29a87cc56a2187e4f2c0e346ff5a123ce06962ed2cb0a7b4506d333e12be72b0",
-      "sizeBytes": 29825
+      "sha256": "sha256:0867a99b85df907107e3a43e1191e4e0a02e5449cb440c9fc93271ace3f592bb",
+      "sizeBytes": 31294
     },
     {
       "path": "scripts/lib/platform-oxfmt.ts",
@@ -1316,18 +1781,18 @@
     },
     {
       "path": "scripts/templates/platform-json-sdk-go-openapi.tmpl",
-      "sha256": "sha256:342e62496c8eda4e2594ab6f97e4e5af1b6cc508c06bf4bed7941fe38e4f4163",
-      "sizeBytes": 344399
+      "sha256": "sha256:bd859799a05c5cc6e24544cb20366fccd0047f8e0bb17c8986811933e117666e",
+      "sizeBytes": 502003
     },
     {
       "path": "scripts/templates/platform-json-sdk-go-platform.tmpl",
-      "sha256": "sha256:be419bc801c7a8c6e7dc5193122826ce377700fe2a3a28d47de461b84339e5a6",
-      "sizeBytes": 444022
+      "sha256": "sha256:66cdbfcd98fa0c5e39a81c1666e526825226add99508d70ea437af36e41052cf",
+      "sizeBytes": 447104
     },
     {
       "path": "scripts/templates/platform-json-sdk-typescript.tmpl",
-      "sha256": "sha256:e85ca8decbe613467abe8a7895be1c50bcccc52f8d8dec4a88d9fb0a8c76ea2a",
-      "sizeBytes": 523439
+      "sha256": "sha256:4dcbb82b60cc31b506c0372ecb120388dc7a9bfc6ddf0057b559c41eb17ce3bb",
+      "sizeBytes": 646135
     },
     {
       "path": "sdk/go/THIRD_PARTY_NOTICES.md",
@@ -1336,7 +1801,7 @@
     },
     {
       "path": "sdk/go/generated-manifest.json",
-      "sha256": "sha256:64f88fcf0f4690fe6fbc4c45f615aff1088224144721f943963b20c044cf20d1",
+      "sha256": "sha256:40ebe3e455fa1620ac0664668a3714386686c36502fb64149865cdb7d07c0f20",
       "sizeBytes": 4445
     },
     {
@@ -1351,7 +1816,7 @@
     },
     {
       "path": "sdk/go/proto-generated-manifest.json",
-      "sha256": "sha256:0387408c185ea21976853ed1e4a3827b054e6bb7cb4b7ad12775a32af78575f5",
+      "sha256": "sha256:266de09089999098b217d0eec8ca7998472fcd3b5452797155a8580423c3826c",
       "sizeBytes": 9358
     },
     {
@@ -1361,13 +1826,13 @@
     },
     {
       "path": "sdk/go/test/openapi/client_test.go",
-      "sha256": "sha256:93fe70348ef64c154f4e1bb058b38f5f43df4d047d4b5ba977bb10b3ad62bfc3",
-      "sizeBytes": 67150
+      "sha256": "sha256:8ed031ccd00f41a4fb4a1be7f766c85bbf5c562c714084e441b132b78df5e9b7",
+      "sizeBytes": 88407
     },
     {
       "path": "sdk/go/test/platform/json_test.go",
-      "sha256": "sha256:0ef9c317849e9eb207fb9bea48277ed9fef288d06aa158cf6f8a849991cfd56a",
-      "sizeBytes": 38937
+      "sha256": "sha256:e31ad2f4a222b4f2ab5df751e39bc117ed4d8c513a3478108f1d70cdbcaa6ecc",
+      "sizeBytes": 41095
     },
     {
       "path": "sdk/typescript/THIRD_PARTY_NOTICES.md",
@@ -1376,7 +1841,7 @@
     },
     {
       "path": "sdk/typescript/generated-manifest.json",
-      "sha256": "sha256:10e3307b358be4d47d9bff974866508219dceaa07e058f7bbc6744fe4ffdaec4",
+      "sha256": "sha256:61e006e718e7d35b8895fb274d831b28bc61c63136c80ac3beabc86424f586c9",
       "sizeBytes": 4096
     },
     {
@@ -1386,13 +1851,13 @@
     },
     {
       "path": "sdk/typescript/proto-generated-manifest.json",
-      "sha256": "sha256:5f379f13c13f1070958938c30d5b6480084c6699cc8a648095e24c13a2a3eae6",
+      "sha256": "sha256:dc75cbe0f40b9b2bdd107c8ed8d0f7a3d497e3d82f8a03660d91f550947ca8e0",
       "sizeBytes": 7887
     },
     {
       "path": "sdk/typescript/test/platform.test.ts",
-      "sha256": "sha256:c2b65547f1edad0119ba91691d7e0a65394448ae0e983e80dc24932d3c15941a",
-      "sizeBytes": 124887
+      "sha256": "sha256:9652f7b164de43cf1c6dcf258d2dc74094411a24061addb45154ca60bb1188b4",
+      "sizeBytes": 145036
     },
     {
       "path": "test/scripts/platform-contract-successor-v3.test.ts",

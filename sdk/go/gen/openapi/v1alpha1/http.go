@@ -35,6 +35,57 @@ func NewHTTPClientWithClient(baseURL, bearerToken string, client *http.Client) (
 	return newAuthorizedHTTPClient(baseURL, "Bearer "+bearerToken, bearerToken, client)
 }
 
+// NewIdentityServiceHTTPClient creates the server-only identity client. The
+// configured service credential is attached by the transport and cannot be
+// replaced by an operation caller.
+func NewIdentityServiceHTTPClient(baseURL, serviceCredential string) (*IdentityServiceClient, error) {
+	return NewIdentityServiceHTTPClientWithClient(baseURL, serviceCredential, &http.Client{})
+}
+
+// NewIdentityServiceHTTPClientWithClient creates the server-only identity
+// client with a caller-provided HTTP client. It preserves the public client's
+// endpoint, credential, response-size, and redirect checks.
+func NewIdentityServiceHTTPClientWithClient(baseURL, serviceCredential string, client *http.Client) (*IdentityServiceClient, error) {
+	base, err := newAuthorizedHTTPClient(baseURL, "Bearer "+serviceCredential, serviceCredential, client)
+	if err != nil {
+		return nil, err
+	}
+	return NewIdentityServiceClient(base.transport)
+}
+
+// NewIdentityAuthorizationHTTPClient creates the dedicated Identity Service to
+// Control Plane authorization client. Its service credential is transport
+// configuration and cannot be supplied or replaced by an operation caller.
+func NewIdentityAuthorizationHTTPClient(baseURL, serviceCredential string) (*IdentityAuthorizationClient, error) {
+	return NewIdentityAuthorizationHTTPClientWithClient(baseURL, serviceCredential, &http.Client{})
+}
+
+// NewIdentityAuthorizationHTTPClientWithClient creates the dedicated
+// authorization client with a caller-provided HTTP client. It preserves the
+// endpoint, credential, response-size, and redirect checks.
+func NewIdentityAuthorizationHTTPClientWithClient(baseURL, serviceCredential string, client *http.Client) (*IdentityAuthorizationClient, error) {
+	base, err := newAuthorizedHTTPClient(baseURL, "Bearer "+serviceCredential, serviceCredential, client)
+	if err != nil {
+		return nil, err
+	}
+	return NewIdentityAuthorizationClient(base.transport)
+}
+
+func NewCLIIdentityHTTPClient(baseURL string) (*CLIIdentityClient, error) {
+	return NewCLIIdentityHTTPClientWithClient(baseURL, &http.Client{})
+}
+
+// NewCLIIdentityHTTPClientWithClient creates the public CLI-to-Web-BFF client.
+// Start and exchange are anonymous; grant-authenticated operations attach their
+// credential at the individual method boundary.
+func NewCLIIdentityHTTPClientWithClient(baseURL string, client *http.Client) (*CLIIdentityClient, error) {
+	base, err := newHTTPClient(baseURL, "", true, client)
+	if err != nil {
+		return nil, err
+	}
+	return NewCLIIdentityClient(base.transport)
+}
+
 // NewRemoteWorkerBootstrapHTTPClient creates a client authenticated only by a
 // one-time enrollment secret. The server accepts it solely on bootstrap routes.
 func NewRemoteWorkerBootstrapHTTPClient(baseURL, enrollmentSecret string) (*Client, error) {

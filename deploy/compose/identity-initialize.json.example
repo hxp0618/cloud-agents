@@ -1,0 +1,15 @@
+{
+  "bootstrapDatabaseUrlFile": "/run/cloud-agents/identity/secrets/bootstrap-database-url",
+  "issuer": "https://identity.cloud-agents.example",
+  "adminAudience": "https://admin.cloud-agents.example:4174",
+  "userAudience": "https://user.cloud-agents.example:4173",
+  "signingKeyId": "identity-signing-1",
+  "signingPrivateKeyFile": "/run/cloud-agents/identity/secrets/signing.key",
+  "setupProofFile": "/run/cloud-agents/identity/secrets/setup.proof",
+  "userId": "initial-admin",
+  "email": "admin@example.com",
+  "displayName": "Initial administrator",
+  "passwordHashFile": "/run/cloud-agents/identity/secrets/password.hash",
+  "keyNotBefore": "2026-10-08T00:00:00Z",
+  "keyNotAfter": "2027-10-08T00:00:00Z"
+}

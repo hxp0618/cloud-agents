@@ -57,8 +57,35 @@ type I18nValue = Readonly<{
   setLocale: (locale: Locale) => void;
   t: Translate;
   number: (value: number) => string;
+  duration: (seconds: number) => string;
+  bytes: (value: number) => string;
   dateTime: (value: string | undefined) => string;
 }>;
+
+const durationUnits = Object.freeze([
+  ["day", 86_400],
+  ["hour", 3_600],
+  ["minute", 60],
+  ["second", 1],
+] as const);
+
+export function formatDuration(locale: Locale, seconds: number): string {
+  const [unit, size] = durationUnits.find(([, unitSeconds]) => seconds % unitSeconds === 0) ?? ["second", 1];
+  return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "long" }).format(
+    seconds / size,
+  );
+}
+
+const byteUnits = Object.freeze(["B", "KiB", "MiB", "GiB", "TiB"] as const);
+
+export function formatBytes(locale: Locale, value: number): string {
+  let exponent = 0;
+  while (exponent < byteUnits.length - 1 && Math.abs(value) >= 1024 ** (exponent + 1)) exponent++;
+  const scaled = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
+    value / 1024 ** exponent,
+  );
+  return `${scaled} ${byteUnits[exponent]}`;
+}
 
 const I18nContext = createContext<I18nValue | null>(null);
 
@@ -85,6 +112,8 @@ export function I18nProvider({ children }: Readonly<{ children: ReactNode }>) {
       setLocale: setLocaleState,
       t,
       number: (number) => numberFormat.format(number),
+      duration: (seconds) => formatDuration(locale, seconds),
+      bytes: (value) => formatBytes(locale, value),
       dateTime: (raw) => {
         if (raw === undefined || raw === "") return t("common.never");
         const parsed = new Date(raw);

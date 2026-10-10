@@ -19,7 +19,7 @@ required CLOUD_AGENTS_PLATFORM_RELEASE_DIR "${CLOUD_AGENTS_PLATFORM_RELEASE_DIR:
 required CLOUD_AGENTS_REMOTE_WORKER_INSTALL_DIR "${CLOUD_AGENTS_REMOTE_WORKER_INSTALL_DIR:-}"
 required CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL "${CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL:-}"
 required CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE "${CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE:-}"
-required CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE "${CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE:-}"
+required CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE "${CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE:-}"
 required CLOUD_AGENTS_REMOTE_WORKER_TENANT "${CLOUD_AGENTS_REMOTE_WORKER_TENANT:-}"
 required CLOUD_AGENTS_REMOTE_WORKER_PROJECT "${CLOUD_AGENTS_REMOTE_WORKER_PROJECT:-}"
 required CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT "${CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT:-}"
@@ -53,7 +53,7 @@ case "$(uname -s)/$(uname -m)" in
 esac
 cli=$release_directory/cloud-agentsctl-$target
 worker=$release_directory/cloud-agents-remote-worker-$target
-for file in "$cli" "$worker" "$CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE" "$CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE"; do
+for file in "$cli" "$worker" "$CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE" "$CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE"; do
   [ -f "$file" ] || {
     echo "RemoteWorker bootstrap input is missing" >&2
     exit 2
@@ -122,11 +122,7 @@ chmod 0500 "$staging_directory/cloud-agents-remote-worker"
 chmod 0400 "$staging_directory/control-plane-ca.pem"
 
 claim_response=$("$cli" \
-  --endpoint "$CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL" \
-  --ca-file "$staging_directory/control-plane-ca.pem" \
-  --token-file "$CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE" \
-  --tenant "$CLOUD_AGENTS_REMOTE_WORKER_TENANT" \
-  --project "$CLOUD_AGENTS_REMOTE_WORKER_PROJECT" \
+  --profile "$CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE" \
   --enrollment "$CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT" \
   --request-id "$CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT" \
   --idempotency-key "$bootstrap_idempotency_key" \
@@ -144,11 +140,8 @@ rm -f -- "$staging_directory/claim-response.json"
 unset claim_response enrollment_secret
 
 "$cli" \
-  --endpoint "$CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL" \
-  --ca-file "$staging_directory/control-plane-ca.pem" \
+  --profile "$CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE" \
   --enrollment-secret-file "$staging_directory/enrollment-secret" \
-  --tenant "$CLOUD_AGENTS_REMOTE_WORKER_TENANT" \
-  --project "$CLOUD_AGENTS_REMOTE_WORKER_PROJECT" \
   --enrollment "$CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT" \
   --request-id "$CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT" \
   --idempotency-key "$bootstrap_idempotency_key" \

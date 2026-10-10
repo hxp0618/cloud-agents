@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/control-plane-audit-event.schema.json",
+  "title": "ControlPlaneAuditEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "action",
+    "resourceKind",
+    "resourceId",
+    "tenantId",
+    "decision",
+    "reasonCode",
+    "occurredAt"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "actor": {
+      "$ref": "../../../common/v1alpha1/schemas/subject-ref.schema.json"
+    },
+    "application": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    },
+    "resourceKind": {
+      "type": "string",
+      "enum": [
+        "membership",
+        "role_binding"
+      ]
+    },
+    "resourceId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "tenantId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "decision": {
+      "type": "string",
+      "const": "allow"
+    },
+    "reasonCode": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "correlationId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

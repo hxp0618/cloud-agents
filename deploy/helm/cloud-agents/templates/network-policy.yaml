@@ -45,6 +45,36 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: {{ include "cloud-agents.fullname" . }}-identity
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: identity
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: control-plane
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: admin-web
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: user-web
+      ports:
+        - protocol: TCP
+          port: {{ .Values.identity.service.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: {{ include "cloud-agents.fullname" . }}-user-web
   labels:
     {{- include "cloud-agents.labels" . | nindent 4 }}
@@ -67,6 +97,14 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.controlPlane.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: identity
+      ports:
+        - protocol: TCP
+          port: {{ .Values.identity.service.port }}
     - to:
         - namespaceSelector:
             matchLabels:
@@ -105,6 +143,14 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.controlPlane.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: identity
+      ports:
+        - protocol: TCP
+          port: {{ .Values.identity.service.port }}
     - to:
         - namespaceSelector:
             matchLabels:

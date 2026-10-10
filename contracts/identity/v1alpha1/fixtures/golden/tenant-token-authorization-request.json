@@ -1,0 +1,6 @@
+{
+  "application": "admin",
+  "sessionSha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "tenantId": "tenant-alpha",
+  "projectId": "project-alpha"
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-client-update.schema.json",
+  "title": "ProviderClientUpdate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "displayName",
+    "providerKind",
+    "issuer",
+    "clientId",
+    "redirectUri",
+    "secretRef",
+    "scopes",
+    "trustProviderEmail",
+    "allowedOrganizationIds",
+    "enabled",
+    "expectedResourceVersion"
+  ],
+  "properties": {
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "providerKind": {
+      "type": "string",
+      "enum": [
+        "oidc",
+        "github",
+        "gitlab",
+        "feishu",
+        "dingtalk",
+        "wecom"
+      ]
+    },
+    "issuer": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 512
+    },
+    "clientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "redirectUri": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 2048
+    },
+    "secretRef": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "rootCaRef": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "agentId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "scopes": {
+      "description": "Canonical authorization scopes. Fixed providers require these exact sorted arrays: GitHub [\"read:user\",\"user:email\"], Feishu [\"contact:user.email:readonly\"], DingTalk [\"corpid\",\"openid\"], WeCom []. OIDC/GitLab scopes are configurable and always include required openid, email and profile during authorization.",
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "trustProviderEmail": {
+      "type": "boolean"
+    },
+    "allowedOrganizationIds": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      }
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "expectedResourceVersion": {
+      "$ref": "../../../common/v1alpha1/schemas/resource-version.schema.json"
+    }
+  }
+}

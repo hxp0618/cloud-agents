@@ -174,7 +174,7 @@ export function CapabilityPanel({
             </select>
           </label>
           <button
-            className="button secondary"
+            className="button outline"
             type="button"
             disabled={runtime.nextSessionPageToken === undefined}
             onClick={onNextSessions}
@@ -182,7 +182,7 @@ export function CapabilityPanel({
             {t("agentRuntime.nextSessionWindow")}
           </button>
           <button
-            className="button secondary"
+            className="button outline"
             type="button"
             disabled={runtime.nextExecutionPageToken === undefined}
             onClick={onNextExecutions}

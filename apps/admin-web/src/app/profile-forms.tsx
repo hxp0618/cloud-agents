@@ -8,20 +8,20 @@ import {
   type StoragePolicy,
   type WorkerRelease,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
-import { AdminSheet } from "../AdminSheet";
-import { targetIdentifierPattern } from "../admin";
+import { AdminSheet, SheetHeading } from "../AdminSheet";
+import { identifierFromName } from "../admin";
 import { useI18n } from "../i18n";
+import { ChoiceList, NameField, Suggestions } from "./form-fields";
 import {
   executableFoundationNetworkPolicy,
   phaseLabel,
   shortDigest,
+  targetKindLabel,
   type WorkloadTrust,
 } from "./presentation";
 
 export type EnvironmentProfileDraft = {
-  profileId: string;
   profileName: string;
-  version: string;
   description: string;
   codex: boolean;
   claudeAgent: boolean;
@@ -30,15 +30,13 @@ export type EnvironmentProfileDraft = {
   storagePolicyRef: string;
   networkPolicyRef: string;
   releaseDigest: string;
-  targetRefs: string;
+  targetRefs: readonly string[];
   providerCredentialRef: string;
 };
 
 export function environmentProfileForm(): EnvironmentProfileDraft {
   return {
-    profileId: "",
     profileName: "",
-    version: "1",
     description: "",
     codex: true,
     claudeAgent: true,
@@ -47,21 +45,23 @@ export function environmentProfileForm(): EnvironmentProfileDraft {
     storagePolicyRef: "",
     networkPolicyRef: "",
     releaseDigest: "",
-    targetRefs: "",
+    targetRefs: Object.freeze([]),
     providerCredentialRef: "",
   };
 }
 
 export function environmentProfileCreateRequestFrom(
   draft: EnvironmentProfileDraft,
+  version: number,
 ): EnvironmentProfileCreateRequest {
   const providerKinds: ("codex" | "claudeAgent")[] = [];
   if (draft.codex) providerKinds.push("codex");
   if (draft.claudeAgent) providerKinds.push("claudeAgent");
+  const profileName = draft.profileName.trim();
   return {
-    profileId: draft.profileId.trim(),
-    profileName: draft.profileName.trim(),
-    version: Number(draft.version),
+    profileId: identifierFromName(profileName, "profile"),
+    profileName,
+    version,
     description: draft.description.trim(),
     providerKinds,
     cpuLimitMillis: Number(draft.cpuLimitMillis),
@@ -69,9 +69,7 @@ export function environmentProfileCreateRequestFrom(
     storagePolicyRef: draft.storagePolicyRef.trim(),
     networkPolicyRef: draft.networkPolicyRef.trim(),
     releaseDigest: draft.releaseDigest.trim() as `sha256:${string}`,
-    targetRefs: [...new Set(draft.targetRefs.split(",").map((value) => value.trim()))].filter(
-      Boolean,
-    ),
+    targetRefs: Object.freeze([...new Set(draft.targetRefs)]),
     providerCredentialRef: draft.providerCredentialRef.trim(),
   };
 }
@@ -81,6 +79,8 @@ export function EnvironmentProfileCreateForm({
   storagePolicies,
   networkPolicies,
   releases,
+  targets,
+  credentialRefSuggestions,
   feedback,
   disabled,
   onDraftChange,
@@ -91,6 +91,8 @@ export function EnvironmentProfileCreateForm({
   storagePolicies: readonly StoragePolicy[];
   networkPolicies: readonly NetworkPolicy[];
   releases: readonly WorkerRelease[];
+  targets: readonly DeploymentTarget[];
+  credentialRefSuggestions: readonly string[];
   feedback: ReactNode;
   disabled: boolean;
   onDraftChange: (draft: EnvironmentProfileDraft) => void;
@@ -101,76 +103,16 @@ export function EnvironmentProfileCreateForm({
   return (
     <AdminSheet feedback={feedback} label={t("profile.create.title")} onClose={onClose}>
       <section className="dialog" aria-labelledby="create-profile-title">
-        <div className="panel-heading">
-          <div>
-            <div className="eyebrow">{t("profile.create.eyebrow")}</div>
-            <h2 id="create-profile-title">{t("profile.create.title")}</h2>
-            <p>{t("profile.create.description")}</p>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={t("action.close")}
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
-        </div>
+        <SheetHeading id="create-profile-title" title={t("profile.create.title")} onClose={onClose} />
         <form className="resource-form" onSubmit={onSubmit}>
-          <div className="form-row">
-            <label>
-              <span>{t("profile.id")}</span>
-              <input
-                value={draft.profileId}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    profileId: event.target.value,
-                  })
-                }
-                placeholder="development"
-                maxLength={128}
-                required
-                autoFocus
-                data-sheet-autofocus
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              <span>{t("profile.name")}</span>
-              <input
-                value={draft.profileName}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    profileName: event.target.value,
-                  })
-                }
-                placeholder="development"
-                maxLength={128}
-                required
-                spellCheck={false}
-              />
-            </label>
-          </div>
-          <label>
-            <span>{t("profile.version")}</span>
-            <input
-              type="number"
-              min="1"
-              max="2147483647"
-              step="1"
-              value={draft.version}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  version: event.target.value,
-                })
-              }
-              required
-            />
-            <small>{t("profile.versionHelp")}</small>
-          </label>
+          <NameField
+            label={t("profile.name")}
+            value={draft.profileName}
+            help={t("profile.nameHelp")}
+            placeholder="development"
+            autoFocus
+            onChange={(profileName) => onDraftChange({ ...draft, profileName })}
+          />
           <label>
             <span>{t("profile.description")}</span>
             <input
@@ -320,26 +262,24 @@ export function EnvironmentProfileCreateForm({
             </select>
             <small>{t("profile.releaseDigestHelp")}</small>
           </label>
-          <label>
-            <span>{t("profile.targetRefs")}</span>
-            <input
-              value={draft.targetRefs}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  targetRefs: event.target.value,
-                })
-              }
-              placeholder="docker-primary, ssh-overflow"
-              required
-              spellCheck={false}
-            />
-            <small>{t("profile.targetRefsHelp")}</small>
-          </label>
+          <ChoiceList
+            name="profile-target-refs"
+            legend={t("profile.targetRefs")}
+            help={t("profile.targetRefsHelp")}
+            empty={t("profile.noTargets")}
+            options={targets.map((target) => ({
+              value: target.metadata.uid,
+              label: target.metadata.name,
+              detail: `${targetKindLabel(target.spec.targetKind, t)} · ${phaseLabel(target.spec.observedPhase, t)}`,
+            }))}
+            selected={draft.targetRefs}
+            onChange={(targetRefs) => onDraftChange({ ...draft, targetRefs })}
+          />
           <label>
             <span>{t("profile.providerCredentialRef")}</span>
             <input
               value={draft.providerCredentialRef}
+              list="profile-credential-refs"
               onChange={(event) =>
                 onDraftChange({
                   ...draft,
@@ -351,13 +291,18 @@ export function EnvironmentProfileCreateForm({
               required
               spellCheck={false}
             />
+            <Suggestions id="profile-credential-refs" values={credentialRefSuggestions} />
             <small>{t("profile.providerCredentialRefHelp")}</small>
           </label>
           <div className="dialog-actions">
             <button className="button ghost" type="button" onClick={() => onClose()}>
               {t("action.cancel")}
             </button>
-            <button className="button primary" type="submit" disabled={disabled}>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={disabled || draft.targetRefs.length === 0}
+            >
               {t("profile.createDraft")}
             </button>
           </div>
@@ -368,30 +313,24 @@ export function EnvironmentProfileCreateForm({
 }
 
 export type RuntimeProfileDraft = {
-  profileId: string;
   profileName: string;
-  version: string;
   description: string;
   workloadTrust: RuntimeProfile["spec"]["workloadTrust"];
   targetId: string;
   networkPolicyRef: string;
   imageUri: string;
-  releaseDigest: string;
   cpuMillis: string;
   memoryMiB: string;
 };
 
 export function runtimeProfileForm(): RuntimeProfileDraft {
   return {
-    profileId: "",
     profileName: "",
-    version: "1",
     description: "",
     workloadTrust: "trusted-single-tenant",
     targetId: "",
     networkPolicyRef: "",
     imageUri: "",
-    releaseDigest: "",
     cpuMillis: "1000",
     memoryMiB: "1024",
   };
@@ -405,11 +344,14 @@ export function isolationRuntimeForTrust(
 
 export function runtimeProfileCreateRequestFrom(
   draft: RuntimeProfileDraft,
+  version: number,
 ): RuntimeProfileCreateRequest {
+  const profileName = draft.profileName.trim();
+  const imageUri = draft.imageUri.trim();
   return {
-    profileId: draft.profileId.trim(),
-    profileName: draft.profileName.trim(),
-    version: Number(draft.version),
+    profileId: identifierFromName(profileName, "runtime-profile"),
+    profileName,
+    version,
     description: draft.description.trim(),
     workloadTrust: draft.workloadTrust,
     isolationRuntime: isolationRuntimeForTrust(draft.workloadTrust),
@@ -433,8 +375,9 @@ export function runtimeProfileCreateRequestFrom(
           }
         : { targetId: draft.targetId }),
     networkPolicyRef: draft.networkPolicyRef,
-    imageUri: draft.imageUri.trim(),
-    releaseDigest: draft.releaseDigest.trim() as `sha256:${string}`,
+    imageUri,
+    // The contract requires imageUri to end in this exact digest.
+    releaseDigest: imageUri.slice(imageUri.indexOf("@") + 1) as `sha256:${string}`,
     cpuMillis: Number(draft.cpuMillis),
     memoryBytes: Number(draft.memoryMiB) * 1_048_576,
   };
@@ -463,58 +406,15 @@ export function RuntimeProfileCreateForm({
   return (
     <AdminSheet label={t("runtimeProfile.createTitle")} feedback={feedback} onClose={onClose}>
       <section className="dialog" aria-labelledby="create-runtime-profile-title">
-        <div className="panel-heading">
-          <div>
-            <div className="eyebrow">no-Agent</div>
-            <h2 id="create-runtime-profile-title">{t("runtimeProfile.createTitle")}</h2>
-            <p>{t("runtimeProfile.createDescription")}</p>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={t("action.close")}
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
-        </div>
+        <SheetHeading id="create-runtime-profile-title" title={t("runtimeProfile.createTitle")} onClose={onClose} />
         <form className="resource-form" onSubmit={onSubmit}>
-          <div className="form-row">
-            <label>
-              <span>{t("runtimeProfile.id")}</span>
-              <input
-                value={draft.profileId}
-                pattern={targetIdentifierPattern}
-                maxLength={128}
-                required
-                autoFocus
-                data-sheet-autofocus
-                spellCheck={false}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    profileId: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label>
-              <span>{t("runtimeProfile.name")}</span>
-              <input
-                value={draft.profileName}
-                pattern={targetIdentifierPattern}
-                maxLength={128}
-                required
-                spellCheck={false}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    profileName: event.target.value,
-                  })
-                }
-              />
-            </label>
-          </div>
+          <NameField
+            label={t("runtimeProfile.name")}
+            value={draft.profileName}
+            help={t("profile.nameHelp")}
+            autoFocus
+            onChange={(profileName) => onDraftChange({ ...draft, profileName })}
+          />
           <div className="form-row">
             <label>
               <span>{t("runtimeProfile.workloadTrust")}</span>
@@ -556,69 +456,51 @@ export function RuntimeProfileCreateForm({
           {draft.workloadTrust === "shared-untrusted" ? (
             <p className="boundary-note">{t("runtimeProfile.gvisorLimitation")}</p>
           ) : null}
-          <div className="form-row">
-            <label>
-              <span>{t("profile.version")}</span>
-              <input
-                type="number"
-                min="1"
-                max="2147483647"
-                value={draft.version}
-                required
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    version: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label>
-              <span>{t("runtimeProfile.target")}</span>
-              <select
-                value={draft.targetId}
-                required
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    targetId: event.target.value,
-                  })
-                }
-              >
-                <option value="" disabled>
-                  {t("runtimeProfile.selectTarget")}
+          <label>
+            <span>{t("runtimeProfile.target")}</span>
+            <select
+              value={draft.targetId}
+              required
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  targetId: event.target.value,
+                })
+              }
+            >
+              <option value="" disabled>
+                {t("runtimeProfile.selectTarget")}
+              </option>
+              {targets.some(
+                ({ spec }) =>
+                  spec.targetKind === "remote-worker" && spec.architecture === "arm64",
+              ) ? (
+                <option value="pool-remote-worker:arm64">
+                  {t("runtimeProfile.remoteWorkerPoolArm64")}
                 </option>
-                {targets.some(
+              ) : null}
+              {targets.some(
+                ({ spec }) =>
+                  spec.targetKind === "remote-worker" && spec.architecture === "amd64",
+              ) ? (
+                <option value="pool-remote-worker:amd64">
+                  {t("runtimeProfile.remoteWorkerPoolAmd64")}
+                </option>
+              ) : null}
+              {targets
+                .filter(
                   ({ spec }) =>
-                    spec.targetKind === "remote-worker" && spec.architecture === "arm64",
-                ) ? (
-                  <option value="pool-remote-worker:arm64">
-                    {t("runtimeProfile.remoteWorkerPoolArm64")}
+                    spec.targetKind === "remote-worker" ||
+                    (draft.workloadTrust === "trusted-single-tenant" &&
+                      spec.targetKind === "docker"),
+                )
+                .map((target) => (
+                  <option key={target.metadata.uid} value={target.metadata.uid}>
+                    {target.metadata.name} · {phaseLabel(target.spec.observedPhase, t)}
                   </option>
-                ) : null}
-                {targets.some(
-                  ({ spec }) =>
-                    spec.targetKind === "remote-worker" && spec.architecture === "amd64",
-                ) ? (
-                  <option value="pool-remote-worker:amd64">
-                    {t("runtimeProfile.remoteWorkerPoolAmd64")}
-                  </option>
-                ) : null}
-                {targets
-                  .filter(
-                    ({ spec }) =>
-                      spec.targetKind === "remote-worker" ||
-                      (draft.workloadTrust === "trusted-single-tenant" &&
-                        spec.targetKind === "docker"),
-                  )
-                  .map((target) => (
-                    <option key={target.metadata.uid} value={target.metadata.uid}>
-                      {target.metadata.name} · {phaseLabel(target.spec.observedPhase, t)}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          </div>
+                ))}
+            </select>
+          </label>
           <label>
             <span>{t("runtimeProfile.networkPolicy")}</span>
             <select
@@ -666,6 +548,7 @@ export function RuntimeProfileCreateForm({
               className="mono"
               value={draft.imageUri}
               placeholder={`registry.example/runtime@sha256:${"a".repeat(64)}`}
+              pattern="[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}"
               maxLength={1024}
               required
               spellCheck={false}
@@ -676,25 +559,7 @@ export function RuntimeProfileCreateForm({
                 })
               }
             />
-          </label>
-          <label>
-            <span>{t("runtimeProfile.releaseDigest")}</span>
-            <input
-              className="mono"
-              value={draft.releaseDigest}
-              placeholder={`sha256:${"a".repeat(64)}`}
-              pattern="sha256:[0-9a-f]{64}"
-              minLength={71}
-              maxLength={71}
-              required
-              spellCheck={false}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  releaseDigest: event.target.value,
-                })
-              }
-            />
+            <small>{t("runtimeProfile.imageHelp")}</small>
           </label>
           <div className="form-row">
             <label>

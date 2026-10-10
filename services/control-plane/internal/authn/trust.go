@@ -90,7 +90,6 @@ func (lineage *trustLineage) replace(candidate snapshotCandidate) error {
 	if lineage.current != nil {
 		previous = lineage.current.snapshot
 	}
-	oldGeneration := lineage.current
 	priorHistory := lineage.history
 	lineage.state.Unlock()
 
@@ -98,22 +97,84 @@ func (lineage *trustLineage) replace(candidate snapshotCandidate) error {
 	if err != nil {
 		return err
 	}
+	lineage.publish(snapshot, history)
+	return nil
+}
 
+// The caller serializes mutations and validates the complete snapshot first.
+func (lineage *trustLineage) publish(snapshot *trustSnapshot, history map[string][]byte) {
 	lineage.state.Lock()
+	oldGeneration := lineage.closeAdmissionLocked()
+	lineage.state.Unlock()
+	drainTrustGeneration(oldGeneration)
+	lineage.state.Lock()
+	lineage.openAdmissionLocked(snapshot, history)
+	lineage.state.Unlock()
+}
+
+func publishTrustPair(left *trustLineage, leftSnapshot *trustSnapshot, leftHistory map[string][]byte, right *trustLineage, rightSnapshot *trustSnapshot, rightHistory map[string][]byte) {
+	leftGeneration, rightGeneration := closeTrustPairAdmissions(left, right)
+	drainTrustGeneration(leftGeneration)
+	drainTrustGeneration(rightGeneration)
+
+	left.state.Lock()
+	right.state.Lock()
+	left.openAdmissionLocked(leftSnapshot, leftHistory)
+	right.openAdmissionLocked(rightSnapshot, rightHistory)
+	right.state.Unlock()
+	left.state.Unlock()
+}
+
+func invalidateTrustPair(left, right *trustLineage) {
+	if left == nil {
+		if right != nil {
+			right.invalidate()
+		}
+		return
+	}
+	if right == nil || left == right {
+		left.invalidate()
+		return
+	}
+	left.mutation.Lock()
+	defer left.mutation.Unlock()
+	right.mutation.Lock()
+	defer right.mutation.Unlock()
+	leftGeneration, rightGeneration := closeTrustPairAdmissions(left, right)
+	drainTrustGeneration(leftGeneration)
+	drainTrustGeneration(rightGeneration)
+}
+
+func closeTrustPairAdmissions(left, right *trustLineage) (*trustGeneration, *trustGeneration) {
+	left.state.Lock()
+	right.state.Lock()
+	leftGeneration := left.closeAdmissionLocked()
+	rightGeneration := right.closeAdmissionLocked()
+	right.state.Unlock()
+	left.state.Unlock()
+	return leftGeneration, rightGeneration
+}
+
+func (lineage *trustLineage) closeAdmissionLocked() *trustGeneration {
+	oldGeneration := lineage.current
 	lineage.admitting = false
 	lineage.current = nil
-	lineage.state.Unlock()
-	if oldGeneration != nil {
-		oldGeneration.lease.Lock()
-		oldGeneration.active = false
-		oldGeneration.lease.Unlock()
-	}
-	lineage.state.Lock()
+	return oldGeneration
+}
+
+func (lineage *trustLineage) openAdmissionLocked(snapshot *trustSnapshot, history map[string][]byte) {
 	lineage.history = history
 	lineage.current = &trustGeneration{active: true, snapshot: snapshot}
 	lineage.admitting = true
-	lineage.state.Unlock()
-	return nil
+}
+
+func drainTrustGeneration(generation *trustGeneration) {
+	if generation == nil {
+		return
+	}
+	generation.lease.Lock()
+	generation.active = false
+	generation.lease.Unlock()
 }
 
 func (lineage *trustLineage) invalidate() {
@@ -123,16 +184,9 @@ func (lineage *trustLineage) invalidate() {
 	lineage.mutation.Lock()
 	defer lineage.mutation.Unlock()
 	lineage.state.Lock()
-	lineage.admitting = false
-	oldGeneration := lineage.current
-	lineage.current = nil
+	oldGeneration := lineage.closeAdmissionLocked()
 	lineage.state.Unlock()
-	if oldGeneration == nil {
-		return
-	}
-	oldGeneration.lease.Lock()
-	oldGeneration.active = false
-	oldGeneration.lease.Unlock()
+	drainTrustGeneration(oldGeneration)
 }
 
 func (lineage *trustLineage) acquireCurrent() (*trustGeneration, *trustSnapshot, bool) {

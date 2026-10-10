@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-client-page.schema.json",
+  "title": "ProviderClientPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "providers"
+  ],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "provider-client.schema.json"
+      }
+    }
+  }
+}

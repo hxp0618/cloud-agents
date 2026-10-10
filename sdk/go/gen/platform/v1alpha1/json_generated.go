@@ -1459,12 +1459,27 @@ type WorkspaceSnapshotPage struct {
 	NextPageToken      string              `json:"nextPageToken,omitempty"`
 }
 type DeploymentTargetRegisterRequest struct {
-	TargetID      string `json:"targetId"`
-	TargetName    string `json:"targetName"`
-	TargetKind    string `json:"targetKind"`
-	Endpoint      string `json:"endpoint"`
-	CredentialRef string `json:"credentialRef"`
+	TargetID             string                                `json:"targetId"`
+	TargetName           string                                `json:"targetName"`
+	TargetKind           string                                `json:"targetKind"`
+	Endpoint             string                                `json:"endpoint"`
+	CredentialRef        string                                `json:"credentialRef"`
+	KubernetesCredential *DeploymentTargetKubernetesCredential `json:"kubernetesCredential,omitempty"`
 }
+
+// DeploymentTargetKubernetesCredential is write-only secret material; String and GoString never print it.
+type DeploymentTargetKubernetesCredential struct {
+	CertificateAuthorityData string `json:"certificateAuthorityData"`
+	Token                    string `json:"token,omitempty"`
+	ClientCertificateData    string `json:"clientCertificateData,omitempty"`
+	ClientKeyData            string `json:"clientKeyData,omitempty"`
+}
+
+func (DeploymentTargetKubernetesCredential) String() string {
+	return "DeploymentTargetKubernetesCredential{redacted}"
+}
+func (value DeploymentTargetKubernetesCredential) GoString() string { return value.String() }
+
 type DeploymentTargetProbeRequest struct {
 	ExpectedGeneration int64 `json:"expectedGeneration"`
 }
@@ -1588,7 +1603,7 @@ func DecodeAdminDeniedWriteEventJSON(data []byte) (AdminDeniedWriteEvent, error)
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "")
 	}
 	switch value.Action {
-	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminCorrectSandboxUsage", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling":
+	case "adminUpgradeEnvironmentLease", "adminRollbackEnvironmentLease", "adminRegisterWorkerRelease", "adminSetStoragePolicy", "adminSetNetworkPolicy", "adminSetProjectLeaseQuota", "adminCreateEnvironmentProfile", "adminPublishEnvironmentProfile", "adminDisableEnvironmentProfile", "adminCreateRuntimeProfile", "adminPublishRuntimeProfile", "adminDisableRuntimeProfile", "adminRegisterDeploymentTarget", "adminProbeDeploymentTarget", "adminTransitionDeploymentTargetScheduling", "adminCleanupDeploymentTarget", "adminStopSandboxSession", "adminRebuildSandboxSession", "adminCorrectSandboxUsage", "adminRevokeSandboxAccessGrant", "adminCreateWorkspaceSnapshot", "adminRestoreWorkspaceSnapshot", "adminCleanupWorkspaceSnapshot", "adminCreateRemoteWorkerEnrollment", "adminRevokeRemoteWorkerEnrollment", "adminTransitionRemoteWorkerScheduling", "adminCreateMcpServer", "adminRevokeMcpServer", "adminCreateSkillBundle", "adminRevokeSkillBundle":
 	default:
 		return value, common.ContractError("INVALID_ADMIN_DENIED_WRITE_EVENT", "/action")
 	}
@@ -6861,7 +6876,7 @@ func validWorkerServerName(value string) bool {
 	return value != "" && len(value) <= 253 && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "/@") && strings.IndexFunc(value, unicode.IsControl) < 0
 }
 func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetRegisterRequest, error) {
-	fields, err := common.DecodeStrictObject(data, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"}, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"})
+	fields, err := common.DecodeStrictObject(data, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef", "kubernetesCredential"}, []string{"targetId", "targetName", "targetKind", "endpoint", "credentialRef"})
 	if err != nil {
 		return DeploymentTargetRegisterRequest{}, err
 	}
@@ -6894,7 +6909,58 @@ func DecodeDeploymentTargetRegisterRequestJSON(data []byte) (DeploymentTargetReg
 	if err := common.ValidateIdentifier(credential, "/credentialRef"); err != nil {
 		return DeploymentTargetRegisterRequest{}, err
 	}
-	return DeploymentTargetRegisterRequest{TargetID: id, TargetName: name, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential}, nil
+	value := DeploymentTargetRegisterRequest{TargetID: id, TargetName: name, TargetKind: kind, Endpoint: endpoint, CredentialRef: credential}
+	if raw, ok := fields["kubernetesCredential"]; ok {
+		if kind != "kubernetes" {
+			return DeploymentTargetRegisterRequest{}, common.ContractError("INVALID_KUBERNETES_CREDENTIAL", "/kubernetesCredential")
+		}
+		kubernetesCredential, err := decodeDeploymentTargetKubernetesCredential(raw)
+		if err != nil {
+			return DeploymentTargetRegisterRequest{}, err
+		}
+		value.KubernetesCredential = &kubernetesCredential
+	}
+	return value, nil
+}
+func decodeDeploymentTargetKubernetesCredential(data []byte) (DeploymentTargetKubernetesCredential, error) {
+	invalid := common.ContractError("INVALID_KUBERNETES_CREDENTIAL", "/kubernetesCredential")
+	fields, err := common.DecodeStrictObject(data, []string{"certificateAuthorityData", "token", "clientCertificateData", "clientKeyData"}, []string{"certificateAuthorityData"})
+	if err != nil {
+		return DeploymentTargetKubernetesCredential{}, invalid
+	}
+	var value DeploymentTargetKubernetesCredential
+	for name, target := range map[string]*string{"certificateAuthorityData": &value.CertificateAuthorityData, "token": &value.Token, "clientCertificateData": &value.ClientCertificateData, "clientKeyData": &value.ClientKeyData} {
+		if _, ok := fields[name]; ok {
+			if *target, err = fieldString(fields, name, "/kubernetesCredential/"+name); err != nil {
+				return DeploymentTargetKubernetesCredential{}, invalid
+			}
+		}
+	}
+	_, hasToken := fields["token"]
+	_, hasCertificate := fields["clientCertificateData"]
+	_, hasKey := fields["clientKeyData"]
+	if !validKubernetesCredentialData(value.CertificateAuthorityData) || hasToken == (hasCertificate || hasKey) || hasToken && !validKubernetesCredentialToken(value.Token) || !hasToken && (!validKubernetesCredentialData(value.ClientCertificateData) || !validKubernetesCredentialData(value.ClientKeyData)) {
+		return DeploymentTargetKubernetesCredential{}, invalid
+	}
+	return value, nil
+}
+func validKubernetesCredentialData(value string) bool {
+	if len(value) < 4 || len(value) > 65536 {
+		return false
+	}
+	_, err := base64.StdEncoding.Strict().DecodeString(value)
+	return err == nil
+}
+func validKubernetesCredentialToken(value string) bool {
+	if len(value) < 1 || len(value) > 16384 {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		if value[index] < 0x21 || value[index] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 func EncodeDeploymentTargetRegisterRequestJSON(value DeploymentTargetRegisterRequest) ([]byte, error) {
 	raw, err := json.Marshal(value)

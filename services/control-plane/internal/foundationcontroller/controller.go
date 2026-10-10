@@ -391,7 +391,10 @@ func (controller *Controller) executeSnapshotWithRenewal(ctx context.Context, cl
 		var result dockertarget.FoundationWorkspaceSnapshotResult
 		var err error
 		if claim.TargetKind == "kubernetes" {
-			result, err = controller.kubernetes.SnapshotFoundationWorkspacePortable(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input, controller.archives)
+			var kubernetes *kubernetestarget.CredentialDirectory
+			if kubernetes, err = controller.kubernetes.ForTarget(effectCtx, claim.TenantID, claim.ProjectID, claim.TargetID); err == nil {
+				result, err = kubernetes.SnapshotFoundationWorkspacePortable(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input, controller.archives)
+			}
 		} else if controller.archives == nil {
 			result, err = controller.docker.SnapshotFoundationWorkspace(effectCtx, claim.TargetEndpoint, claim.CredentialRef, input)
 		} else {
@@ -454,6 +457,13 @@ func (controller *Controller) executeWithRenewal(ctx context.Context, claim *pos
 func ExecuteEffect(ctx context.Context, docker *dockertarget.CredentialDirectory, kubernetes *kubernetestarget.CredentialDirectory, sandbox *opensandbox.CredentialDirectory, archives *dockertarget.FoundationSnapshotArchiveDirectory, claim postgres.FoundationSandboxClaim) EffectResult {
 	if ctx == nil || sandbox == nil || (claim.TargetKind != "kubernetes" && docker == nil) || (claim.TargetKind == "kubernetes" && kubernetes == nil) {
 		return EffectResult{Err: errors.New("foundation executor configuration is invalid")}
+	}
+	if claim.TargetKind == "kubernetes" {
+		bound, err := kubernetes.ForTarget(ctx, claim.TenantID, claim.ProjectID, claim.TargetID)
+		if err != nil {
+			return EffectResult{Err: err}
+		}
+		kubernetes = bound
 	}
 	if claim.Action == "sandbox.stop" {
 		volumeName, err := foundationWorkspaceVolume(ctx, docker, kubernetes, claim, false)

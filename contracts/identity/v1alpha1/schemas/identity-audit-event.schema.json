@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/identity-audit-event.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "eventKind", "decision", "reasonCode", "correlationId", "occurredAt"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "eventKind": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "actorUserId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "targetUserId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "application": { "enum": ["admin", "user"] },
+    "decision": { "enum": ["allow", "deny"] },
+    "reasonCode": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "correlationId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

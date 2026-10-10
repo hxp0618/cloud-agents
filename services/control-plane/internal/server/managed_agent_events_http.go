@@ -92,7 +92,7 @@ func (server *ManagedAgentEventsHTTPServer) ServeHTTP(writer http.ResponseWriter
 		}
 		limit = parsed
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return

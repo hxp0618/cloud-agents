@@ -1,0 +1,12 @@
+{
+  "application": "admin",
+  "user": {
+    "id": "user-alpha",
+    "email": "admin@example.com",
+    "displayName": "Admin Alpha",
+    "displayRoles": [],
+    "superAdmin": true
+  },
+  "tenants": [],
+  "csrfToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/login-method.schema.json",
+  "title": "LoginMethod",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "providerId",
+    "issuer",
+    "subject",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "providerId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "createdAt": {
+      "$ref": "../../../common/v1alpha1/schemas/date-time.schema.json"
+    }
+  }
+}

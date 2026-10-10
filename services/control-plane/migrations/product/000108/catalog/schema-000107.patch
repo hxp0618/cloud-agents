@@ -1,0 +1,40 @@
+--- services/control-plane/migrations/product/000107/catalog/schema-000106.json
++++ services/control-plane/migrations/product/000108/catalog/schema-000107.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000107",
++  "schema_head": "000108",
+@@ -30590,0 +30591,34 @@
++            "special_case": null
++          }
++        }
++      ]
++    },
++    {
++      "migration_id": "000108",
++      "sql_sha256": "sha256:0d740eacc48f9ba5e90962c04d39b231f537a24d7de5fb399ed1072d001363e2",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 221,
++          "sha256": "sha256:d86252579a082debdc3fde69b06cb9e8d55482c6281f076d43034e2bc855e9ad",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "INSERT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:builtin_roles",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 221,
++          "end": 1216,
++          "sha256": "sha256:068c765dc7c59d1371246bce5e95b2bda6527ae0eb8221c7ea4a6b0ae4ea091a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "INSERT",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
++            "grantee": null,

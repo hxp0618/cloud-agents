@@ -1,0 +1,7 @@
+{
+  "email": "invited@example.com",
+  "roleName": "project.developer",
+  "scopeLevel": "project",
+  "scopeId": "project-one",
+  "verification": "admin-attested"
+}

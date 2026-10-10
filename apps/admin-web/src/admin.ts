@@ -63,6 +63,13 @@ export {
 } from "./admin/filters";
 export type { ClusterHostSummary, WorkerStatusFilter } from "./admin/filters";
 export {
+  identifierFromName,
+  identifierWithSuffix,
+  newIdentifierSuffix,
+  nextProfileVersion,
+  uniqueIdentifier,
+} from "./admin/identifiers";
+export {
   adminMutationKey,
   newIdempotencyKey,
   newRequestId,
@@ -128,7 +135,6 @@ export function availableSandboxLifecycleAction({
 }
 
 export type SavedAdminConnection = Readonly<{
-  endpoint: string;
   tenantId: string;
   projectId: string;
 }>;
@@ -137,7 +143,6 @@ type ConnectionStorage = Pick<Storage, "getItem" | "setItem">;
 
 const storageKey = "cloud-agents.admin-web.connection.v1";
 const emptyConnection: SavedAdminConnection = Object.freeze({
-  endpoint: "",
   tenantId: "",
   projectId: "",
 });
@@ -150,16 +155,13 @@ export function readSavedAdminConnection(storage: ConnectionStorage): SavedAdmin
     if (typeof value !== "object" || value === null || Array.isArray(value)) return emptyConnection;
     const candidate = value as Record<string, unknown>;
     if (
-      typeof candidate.endpoint !== "string" ||
       typeof candidate.tenantId !== "string" ||
       typeof candidate.projectId !== "string" ||
-      candidate.endpoint.length > 2048 ||
       candidate.tenantId.length > 128 ||
       candidate.projectId.length > 128
     )
       return emptyConnection;
     return Object.freeze({
-      endpoint: candidate.endpoint,
       tenantId: candidate.tenantId,
       projectId: candidate.projectId,
     });
@@ -176,7 +178,6 @@ export function writeSavedAdminConnection(
     storage.setItem(
       storageKey,
       JSON.stringify({
-        endpoint: connection.endpoint,
         tenantId: connection.tenantId,
         projectId: connection.projectId,
       }),
@@ -218,14 +219,47 @@ export function leaseReleaseRequestFromPreview(
   });
 }
 
-export function adminErrorKey(error: unknown): MessageKey {
+function stableProblemCode(error: unknown): string | null {
+  if (!(error instanceof ClientError)) return null;
+  try {
+    const problem = parseProblem(JSON.stringify(error.problem));
+    return problem.status === error.status ? problem.error.code : null;
+  } catch {
+    // Invalid responses must not expose unvalidated diagnostics or secret fields.
+    return null;
+  }
+}
+
+function codeErrorKey(code: string | null): MessageKey | undefined {
+  switch (code) {
+    case "PROJECT_LEASE_COUNT_QUOTA_EXCEEDED":
+      return "error.quotaCount";
+    case "PROJECT_LEASE_CPU_QUOTA_EXCEEDED":
+      return "error.quotaCpu";
+    case "PROJECT_LEASE_MEMORY_QUOTA_EXCEEDED":
+      return "error.quotaMemory";
+    case "PROJECT_LEASE_TTL_QUOTA_EXCEEDED":
+      return "error.quotaTtl";
+    default:
+      return undefined;
+  }
+}
+
+function errorKey(error: unknown, code: string | null): MessageKey {
+  // Quota codes are only actionable for the lease-conflict response. A stale
+  // or malformed code must not hide a more important auth or transport error.
+  const codeKey = error instanceof ClientError && error.status === 409 ? codeErrorKey(code) : undefined;
+  if (codeKey !== undefined) return codeKey;
   if (error instanceof AdminUIError) return error.messageKey;
   if (error instanceof ClientError && error.status === 401) return "error.tokenExpired";
   if (error instanceof ClientError && error.status === 403) return "error.forbidden";
   if (error instanceof ClientError && error.status === 404) return "error.notFound";
   if (error instanceof ClientError && error.status === 409) return "error.conflict";
-  if (error instanceof ClientError && error.status === 400) return "error.invalidRequest";
-  if (error instanceof ClientError && (error.status === 502 || error.status === 503))
+  if (error instanceof ClientError && [400, 405, 415, 422].includes(error.status))
+    return "error.invalidRequest";
+  if (error instanceof ClientError && error.status === 408) return "error.timeout";
+  if (error instanceof ClientError && error.status === 429) return "error.rateLimited";
+  if (error instanceof ClientError && [502, 503, 504].includes(error.status))
     return "error.actuatorUnavailable";
   if (error instanceof JSONContractError) return "error.contract";
   if (error instanceof DOMException && error.name === "TimeoutError") return "error.timeout";
@@ -234,15 +268,11 @@ export function adminErrorKey(error: unknown): MessageKey {
   return "error.generic";
 }
 
+export function adminErrorKey(error: unknown): MessageKey {
+  return errorKey(error, stableProblemCode(error));
+}
+
 export function adminFailure(error: unknown): Readonly<{ key: MessageKey; code: string | null }> {
-  let code: string | null = null;
-  if (error instanceof ClientError) {
-    try {
-      const problem = parseProblem(JSON.stringify(error.problem));
-      if (problem.status === error.status) code = problem.error.code;
-    } catch {
-      // Invalid responses must not expose unvalidated diagnostics or secret fields.
-    }
-  }
-  return { key: adminErrorKey(error), code };
+  const code = stableProblemCode(error);
+  return { key: errorKey(error, code), code };
 }

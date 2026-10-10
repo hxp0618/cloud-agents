@@ -79,7 +79,7 @@ export function ManagedAgentRuntimeSection({
           </select>
         </label>
         <button
-          className="button secondary"
+          className="button outline"
           type="button"
           disabled={disabled || runtime.nextSessionPageToken === undefined}
           onClick={onNextSessions}
@@ -87,7 +87,7 @@ export function ManagedAgentRuntimeSection({
           {t("agentRuntime.nextSessionWindow")}
         </button>
         <button
-          className="button secondary"
+          className="button outline"
           type="button"
           disabled={disabled || runtime.nextExecutionPageToken === undefined}
           onClick={onNextExecutions}

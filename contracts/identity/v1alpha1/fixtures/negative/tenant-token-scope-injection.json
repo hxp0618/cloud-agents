@@ -1,0 +1,5 @@
+{
+  "tenantId": "tenant-alpha",
+  "projectId": "project-alpha",
+  "scopes": ["platform.admin"]
+}

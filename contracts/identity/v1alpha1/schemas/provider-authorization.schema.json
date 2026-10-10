@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-authorization.schema.json",
+  "title": "ProviderAuthorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorizationUrl",
+    "expiresAt"
+  ],
+  "properties": {
+    "authorizationUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 4096
+    },
+    "expiresAt": {
+      "$ref": "../../../common/v1alpha1/schemas/date-time.schema.json"
+    }
+  }
+}

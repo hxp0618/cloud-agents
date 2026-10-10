@@ -1,9 +1,9 @@
 import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ mode }) => {
-  const controlPlane = loadEnv(mode, process.cwd(), "").CLOUD_AGENTS_CONTROL_PLANE_URL;
-  const proxy = controlPlane
-    ? { "/v1/admin": { target: controlPlane, changeOrigin: false, secure: true } }
+  const webServer = loadEnv(mode, process.cwd(), "").CLOUD_AGENTS_WEB_BFF_URL;
+  const proxy = webServer
+    ? { "/v1": { target: webServer, changeOrigin: false, secure: true } }
     : undefined;
 
   return {

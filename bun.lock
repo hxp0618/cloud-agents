@@ -28,6 +28,7 @@
         "@cloud-agents/cloud-agent-protocol": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
+        "yaml": "2.9.0",
       },
       "devDependencies": {
         "@types/react": "19.2.18",

@@ -9,17 +9,18 @@ import type {
 import {
   listAdminNetworkPolicyAuditEvents,
   adminMutationKey,
+  identifierFromName,
   newRequestId,
   replaceNetworkPolicy,
   type AdminClient,
   type SavedAdminConnection,
 } from "./admin";
+import { AdvancedFields, NameField, Suggestions } from "./app/form-fields";
 import { useI18n, type MessageKey } from "./i18n";
 
 function formFrom(policy?: NetworkPolicy) {
   return {
     expectedResourceVersion: policy?.metadata.resourceVersion ?? "0",
-    policyId: policy?.metadata.uid ?? "",
     policyName: policy?.metadata.name ?? "",
     userSummary: policy?.spec.userSummary ?? "",
     defaultEgress: policy?.spec.defaultEgress ?? "restricted",
@@ -58,10 +59,11 @@ export function NetworkPolicyPanel({
     key: string,
     message: { key: MessageKey },
     action: (signal: AbortSignal) => Promise<void>,
+    outcome?: "completed" | "silent",
   ) => Promise<void>;
   idempotencyKey: (key: string) => string;
 }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, dateTime } = useI18n();
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState(formFrom);
   const [audit, setAudit] = useState<readonly AdminAuditEvent[]>([]);
@@ -75,36 +77,55 @@ export function NetworkPolicyPanel({
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
   );
+  const creating = selected === undefined;
+  const nameTaken =
+    creating &&
+    form.policyName.trim() !== "" &&
+    policies.some(
+      ({ metadata }) =>
+        metadata.uid === identifierFromName(form.policyName.trim(), "network-policy"),
+    );
+  const refSuggestions = policies.flatMap(({ spec }) => [
+    spec.allowlistPolicyRef,
+    spec.dnsPolicyRef,
+    spec.proxyPolicyRef,
+  ]);
 
   function select(policyId: string) {
-    void run("network-detail", { key: "operation.networkPolicyDetail" }, async (signal) => {
-      const [result, events] = await Promise.all([
-        client.getAdminNetworkPolicy(
-          connection.tenantId,
-          connection.projectId,
-          policyId,
-          newRequestId(),
-          signal,
-        ),
-        listAdminNetworkPolicyAuditEvents(
-          client,
-          connection.tenantId,
-          connection.projectId,
-          policyId,
-          signal,
-        ),
-      ]);
-      onChange(replaceNetworkPolicy(policies, result.value));
-      setSelectedId(policyId);
-      setForm(formFrom(result.value));
-      setAudit(events);
-    });
+    void run(
+      "network-detail",
+      { key: "operation.networkPolicyDetail" },
+      async (signal) => {
+        const [result, events] = await Promise.all([
+          client.getAdminNetworkPolicy(
+            connection.tenantId,
+            connection.projectId,
+            policyId,
+            newRequestId(),
+            signal,
+          ),
+          listAdminNetworkPolicyAuditEvents(
+            client,
+            connection.tenantId,
+            connection.projectId,
+            policyId,
+            signal,
+          ),
+        ]);
+        onChange(replaceNetworkPolicy(policies, result.value));
+        setSelectedId(policyId);
+        setForm(formFrom(result.value));
+        setAudit(events);
+      },
+      "silent",
+    );
   }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || referenced) return;
-    const policyId = form.policyId.trim();
+    if (busy || referenced || nameTaken) return;
+    const policyId =
+      selected?.metadata.uid ?? identifierFromName(form.policyName.trim(), "network-policy");
     const body: NetworkPolicySetRequest = {
       expectedResourceVersion: form.expectedResourceVersion,
       policyName: form.policyName.trim(),
@@ -162,7 +183,6 @@ export function NetworkPolicyPanel({
           value={query}
           onChange={(event) => onQuery(event.target.value)}
         />
-        <span className="scope-chip">network-policies.list · {number(visible.length)}</span>
       </div>
       <div className="panel target-list-panel">
         {visible.length === 0 ? (
@@ -223,36 +243,21 @@ export function NetworkPolicyPanel({
       <section className="panel overview-panel">
         <div className="panel-heading">
           <div>
-            <h2>{t("networkPolicy.formTitle")}</h2>
-            <p>{t("networkPolicy.formDescription")}</p>
+            <h2>
+              {creating
+                ? t("networkPolicy.createTitle")
+                : t("networkPolicy.editTitle", { name: selected.metadata.name })}
+            </h2>
           </div>
-          <span className="scope-chip">network-policies.get · network-policies.update</span>
         </div>
         <form className="resource-form" onSubmit={save}>
-          <div className="form-row">
-            <label>
-              <span>{t("networkPolicy.id")}</span>
-              <input
-                required
-                maxLength={128}
-                spellCheck={false}
-                value={form.policyId}
-                disabled={busy || selected !== undefined}
-                onChange={(event) => setForm({ ...form, policyId: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>{t("networkPolicy.name")}</span>
-              <input
-                required
-                maxLength={128}
-                spellCheck={false}
-                value={form.policyName}
-                disabled={busy || referenced}
-                onChange={(event) => setForm({ ...form, policyName: event.target.value })}
-              />
-            </label>
-          </div>
+          <NameField
+            label={t("networkPolicy.name")}
+            value={form.policyName}
+            takenMessage={nameTaken ? t("form.nameTaken") : ""}
+            disabled={busy || referenced}
+            onChange={(policyName) => setForm({ ...form, policyName })}
+          />
           <label>
             <span>{t("networkPolicy.userSummary")}</span>
             <input
@@ -264,17 +269,6 @@ export function NetworkPolicyPanel({
               placeholder={t("networkPolicy.userSummaryPlaceholder")}
             />
             <small>{t("networkPolicy.userSummaryHelp")}</small>
-          </label>
-          <label>
-            <span>{t("networkPolicy.allowedEgress")}</span>
-            <textarea
-              rows={5}
-              value={form.allowedEgress}
-              disabled={busy || referenced || form.defaultEgress !== "restricted"}
-              placeholder={t("networkPolicy.allowedEgressPlaceholder")}
-              onChange={(event) => setForm({ ...form, allowedEgress: event.target.value })}
-            />
-            <small>{t("networkPolicy.allowedEgressHelp")}</small>
           </label>
           <label>
             <span>{t("networkPolicy.defaultEgress")}</span>
@@ -296,64 +290,86 @@ export function NetworkPolicyPanel({
               ))}
             </select>
           </label>
-          {(["allowlistPolicyRef", "dnsPolicyRef", "proxyPolicyRef"] as const).map((field) => (
-            <label key={field}>
-              <span>{t(("networkPolicy." + field) as MessageKey)}</span>
-              <input
-                maxLength={128}
-                spellCheck={false}
-                value={form[field]}
+          {form.defaultEgress === "restricted" ? (
+            <label>
+              <span>{t("networkPolicy.allowedEgress")}</span>
+              <textarea
+                rows={5}
+                value={form.allowedEgress}
                 disabled={busy || referenced}
-                onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+                placeholder={t("networkPolicy.allowedEgressPlaceholder")}
+                onChange={(event) => setForm({ ...form, allowedEgress: event.target.value })}
               />
+              <small>{t("networkPolicy.allowedEgressHelp")}</small>
             </label>
-          ))}
-          <div className="form-row">
-            {(["ingressEnabled", "previewEnabled"] as const).map((field) => (
+          ) : null}
+          <AdvancedFields>
+            {(["allowlistPolicyRef", "dnsPolicyRef", "proxyPolicyRef"] as const).map((field) => (
               <label key={field}>
                 <span>{t(("networkPolicy." + field) as MessageKey)}</span>
+                <input
+                  maxLength={128}
+                  spellCheck={false}
+                  list="network-policy-refs"
+                  value={form[field]}
+                  disabled={busy || referenced}
+                  onChange={(event) => setForm({ ...form, [field]: event.target.value })}
+                />
+              </label>
+            ))}
+            <Suggestions id="network-policy-refs" values={refSuggestions} />
+          </AdvancedFields>
+          <div className="form-row">
+            {(["ingressEnabled", "previewEnabled"] as const).map((field) => (
+              <label key={field} className="confirmation-check">
                 <input
                   type="checkbox"
                   checked={form[field]}
                   disabled={busy || referenced}
                   onChange={(event) => setForm({ ...form, [field]: event.target.checked })}
                 />
+                <span>{t(("networkPolicy." + field) as MessageKey)}</span>
               </label>
             ))}
           </div>
-          {referenced && <p className="form-hint">{t("networkPolicy.referencedBoundary")}</p>}
-          <button className="button primary" type="submit" disabled={busy || referenced}>
+          {referenced && <p className="cluster-boundary">{t("networkPolicy.referencedBoundary")}</p>}
+          <button
+            className="button primary"
+            type="submit"
+            disabled={busy || referenced || nameTaken}
+          >
             {t("networkPolicy.save")}
           </button>
         </form>
       </section>
-      <section className="panel activity-panel" aria-label={t("networkPolicy.audit")}>
-        <div className="activity-heading">
-          <h2>{t("networkPolicy.audit")}</h2>
-          <span className="scope-chip">audit.list · {number(audit.length)}</span>
-        </div>
-        {audit.length === 0 ? (
-          <p className="activity-empty">{t("networkPolicy.noAudit")}</p>
-        ) : (
-          <ol className="activity-list compact">
-            {audit.map((event) => (
-              <li key={event.eventId}>
-                <div>
-                  <strong>{t("audit.networkPolicySet")}</strong>
-                  <span className="phase success">
-                    <i />
-                    {t("phase.succeeded")}
-                  </span>
-                </div>
-                <small className="mono break">{t("common.actor", { actor: event.actor })}</small>
-                <small className="mono">
-                  {event.requestId} · {dateTime(event.occurredAt)}
-                </small>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      {selectedId === "" ? null : (
+        <section className="panel activity-panel" aria-label={t("networkPolicy.audit")}>
+          <div className="activity-heading">
+            <h2>{t("networkPolicy.audit")}</h2>
+          </div>
+          {audit.length === 0 ? (
+            <p className="activity-empty">{t("networkPolicy.noAudit")}</p>
+          ) : (
+            <ol className="activity-list compact">
+              {audit.map((event) => (
+                <li key={event.eventId}>
+                  <div>
+                    <strong>{t("audit.networkPolicySet")}</strong>
+                    <span className="phase success">
+                      <i />
+                      {t("phase.succeeded")}
+                    </span>
+                  </div>
+                  <small className="mono break">{t("common.actor", { actor: event.actor })}</small>
+                  <small className="mono">
+                    {event.requestId} · {dateTime(event.occurredAt)}
+                  </small>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
     </section>
   );
 }

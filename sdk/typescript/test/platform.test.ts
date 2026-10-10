@@ -5,8 +5,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   Client,
+  BrowserSessionClient,
+  IdentityServiceClient,
+  decodeInvitation,
+  decodeInvitationCreateRequest,
+  decodeInvitationAcceptRequest,
+  createBrowserHTTPClient,
   createHTTPClient,
   createSessionHTTPClient,
+  createIdentityServiceHTTPClient,
+  createIdentityAuthorizationHTTPClient,
   parseBrowserSession,
   createRemoteWorkerBootstrapHTTPClient,
   decodeAdminSandboxSession,
@@ -20,7 +28,12 @@ import {
   decodeEnvironmentProfilePage,
   decodeEnvironmentProfileSummary,
   decodeEnvironmentProfileSummaryPage,
+  decodeEmailSuffixPolicy,
+  decodeEmailSuffixPolicyUpdate,
   decodeIdempotency,
+  decodeIdentityJWKS,
+  decodeTenantTokenAuthorization,
+  decodeTenantTokenAuthorizationRequest,
   decodeMembership,
   decodeMembershipPage,
   decodeMaintenanceOperationPage,
@@ -71,7 +84,9 @@ import {
   decodeWorkerRelease,
   decodeWorkerReleasePage,
   encodeResponse,
+  encodeIdentityJWKS,
   parseProblem,
+  parseIdentityJWKS,
   parseAdminSandboxSession,
   parseProject,
   parseProjectCreateRequest,
@@ -80,6 +95,7 @@ import {
   validateProjectResolvedOrganization,
   type FixtureResponse,
   type FixtureRequest,
+  type FixtureTransport,
 } from "../src/platform";
 
 const commonFixtureRoot = resolve(
@@ -89,6 +105,10 @@ const commonFixtureRoot = resolve(
 const platformFixtureRoot = resolve(
   import.meta.dirname,
   "../../../contracts/platform/v1alpha1/fixtures",
+);
+const identityFixtureRoot = resolve(
+  import.meta.dirname,
+  "../../../contracts/identity/v1alpha1/fixtures",
 );
 
 const platformAPIVersion = "platform.cloud-agents.dev/v1alpha1";
@@ -3544,6 +3564,55 @@ describe("generated platform client", () => {
     ]);
   });
 
+  it("uses the explicit Admin management routes", async () => {
+    const responses: Record<string, FixtureResponse> = {
+      "GET /v1/admin/tenants/tenant-alpha": fixtureResponse(
+        platformFixtureRoot,
+        "platform-tenant",
+        200,
+      ),
+      "GET /v1/admin/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1":
+        {
+          status: 200,
+          headers: {},
+          body: readFixture(platformFixtureRoot, "golden/project-page.json"),
+        },
+      "POST /v1/admin/tenants/tenant-alpha/memberships": jsonResponse(
+        JSON.stringify({ resourceUid: "membership-new", resourceVersion: "8", state: "active" }),
+        201,
+        "8",
+      ),
+    };
+    const { client, seen } = recordingClient(async (request) => {
+      return responses[`${request.method} ${request.path}`]!;
+    });
+    await client.getAdminPlatformTenant("tenant-alpha", "req-alpha");
+    await client.listAdminProjects(
+      "tenant-alpha",
+      "organization-alpha",
+      "req-alpha",
+      1,
+      "project-page-token-1",
+    );
+    await client.createAdminMembership("tenant-alpha", "req-alpha", {
+      expectedTenantRevision: 7,
+      membershipId: "membership-new",
+      membershipName: "membership-new",
+      subject: {
+        kind: "serviceAccount",
+        issuer: "https://issuer.example",
+        subject: "service-alpha",
+      },
+      scope: {
+        level: "tenant",
+        ref: { namespace: "cloud-agents", kind: "tenant", id: "tenant-alpha" },
+      },
+      auditFactUid: "audit-create",
+      reasonCode: "operator-request",
+    });
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual(Object.keys(responses));
+  });
+
   it("keeps problem status and abort semantics stable", async () => {
     const problem = readFixture(commonFixtureRoot, "golden/problem.json");
     const errorClient = new Client(async () => jsonResponse(problem, 404));
@@ -3635,28 +3704,453 @@ function fixtureResponse(root: string, name: string, status: number): FixtureRes
   };
 }
 
+it("round-trips closed public identity JWKS documents", () => {
+  const jwks = parseIdentityJWKS(readFixture(identityFixtureRoot, "golden/identity-jwks.json"));
+  expect(jwks.keys[0]?.kid).toBe("identity-signing-1");
+  expect(decodeIdentityJWKS(JSON.parse(encodeIdentityJWKS(jwks)))).toEqual(jwks);
+  expect(
+    encodeIdentityJWKS({
+      ...jwks,
+      keys: [],
+      cloudAgentsAuthority: {
+        ...jwks.cloudAgentsAuthority,
+        lineage: [{ ...jwks.cloudAgentsAuthority.lineage[0]!, enabled: false }],
+      },
+    }),
+  ).toContain('"keys":[]');
+  expect(() =>
+    parseIdentityJWKS(readFixture(identityFixtureRoot, "negative/identity-jwks-private-key.json")),
+  ).toThrow("UNKNOWN_FIELD");
+});
+
 it("browser sessions use cookies and CSRF without accepting malformed scope authority", async () => {
   const session = {
-    user: { id: "account-test", email: "admin@example.com", displayName: "Admin", superAdmin: false },
-    tenants: [{ id: "tenant-test", name: "Test", projects: [{ id: "project-test", name: "Project" }], emailDomains: ["example.com"], resourceVersion: "1", canManage: true }],
-    csrfToken: "a".repeat(43), identities: [],
+    application: "admin",
+    user: {
+      id: "account-test",
+      email: "admin@example.com",
+      displayName: "Admin",
+      displayRoles: [],
+    },
+    tenants: [{ id: "tenant-test", name: "Test", displayRoles: ["tenant.admin"] }],
+    nextPageToken: "tenant-page-token-2",
+    csrfToken: "a".repeat(43),
   };
   expect(parseBrowserSession(JSON.stringify(session))).toEqual(session);
-  expect(() => parseBrowserSession(JSON.stringify({ ...session, tenants: [session.tenants[0], session.tenants[0]] }))).toThrow();
-  expect(() => parseBrowserSession(JSON.stringify({ ...session, user: { ...session.user, superAdmin: "true" } }))).toThrow();
+  expect(() =>
+    parseBrowserSession(
+      JSON.stringify({ ...session, tenants: [session.tenants[0], session.tenants[0]] }),
+    ),
+  ).toThrow();
+  expect(() =>
+    parseBrowserSession(
+      JSON.stringify({ ...session, user: { ...session.user, superAdmin: true } }),
+    ),
+  ).toThrow();
   const originalFetch = globalThis.fetch;
   const requests: RequestInit[] = [];
-  globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+  const urls: string[] = [];
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    urls.push(url);
     requests.push(init);
-    return new Response(JSON.stringify(session), { status: 200 });
+    if (url.endsWith("/tenants/tenant-test/email-policy"))
+      return new Response(
+        JSON.stringify({
+          tenantId: "tenant-test",
+          resourceVersion: "2",
+          allowedDomains: ["example.com"],
+        }),
+        { status: 200 },
+      );
+    if (url.endsWith("/v1/auth/cli/request"))
+      return new Response(JSON.stringify({ pending: true, application: "admin" }), {
+        status: 200,
+      });
+    return init.method === "DELETE"
+      ? new Response(null, { status: 204 })
+      : new Response(JSON.stringify(session), { status: 200 });
   }) as typeof fetch;
   try {
     const client = createSessionHTTPClient("https://admin.example.com", session.csrfToken);
+    await client.passwordLogin({ email: "admin@example.com", password: "secret-password" });
     await client.getBrowserSession();
-    await client.setBrowserTenantEmailDomains("tenant-test", { emailDomains: ["example.com"], expectedResourceVersion: "1" });
-    expect(requests.every((request) => request.credentials === "same-origin" && !new Headers(request.headers).has("Authorization"))).toBe(true);
+    await client.logoutBrowserSession();
+    await client.getEmailSuffixPolicy("tenant-test");
+    await client.updateEmailSuffixPolicy("tenant-test", {
+      expectedResourceVersion: "2",
+      allowedDomains: ["example.com"],
+    });
+    await client.getCLIAuthorizationRequest();
+    expect(urls[0]).toBe("https://admin.example.com/v1/identity/login/password");
+    expect(urls[0]).not.toContain("admin@example.com");
+    expect(urls[0]).not.toContain("secret-password");
+    expect(urls.at(-1)).toBe("https://admin.example.com/v1/auth/cli/request");
+    expect(
+      requests.every(
+        (request) =>
+          request.credentials === "same-origin" &&
+          !new Headers(request.headers).has("Authorization"),
+      ),
+    ).toBe(true);
     expect(new Headers(requests[0]!.headers).has("X-CSRF-Token")).toBe(false);
-    expect(new Headers(requests[1]!.headers).get("X-CSRF-Token")).toBe(session.csrfToken);
+    expect(new Headers(requests[2]!.headers).get("X-CSRF-Token")).toBe(session.csrfToken);
+    expect(
+      new Headers(requests.find((request) => request.method === "PUT")!.headers).get(
+        "X-CSRF-Token",
+      ),
+    ).toBe(session.csrfToken);
     expect(() => createSessionHTTPClient("https://admin.example.com", "bad\nheader")).toThrow();
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("browser Control Plane clients use same-origin cookies and CSRF without bearer auth", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(readFixture(platformFixtureRoot, "golden/project-page.json"), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  try {
+    const proof = "c".repeat(43);
+    const client = createBrowserHTTPClient("https://user.example.com", proof);
+    const page = await client.listMyProjects("tenant-alpha", "request-alpha", 50, "");
+    expect(page.value.projects).toHaveLength(1);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe(
+      "https://user.example.com/v1/tenants/tenant-alpha/my-projects?pageSize=50",
+    );
+    expect(seen[0]!.init.credentials).toBe("same-origin");
+    expect(new Headers(seen[0]!.init.headers).get("X-CSRF-Token")).toBe(proof);
+    expect(new Headers(seen[0]!.init.headers).has("Authorization")).toBe(false);
+    expect(() => createBrowserHTTPClient("https://user.example.com", "bad\nproof")).toThrow();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("preserves canonical resource-version headers in browser Control Plane responses", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(readFixture(platformFixtureRoot, "golden/platform-tenant.json"), {
+      status: 200,
+      headers: { "X-Resource-Version": "1" },
+    })) as typeof fetch;
+  try {
+    const client = createBrowserHTTPClient("https://admin.example.com", "c".repeat(43));
+    const tenant = await client.getAdminPlatformTenant("tenant-alpha", "request-admin");
+    expect(tenant.value.kind).toBe("PlatformTenant");
+    expect(tenant.value.metadata.resourceVersion).toBe("1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("browser Control Plane clients return artifact bytes unchanged", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(Buffer.alloc(3 * 1024 * 1024, 0x80), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": "attachment; filename*=utf-8''result.bin",
+        ETag: '"sha256:artifact"',
+      },
+    })) as typeof fetch;
+  try {
+    const client = createBrowserHTTPClient("https://user.example.com", "c".repeat(43));
+    const artifact = await client.downloadManagedAgentArtifact(
+      "tenant-alpha",
+      "project-alpha",
+      "session-alpha",
+      "turn-alpha",
+      "execution-artifact",
+      "request-alpha",
+      0,
+    );
+    expect(artifact.data).toHaveLength(3 * 1024 * 1024);
+    expect([artifact.data[0], artifact.data.at(-1)]).toEqual([0x80, 0x80]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("identity service client keeps tenant-token and status operations server-only", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  const session = {
+    application: "admin",
+    user: {
+      id: "account-test",
+      email: "admin@example.com",
+      displayName: "Admin",
+      displayRoles: [],
+    },
+    tenants: [{ id: "tenant-test", name: "Test", displayRoles: ["tenant.admin"] }],
+    nextPageToken: "tenant-page-token-2",
+    csrfToken: "a".repeat(43),
+  };
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    if (url.endsWith("/login/password"))
+      return new Response(JSON.stringify(session), {
+        status: 200,
+        headers: { "X-Cloud-Agents-Session": "server-session-handle" },
+      });
+    if (url.includes("/me/tenants?"))
+      return new Response(
+        JSON.stringify({ tenants: session.tenants, nextPageToken: session.nextPageToken }),
+        { status: 200 },
+      );
+    if (url.endsWith("/me")) return new Response(JSON.stringify(session.user), { status: 200 });
+    if (url.endsWith("/session") && init.method === "DELETE")
+      return new Response(null, { status: 204 });
+    if (url.endsWith("/session")) return new Response(JSON.stringify(session), { status: 200 });
+    if (url.endsWith("/tenants/tenant-alpha/email-policy"))
+      return new Response(
+        JSON.stringify({
+          tenantId: "tenant-alpha",
+          resourceVersion: "2",
+          allowedDomains: ["example.com"],
+        }),
+        { status: 200 },
+      );
+    return new Response(JSON.stringify({ status: "active" }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const client = createIdentityServiceHTTPClient("https://identity.example.com", "service-token");
+    const login = await client.passwordLogin("request-login", "2001:db8::1", {
+      email: "admin@example.com",
+      password: "secret-password",
+    });
+    expect(login.session).toEqual(session);
+    expect(login.sessionHandle).toBe("server-session-handle");
+    expect(new Headers(seen[0]!.init.headers).get("X-Cloud-Agents-Client-IP")).toBe("2001:db8::1");
+    for (const clientIP of [
+      "192.0.2.10:443",
+      "192.0.2.010",
+      "2001:0db8::1",
+      "fe80::1%eth0",
+      "192.0.2.1, 198.51.100.2",
+    ]) {
+      await expect(
+        client.passwordLogin("request-login", clientIP, {
+          email: "admin@example.com",
+          password: "secret-password",
+        }),
+      ).rejects.toThrow("INVALID_CLIENT_IP");
+    }
+    await client.getBrowserSession(login.sessionHandle, "request-session");
+    await client.getCurrentUser(login.sessionHandle, "request-me");
+    await client.listBrowserTenants(
+      login.sessionHandle,
+      "request-tenants",
+      200,
+      session.nextPageToken,
+    );
+    expect(seen.at(-1)!.url).toBe(
+      "https://identity.example.com/v1/identity/me/tenants?pageSize=200&pageToken=tenant-page-token-2",
+    );
+    await expect(
+      client.listBrowserTenants(login.sessionHandle, "request-tenants", 201),
+    ).rejects.toThrow("INVALID_INTEGER");
+    await client.getEmailSuffixPolicy(login.sessionHandle, "tenant-alpha", "request-policy");
+    await client.updateEmailSuffixPolicy(
+      login.sessionHandle,
+      "tenant-alpha",
+      "request-policy-update",
+      session.csrfToken,
+      { expectedResourceVersion: "1", allowedDomains: ["example.com"] },
+    );
+    await client.logoutBrowserSession(login.sessionHandle, "request-logout", session.csrfToken);
+    await client.checkTokenStatus("request-alpha", {
+      tokenSha256: `sha256:${"a".repeat(64)}`,
+      expectedClientId: "cloud-agents-admin-web",
+      expectedApplication: "admin",
+      expectedTenantId: "tenant-alpha",
+    });
+    expect(seen.at(-1)!.url).toBe("https://identity.example.com/v1/identity/token-status");
+    expect(
+      seen.every(
+        ({ init }) => new Headers(init.headers).get("Authorization") === "Bearer service-token",
+      ),
+    ).toBe(true);
+    expect(
+      seen.slice(1, 5).every(({ init }) => new Headers(init.headers).has("X-Cloud-Agents-Session")),
+    ).toBe(true);
+    expect(seen.every(({ init }) => init.credentials === undefined)).toBe(true);
+    await expect(
+      client.issueTenantToken("session-handle-value", "request-alpha", {
+        tenantId: "tenant-alpha",
+        scopes: ["platform.admin"],
+      } as never),
+    ).rejects.toThrow();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("email suffix policy codecs require canonical exact domains and CAS versions", () => {
+  expect(
+    decodeEmailSuffixPolicy({
+      tenantId: "tenant-alpha",
+      resourceVersion: "2",
+      allowedDomains: ["example.com", "xn--bcher-kva.example"],
+    }).allowedDomains,
+  ).toEqual(["example.com", "xn--bcher-kva.example"]);
+  expect(() =>
+    decodeEmailSuffixPolicyUpdate({
+      expectedResourceVersion: "02",
+      allowedDomains: ["example.com"],
+    }),
+  ).toThrow("INVALID_RESOURCE_VERSION");
+  expect(() =>
+    decodeEmailSuffixPolicyUpdate({
+      expectedResourceVersion: "2",
+      allowedDomains: ["*.example.com"],
+    }),
+  ).toThrow("INVALID_EMAIL_POLICY_DOMAIN");
+});
+
+it("identity authorization client is server-only and binds the returned context", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  let response = readFixture(identityFixtureRoot, "golden/tenant-token-authorization.json");
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(response, { status: 200 });
+  }) as typeof fetch;
+  try {
+    const request = decodeTenantTokenAuthorizationRequest(
+      readJSON(identityFixtureRoot, "golden/tenant-token-authorization-request.json"),
+    );
+    const client = createIdentityAuthorizationHTTPClient(
+      "https://control-plane.example.com",
+      "identity-to-control-plane",
+    );
+    const authorized = await client.authorizeTenantToken("request-authorize", request);
+    expect(authorized.userId).toBe("account-alpha");
+    expect(seen[0]!.url).toBe(
+      "https://control-plane.example.com/v1/identity/authorize-tenant-token",
+    );
+    expect(new Headers(seen[0]!.init.headers).get("Authorization")).toBe(
+      "Bearer identity-to-control-plane",
+    );
+    expect(JSON.parse(seen[0]!.init.body as string)).toEqual(request);
+    expect(seen[0]!.init.credentials).toBeUndefined();
+    response = response.replace("tenant-alpha", "tenant-other");
+    await expect(client.authorizeTenantToken("request-authorize", request)).rejects.toThrow(
+      "IDENTITY_AUTHORIZATION_MISMATCH",
+    );
+    expect(() =>
+      decodeTenantTokenAuthorization({
+        ...authorized,
+        scopes: ["agents.list", "agents.get"],
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeTenantTokenAuthorizationRequest(
+        readJSON(
+          identityFixtureRoot,
+          "negative/tenant-token-authorization-authority-injection.json",
+        ),
+      ),
+    ).toThrow("UNKNOWN_FIELD");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("keeps invitation creation proofs out of reads and binds existing-account acceptance", async () => {
+  const code = "A".repeat(43);
+  const input = decodeInvitationCreateRequest(
+    readJSON(identityFixtureRoot, "golden/invitation-create-request.json"),
+  );
+  const seen: FixtureRequest[] = [];
+  const transport: FixtureTransport = async (request) => {
+    seen.push(request);
+    if (request.method === "GET")
+      return fixtureResponse(identityFixtureRoot, "invitation-page", 200);
+    if (request.method === "DELETE" || request.path === "/v1/identity/invitations/accept")
+      return { status: 204, headers: {}, body: "" };
+    return fixtureResponse(identityFixtureRoot, "invitation-created", 201);
+  };
+  const browser = new BrowserSessionClient(transport, code);
+  const created = await browser.createInvitation("tenant-one", input);
+  expect(created.invitationCode).toBe(code);
+  expect(seen.at(-1)!.headers["X-CSRF-Token"]).toBe(code);
+  expect(seen.at(-1)!.headers["X-Cloud-Agents-Session"]).toBeUndefined();
+  expect((await browser.listInvitations("tenant-one", 20)).invitations).toHaveLength(1);
+  await browser.revokeInvitation("tenant-one", "invite-one");
+  const service = new IdentityServiceClient(transport);
+  await service.acceptInvitation(code, "invite-existing", "192.0.2.40", code, {
+    invitationCode: code,
+  });
+  expect(seen.at(-1)!.headers).toMatchObject({
+    "X-Cloud-Agents-Session": code,
+    "X-CSRF-Token": code,
+    "X-Cloud-Agents-Client-IP": "192.0.2.40",
+    "X-Request-ID": "invite-existing",
+  });
+  await service.acceptInvitation(undefined, "invite-new", "192.0.2.41", undefined, {
+    invitationCode: code,
+    password: "a sufficiently long password",
+    displayName: "Invited User",
+  });
+  expect(seen.at(-1)!.headers["X-Cloud-Agents-Session"]).toBeUndefined();
+  expect(seen.at(-1)!.headers["X-Cloud-Agents-Client-IP"]).toBe("192.0.2.41");
+  expect(() =>
+    decodeInvitation(readJSON(identityFixtureRoot, "negative/invitation-proof-exposure.json")),
+  ).toThrow();
+  expect(() =>
+    decodeInvitationCreateRequest(
+      readJSON(identityFixtureRoot, "negative/invitation-subject-injection.json"),
+    ),
+  ).toThrow();
+  expect(() => decodeInvitationAcceptRequest({ invitationCode: code, password: null })).toThrow();
+  expect(() => decodeInvitationAcceptRequest({ invitationCode: code, displayName: "" })).toThrow();
+  expect("issueTenantToken" in browser).toBe(false);
+});
+
+it("requires both rotated session and private proof after reauthentication", async () => {
+  const proof = "A".repeat(43);
+  const rotated = "B".repeat(43);
+  let omitSession = false;
+  const transport: FixtureTransport = async (request) => ({
+    status: 200,
+    headers: {
+      "X-Cloud-Agents-Reauthentication": proof,
+      ...(omitSession ? {} : { "X-Cloud-Agents-Session": rotated }),
+    },
+    body: readFixture(
+      identityFixtureRoot,
+      `golden/${request.path.endsWith("/callback") ? "provider-callback" : "reauthentication"}.json`,
+    ),
+  });
+  const service = new IdentityServiceClient(transport);
+  const password = await service.passwordReauthenticate(proof, "password-reauth", proof, {
+    password: "a sufficiently long password",
+  });
+  expect(password).toMatchObject({ reauthProof: proof, sessionHandle: rotated });
+  const callback = await service.completeProviderAuthorization("provider-reauth", {
+    state: proof,
+    code: "authorization-code",
+  });
+  expect(callback).toMatchObject({ action: "reauth", reauthProof: proof, sessionHandle: rotated });
+  omitSession = true;
+  await expect(
+    service.passwordReauthenticate(proof, "password-reauth", proof, {
+      password: "a sufficiently long password",
+    }),
+  ).rejects.toThrow("SESSION_HANDLE_MISSING");
+  await expect(
+    service.completeProviderAuthorization("provider-reauth", {
+      state: proof,
+      code: "authorization-code",
+    }),
+  ).rejects.toThrow("SESSION_HANDLE_MISSING");
 });

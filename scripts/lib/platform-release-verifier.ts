@@ -19,6 +19,7 @@ export type PlatformReleaseTarget =
 export const PLATFORM_RELEASE_GO_COMMANDS = [
   "cloud-agents-access-gateway",
   "cloud-agents-control-plane",
+  "cloud-agents-identity",
   "cloud-agents-remote-worker",
   "cloud-agentsctl",
   "cloud-agents-worker",

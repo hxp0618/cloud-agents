@@ -113,6 +113,25 @@ func TestProjectHTTPServerRejectsDuplicateAuthorizationBeforeReader(t *testing.T
 	}
 }
 
+func TestProjectHTTPServerPassesCanceledRequestContextToOnlineVerifier(t *testing.T) {
+	verifier := &contextHTTPVerifier{}
+	reader := &projectHTTPReaderFake{}
+	server, err := NewProjectHTTPServer(verifier, reader, &projectHTTPCreatorFake{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/v1/tenants/tenant-alpha/projects/project-alpha", nil).WithContext(ctx)
+	request.Header.Set("Authorization", "Bearer access-token")
+	request.Header.Set("X-Request-ID", "request-canceled")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized || verifier.contextCalls != 1 || verifier.legacyCalls != 0 || reader.calls != 0 {
+		t.Fatalf("status=%d context calls=%d legacy calls=%d reader calls=%d", response.Code, verifier.contextCalls, verifier.legacyCalls, reader.calls)
+	}
+}
+
 func TestProjectHTTPServerReturnsPublicProblemContract(t *testing.T) {
 	server, err := NewProjectHTTPServer(&projectHTTPVerifierFake{}, &projectHTTPReaderFake{}, &projectHTTPCreatorFake{})
 	if err != nil {

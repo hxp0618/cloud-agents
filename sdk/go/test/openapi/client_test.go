@@ -16,6 +16,239 @@ import (
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 )
 
+func TestIdentityClientsSeparateBrowserAndServerAuthority(t *testing.T) {
+	sessionBody := readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/browser-session.json")
+	browser, err := NewBrowserIdentityClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		if request.Method != "GET" || request.Path != "/v1/identity/session" || request.Headers[HeaderRequestID] != "request-alpha" {
+			t.Fatalf("browser request = %#v", request)
+		}
+		if _, present := request.Headers["Authorization"]; present {
+			t.Fatal("browser client accepted an Authorization header")
+		}
+		return Response{Status: 200, Body: sessionBody}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := browser.GetBrowserSession(context.Background(), "request-alpha")
+	if err != nil || session.Application != IdentityApplicationAdmin || len(session.Tenants) != 1 {
+		t.Fatalf("session=%#v err=%v", session, err)
+	}
+
+	var seen Request
+	service, err := NewIdentityServiceClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		if request.Path == "/v1/identity/login/password" {
+			return Response{Status: 200, Headers: map[string]string{"x-cloud-agents-session": "server-session-handle"}, Body: sessionBody}, nil
+		}
+		if strings.HasPrefix(request.Path, "/v1/identity/me/tenants?") {
+			return Response{Status: 200, Body: readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/browser-tenant-page.json")}, nil
+		}
+		if strings.HasSuffix(request.Path, "/email-policy") {
+			return Response{Status: 200, Body: readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/email-suffix-policy.json")}, nil
+		}
+		return Response{Status: 200, Body: readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token.json")}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := service.PasswordLogin(context.Background(), "request-login", "192.0.2.10", PasswordLoginRequest{Email: "admin@example.com", Password: "secret-password"})
+	if err != nil || login.SessionHandle != "server-session-handle" || login.Session.Application != IdentityApplicationAdmin {
+		t.Fatalf("login=%#v err=%v", login, err)
+	}
+	if seen.Headers[HeaderIdentityClientIP] != "192.0.2.10" {
+		t.Fatalf("login client IP header = %q", seen.Headers[HeaderIdentityClientIP])
+	}
+	for _, clientIP := range []string{"192.0.2.10:443", "192.0.2.010", "2001:0db8::1", "fe80::1%eth0", "192.0.2.1, 198.51.100.2"} {
+		if _, err := service.PasswordLogin(context.Background(), "request-login", clientIP, PasswordLoginRequest{Email: "admin@example.com", Password: "secret-password"}); err == nil {
+			t.Fatalf("noncanonical client IP accepted: %q", clientIP)
+		}
+	}
+	issued, err := service.IssueTenantToken(context.Background(), "session-handle-value", "request-alpha", TenantTokenIssueRequest{TenantID: "tenant-alpha", ProjectID: "project-alpha"})
+	if err != nil || issued.TokenType != "Bearer" {
+		t.Fatalf("issued=%#v err=%v", issued, err)
+	}
+	if seen.Path != "/v1/identity/tenant-token" || seen.Headers["X-Cloud-Agents-Session"] != "session-handle-value" || bytes.Contains(seen.Body, []byte("scope")) {
+		t.Fatalf("tenant-token request = %#v", seen)
+	}
+	page, err := service.ListBrowserTenants(context.Background(), "session-handle-value", "request-alpha", 200, "tenant-page-token-2")
+	if err != nil || page.NextPageToken != "tenant-page-token-2" || seen.Path != "/v1/identity/me/tenants?pageSize=200&pageToken=tenant-page-token-2" {
+		t.Fatalf("tenant page=%#v request=%#v err=%v", page, seen, err)
+	}
+	if _, err := service.ListBrowserTenants(context.Background(), "session-handle-value", "request-alpha", 201, ""); err == nil {
+		t.Fatal("invalid tenant page size accepted")
+	}
+	policy, err := service.GetEmailSuffixPolicy(context.Background(), "session-handle-value", "tenant-alpha", "request-alpha")
+	if err != nil || policy.ResourceVersion != "2" || seen.Path != "/v1/identity/tenants/tenant-alpha/email-policy" {
+		t.Fatalf("email policy=%#v request=%#v err=%v", policy, seen, err)
+	}
+	policy, err = service.UpdateEmailSuffixPolicy(context.Background(), "session-handle-value", "tenant-alpha", "request-alpha", strings.Repeat("a", 43), EmailSuffixPolicyUpdate{ExpectedResourceVersion: "1", AllowedDomains: []string{"example.com", "xn--bcher-kva.example"}})
+	if err != nil || policy.ResourceVersion != "2" || seen.Method != "PUT" || seen.Headers["X-CSRF-Token"] != strings.Repeat("a", 43) || bytes.Contains(seen.Body, []byte("tenantId")) {
+		t.Fatalf("email policy update=%#v request=%#v err=%v", policy, seen, err)
+	}
+	if _, err := service.UpdateEmailSuffixPolicy(context.Background(), "session-handle-value", "tenant-alpha", "request-alpha", strings.Repeat("a", 43), EmailSuffixPolicyUpdate{ExpectedResourceVersion: "2", AllowedDomains: []string{"xn--bcher-kva.example", "example.com"}}); err == nil {
+		t.Fatal("unsorted email policy domains accepted")
+	}
+	if _, err := service.CheckTokenStatus(context.Background(), "request-alpha", TokenStatusRequest{TokenSHA256: "header.payload.signature", ExpectedApplication: IdentityApplicationAdmin, ExpectedTenantID: "tenant-alpha"}); err == nil {
+		t.Fatal("raw token accepted as token digest")
+	}
+
+	authorization, err := NewIdentityAuthorizationClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token-authorization.json")}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorized, err := authorization.AuthorizeTenantToken(context.Background(), "request-authorize", TenantTokenAuthorizationRequest{
+		Application: IdentityApplicationAdmin, SessionSHA256: "sha256:" + strings.Repeat("1", 64),
+		TenantID: "tenant-alpha", ProjectID: "project-alpha",
+	})
+	if err != nil || authorized.UserID != "account-alpha" || len(authorized.Scopes) != 2 {
+		t.Fatalf("authorized=%#v err=%v", authorized, err)
+	}
+	if seen.Path != "/v1/identity/authorize-tenant-token" || bytes.Contains(seen.Body, []byte("userId")) || bytes.Contains(seen.Body, []byte("scopes")) {
+		t.Fatalf("authorization request = %#v", seen)
+	}
+	type browserAuthorizer interface {
+		AuthorizeTenantToken(context.Context, string, TenantTokenAuthorizationRequest) (TenantTokenAuthorization, error)
+	}
+	if _, exposed := any(browser).(browserAuthorizer); exposed {
+		t.Fatal("browser client exposes server-only tenant-token authorization")
+	}
+	mismatched, err := NewIdentityAuthorizationClient(TransportFunc(func(_ context.Context, _ Request) (Response, error) {
+		body := bytes.Replace(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token-authorization.json"), []byte("tenant-alpha"), []byte("tenant-other"), 1)
+		return Response{Status: 200, Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mismatched.AuthorizeTenantToken(context.Background(), "request-authorize", TenantTokenAuthorizationRequest{
+		Application: IdentityApplicationAdmin, SessionSHA256: "sha256:" + strings.Repeat("1", 64),
+		TenantID: "tenant-alpha", ProjectID: "project-alpha",
+	}); err == nil {
+		t.Fatal("authorization client accepted a response for another tenant")
+	}
+}
+
+func TestIdentityServerCodecsUseContractValidation(t *testing.T) {
+	password, err := DecodePasswordLoginRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/password-login-request.json"))
+	if err != nil || password.Email != "admin@example.com" || password.Password == "" {
+		t.Fatalf("password=%#v err=%v", password, err)
+	}
+	issue, err := DecodeTenantTokenIssueRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token-issue-request.json"))
+	if err != nil || issue.TenantID != "tenant-alpha" {
+		t.Fatalf("issue=%#v err=%v", issue, err)
+	}
+	statusRequest, err := DecodeTokenStatusRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/token-status-request.json"))
+	if err != nil || statusRequest.ExpectedApplication != IdentityApplicationAdmin {
+		t.Fatalf("status request=%#v err=%v", statusRequest, err)
+	}
+	if _, err := DecodePasswordLoginRequestJSON([]byte(`{"email":"admin@example.com","password":"secret-password","application":"admin"}`)); err == nil {
+		t.Fatal("password request accepted caller-selected application")
+	}
+	if input, err := ValidateListBrowserTenantsServerRequest(200, "tenant-page-token-2"); err != nil || input.PageSize != 200 || input.PageToken != "tenant-page-token-2" {
+		t.Fatalf("tenant pagination=%#v err=%v", input, err)
+	}
+	policy, err := DecodeEmailSuffixPolicyJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/email-suffix-policy.json"))
+	if err != nil || policy.TenantID != "tenant-alpha" || len(policy.AllowedDomains) != 2 {
+		t.Fatalf("email policy=%#v err=%v", policy, err)
+	}
+	if _, err := DecodeEmailSuffixPolicyJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/negative/email-suffix-policy-wildcard.json")); err == nil {
+		t.Fatal("wildcard email policy domain accepted")
+	}
+
+	user, err := DecodeCurrentUserJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/current-user.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := EncodeCurrentUserJSON(user); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeCurrentUserJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	page, err := DecodeBrowserTenantPageJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/browser-tenant-page.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := EncodeBrowserTenantPageJSON(page); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeBrowserTenantPageJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	session, err := DecodeBrowserSessionJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/browser-session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := EncodeBrowserSessionJSON(session); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeBrowserSessionJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	session.Tenants = nil
+	if _, err := EncodeBrowserSessionJSON(session); err == nil {
+		t.Fatal("nil required tenant array encoded as JSON null")
+	}
+	token, err := DecodeTenantTokenJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := EncodeTenantTokenJSON(token); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeTenantTokenJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	status, err := DecodeTokenStatusJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/token-status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, err := EncodeTokenStatusJSON(status); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeTokenStatusJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EncodeTokenStatusJSON(TokenStatus{Status: "caller-selected"}); err == nil {
+		t.Fatal("invalid token status encoded")
+	}
+	authorizationRequest, err := DecodeTenantTokenAuthorizationRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token-authorization-request.json"))
+	if err != nil || authorizationRequest.Application != IdentityApplicationAdmin || authorizationRequest.SessionSHA256 != "sha256:"+strings.Repeat("1", 64) {
+		t.Fatalf("authorization request=%#v err=%v", authorizationRequest, err)
+	}
+	if _, err := DecodeTenantTokenAuthorizationRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/negative/tenant-token-authorization-authority-injection.json")); err == nil {
+		t.Fatal("authorization request accepted caller-selected principal or scopes")
+	}
+	authorization, err := DecodeTenantTokenAuthorizationJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/tenant-token-authorization.json"))
+	if err != nil || authorization.UserID != "account-alpha" || len(authorization.Scopes) != 2 {
+		t.Fatalf("authorization=%#v err=%v", authorization, err)
+	}
+	if encoded, err := EncodeTenantTokenAuthorizationJSON(authorization); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeTenantTokenAuthorizationJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	authorization.Scopes = []string{"agents.list", "agents.get"}
+	if _, err := EncodeTenantTokenAuthorizationJSON(authorization); err == nil {
+		t.Fatal("unsorted authorization scopes encoded")
+	}
+	jwks, err := DecodeIdentityJWKSJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/identity-jwks.json"))
+	if err != nil || len(jwks.Keys) != 1 || jwks.CloudAgentsAuthority.Revision != "1" {
+		t.Fatalf("jwks=%#v err=%v", jwks, err)
+	}
+	if encoded, err := EncodeIdentityJWKSJSON(jwks); err != nil {
+		t.Fatal(err)
+	} else if _, err := DecodeIdentityJWKSJSON(encoded); err != nil {
+		t.Fatal(err)
+	}
+	jwks.Keys = []IdentityJWK{}
+	jwks.CloudAgentsAuthority.Lineage[0].Enabled = false
+	if _, err := EncodeIdentityJWKSJSON(jwks); err != nil {
+		t.Fatalf("revoke-all JWKS rejected: %v", err)
+	}
+	if _, err := DecodeIdentityJWKSJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/negative/identity-jwks-private-key.json")); err == nil {
+		t.Fatal("private key material accepted in JWKS")
+	}
+}
+
 func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	requestBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-create-request.json")
 	projectBody := readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project.json")
@@ -109,7 +342,7 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 	if _, err := client.CreateProject(ctx, "tenant-alpha", "req-alpha", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2", body); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "user", Issuer: "https://issuer.example", Subject: "user-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
+	if _, err := client.CreateMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new", Subject: common.SubjectRef{Kind: "serviceAccount", Issuer: "https://issuer.example", Subject: "service-alpha"}, Scope: common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.ResumeMembership(ctx, "tenant-alpha", "membership-new", "req-alpha", platform.MembershipTransitionRequest{ExpectedTenantRevision: 8, ExpectedResourceVersion: 8, AuditFactUID: "audit-resume", ReasonCode: "operator-request"}); err != nil {
@@ -135,6 +368,62 @@ func TestGeneratedOpenAPIClientUsesFixtureTransportOnly(t *testing.T) {
 func rawTenantRef(id string) *json.RawMessage {
 	raw := json.RawMessage(`{"namespace":"cloud-agents","kind":"tenant","id":"` + id + `"}`)
 	return &raw
+}
+
+func TestGeneratedOpenAPIClientUsesAdminManagementRoutes(t *testing.T) {
+	responses := map[string]Response{
+		"GET /v1/admin/tenants/tenant-alpha": responseFixture(t, "platform-tenant", 200),
+		"GET /v1/admin/tenants/tenant-alpha/projects?organizationId=organization-alpha&pageSize=1&pageToken=project-page-token-1": {
+			Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-page.json"),
+		},
+		"POST /v1/admin/tenants/tenant-alpha/memberships": {
+			Status: 201, Headers: map[string]string{HeaderResourceVersion: "8"},
+			Body: []byte(`{"resourceUid":"membership-new","resourceVersion":"8","state":"active"}`),
+		},
+	}
+	var seen []Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = append(seen, request)
+		return responses[request.Method+" "+request.Path], nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.GetAdminPlatformTenant(ctx, "tenant-alpha", "req-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListAdminProjects(ctx, "tenant-alpha", "organization-alpha", "req-alpha", 1, "project-page-token-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CreateAdminMembership(ctx, "tenant-alpha", "req-alpha", platform.MembershipCreateRequest{
+		ExpectedTenantRevision: 7, MembershipID: "membership-new", MembershipName: "membership-new",
+		Subject: common.SubjectRef{Kind: "serviceAccount", Issuer: "https://issuer.example", Subject: "service-alpha"},
+		Scope:   common.AuthorizationScope{Level: "tenant", Ref: rawTenantRef("tenant-alpha")}, AuditFactUID: "audit-create", ReasonCode: "operator-request",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 3 || seen[0].Path != "/v1/admin/tenants/tenant-alpha" || seen[2].Method != "POST" {
+		t.Fatalf("admin requests = %#v", seen)
+	}
+}
+
+func TestGeneratedOpenAPIClientUsesMyProjectsRoute(t *testing.T) {
+	var seen Request
+	client, err := NewClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		return Response{Status: 200, Body: readOpenAPIFixture(t, "platform/v1alpha1/fixtures/golden/project-page.json")}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.ListMyProjects(context.Background(), "tenant-alpha", "request-alpha", 1, "project-page-token-1")
+	if err != nil || len(page.Value.Projects) != 1 {
+		t.Fatalf("page=%#v err=%v", page, err)
+	}
+	if seen.Method != "GET" || seen.Path != "/v1/tenants/tenant-alpha/my-projects?pageSize=1&pageToken=project-page-token-1" || seen.Headers[HeaderRequestID] != "request-alpha" {
+		t.Fatalf("request=%#v", seen)
+	}
 }
 
 func TestGeneratedOpenAPIClientDecodesExecutionReconcileEvent(t *testing.T) {
@@ -764,6 +1053,10 @@ func TestGeneratedOpenAPIServerValidationSeam(t *testing.T) {
 	if err != nil || projects.OrganizationID != "organization-alpha" || projects.PageSize != 50 || projects.PageToken == "" {
 		t.Fatalf("project list input = %#v / %v", projects, err)
 	}
+	myProjects, err := ValidateListMyProjectsServerRequest("tenant-alpha", "req-alpha", 50, "project-page-token-1")
+	if err != nil || myProjects.TenantID != "tenant-alpha" || myProjects.PageSize != 50 || myProjects.PageToken == "" {
+		t.Fatalf("my projects input = %#v / %v", myProjects, err)
+	}
 	sessions, err := ValidateListManagedAgentSessionsServerRequest("tenant-alpha", "project-alpha", "req-alpha", "sandbox-alpha", 50, "session-page-token-1")
 	if err != nil || sessions.ProjectID != "project-alpha" || sessions.SandboxID != "sandbox-alpha" || sessions.PageSize != 50 || sessions.PageToken == "" {
 		t.Fatalf("session list input = %#v / %v", sessions, err)
@@ -888,4 +1181,101 @@ func readOpenAPIFixture(t *testing.T, name string) []byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return data
+}
+
+func TestInvitationClientsKeepProofAndSessionBoundaries(t *testing.T) {
+	created := readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/invitation-created.json")
+	page := readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/invitation-page.json")
+	var seen Request
+	client, err := NewIdentityServiceClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		seen = request
+		switch request.Method {
+		case "GET":
+			return Response{Status: 200, Body: page}, nil
+		case "DELETE":
+			return Response{Status: 204}, nil
+		default:
+			if request.Path == "/v1/identity/invitations/accept" {
+				return Response{Status: 204}, nil
+			}
+			return Response{Status: 201, Body: created}, nil
+		}
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := DecodeInvitationCreateRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/golden/invitation-create-request.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := strings.Repeat("A", 43)
+	result, err := client.CreateInvitation(context.Background(), proof, "tenant-one", "invite-create", proof, input)
+	if err != nil || result.Invitation.ID != "invite-one" || result.InvitationCode != proof || seen.Headers["X-Cloud-Agents-Session"] != proof || seen.Headers["X-CSRF-Token"] != proof {
+		t.Fatal("create invitation boundary failed", err)
+	}
+	listed, err := client.ListInvitations(context.Background(), proof, "tenant-one", "invite-list", 20, "")
+	if err != nil || len(listed.Invitations) != 1 || !strings.Contains(seen.Path, "pageSize=20") {
+		t.Fatal("list invitation boundary failed", err)
+	}
+	if err := client.RevokeInvitation(context.Background(), proof, "tenant-one", "invite-one", "invite-revoke", proof); err != nil || seen.Method != "DELETE" {
+		t.Fatal("revoke invitation boundary failed", err)
+	}
+	if err := client.AcceptInvitation(context.Background(), "", "invite-accept", "192.0.2.40", "", InvitationAcceptRequest{InvitationCode: proof, Password: "a sufficiently long password", DisplayName: "Invited User"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := seen.Headers["X-Cloud-Agents-Session"]; present {
+		t.Fatal("anonymous acceptance sent a session handle")
+	}
+	if seen.Headers["X-Cloud-Agents-Client-IP"] != "192.0.2.40" {
+		t.Fatal("anonymous acceptance omitted its trusted client IP")
+	}
+	if err := client.AcceptInvitation(context.Background(), proof, "invite-existing", "192.0.2.41", proof, InvitationAcceptRequest{InvitationCode: proof}); err != nil || seen.Headers["X-Cloud-Agents-Session"] != proof || seen.Headers["X-CSRF-Token"] != proof || seen.Headers["X-Cloud-Agents-Client-IP"] != "192.0.2.41" {
+		t.Fatal("existing-account acceptance omitted its session/CSRF", err)
+	}
+	if _, err := DecodeInvitationJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/negative/invitation-proof-exposure.json")); err == nil {
+		t.Fatal("invitation read exposed proof")
+	}
+	if _, err := DecodeInvitationCreateRequestJSON(readOpenAPIFixture(t, "identity/v1alpha1/fixtures/negative/invitation-subject-injection.json")); err == nil {
+		t.Fatal("invitation allowed a supplied account subject")
+	}
+	for _, body := range []string{`{"invitationCode":"` + proof + `","password":null}`, `{"invitationCode":"` + proof + `","displayName":""}`} {
+		if _, err := DecodeInvitationAcceptRequestJSON([]byte(body)); err == nil {
+			t.Fatal("malformed acceptance fields were allowed")
+		}
+	}
+}
+
+func TestReauthenticationClientsRequireRotatedSessionAndPrivateProof(t *testing.T) {
+	proof := strings.Repeat("A", 43)
+	rotated := strings.Repeat("B", 43)
+	omitSession := false
+	client, err := NewIdentityServiceClient(TransportFunc(func(_ context.Context, request Request) (Response, error) {
+		headers := map[string]string{"X-Cloud-Agents-Reauthentication": proof}
+		if !omitSession {
+			headers["X-Cloud-Agents-Session"] = rotated
+		}
+		fixture := "identity/v1alpha1/fixtures/golden/reauthentication.json"
+		if strings.HasSuffix(request.Path, "/callback") {
+			fixture = "identity/v1alpha1/fixtures/golden/provider-callback.json"
+		}
+		return Response{Status: 200, Headers: headers, Body: readOpenAPIFixture(t, fixture)}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	password, err := client.PasswordReauthenticate(context.Background(), proof, "password-reauth", proof, PasswordReauthRequest{Password: "a sufficiently long password"})
+	if err != nil || password.ReauthProof != proof || password.SessionHandle != rotated {
+		t.Fatalf("password reauth = %#v, %v", password, err)
+	}
+	callback, err := client.CompleteProviderAuthorization(context.Background(), "provider-reauth", ProviderCallbackRequest{State: proof, Code: "authorization-code"})
+	if err != nil || callback.Callback.Action != "reauth" || callback.ReauthProof != proof || callback.SessionHandle != rotated {
+		t.Fatalf("provider reauth = %#v, %v", callback, err)
+	}
+	omitSession = true
+	if _, err := client.PasswordReauthenticate(context.Background(), proof, "password-reauth", proof, PasswordReauthRequest{Password: "a sufficiently long password"}); err == nil {
+		t.Fatal("password reauthentication accepted a missing rotated session")
+	}
+	if _, err := client.CompleteProviderAuthorization(context.Background(), "provider-reauth", ProviderCallbackRequest{State: proof, Code: "authorization-code"}); err == nil {
+		t.Fatal("provider reauthentication accepted a missing rotated session")
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -23,11 +24,13 @@ import (
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/kubernetestarget"
 	internalmanagedhost "github.com/hxp0618/cloud-agents/services/control-plane/internal/managedhost"
 	"github.com/hxp0618/cloud-agents/services/control-plane/internal/store/postgres"
+	"github.com/hxp0618/cloud-agents/services/control-plane/internal/targetcredential"
 )
 
 type deploymentTargetStoreFake struct {
 	snapshot            internaldeploymenttarget.Snapshot
 	register            int
+	sealed              *internaldeploymenttarget.SealedCredential
 	list                int
 	get                 int
 	begin               int
@@ -105,8 +108,74 @@ func TestDeploymentTargetHTTPProbesKubernetesTarget(t *testing.T) {
 	}
 }
 
+func TestDeploymentTargetHTTPRegistersKubeconfigCredentialSealed(t *testing.T) {
+	cluster := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer kubeconfig-token" {
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = writer.Write([]byte(`{"major":"1","minor":"34","gitVersion":"v1.34.2","platform":"linux/arm64"}`))
+	}))
+	defer cluster.Close()
+	authority := base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cluster.Certificate().Raw}))
+	credentials, err := kubernetestarget.NewCredentialDirectory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 1, 10, 0, 0, 0, time.UTC)
+	store := &deploymentTargetStoreFake{snapshot: internaldeploymenttarget.Snapshot{Generation: 1, SchedulingState: "active", ObservedPhase: "unprobed", ResourceVersion: 1, CreatedAt: now, UpdatedAt: now}}
+	handler, err := NewDeploymentTargetHTTPServer(&projectHTTPVerifierFake{}, store, nil, credentials, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(path, body, idempotencyKey string) *httptest.ResponseRecorder {
+		value := httptest.NewRequest(http.MethodPost, "/v1/tenants/tenant-alpha/projects/project-alpha/deployment-targets"+path, strings.NewReader(body))
+		value.Header.Set("Authorization", "Bearer access-token")
+		value.Header.Set("X-Request-ID", "request-kubeconfig")
+		value.Header.Set("Content-Type", "application/json")
+		value.Header.Set("Idempotency-Key", idempotencyKey)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, value)
+		return response
+	}
+	register := func(credential string) *httptest.ResponseRecorder {
+		return request("", `{"targetId":"kubernetes-alpha","targetName":"kubernetes-alpha","targetKind":"kubernetes","endpoint":"`+cluster.URL+`","credentialRef":"cluster-alpha","kubernetesCredential":`+credential+`}`, "register-key-123456")
+	}
+	tokenCredential := `{"certificateAuthorityData":"` + authority + `","token":"kubeconfig-token"}`
+
+	credentials.UseSealedCredentials(store, nil)
+	if response := register(tokenCredential); response.Code != http.StatusServiceUnavailable || store.register != 0 {
+		t.Fatalf("register without key status=%d calls=%d body=%s", response.Code, store.register, response.Body.String())
+	}
+	keyring, err := targetcredential.New([]byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials.UseSealedCredentials(store, keyring)
+	invalidAuthority := `{"certificateAuthorityData":"` + base64.StdEncoding.EncodeToString([]byte("not a certificate")) + `","token":"kubeconfig-token"}`
+	if response := register(invalidAuthority); response.Code != http.StatusBadRequest || store.register != 0 {
+		t.Fatalf("register invalid authority status=%d calls=%d body=%s", response.Code, store.register, response.Body.String())
+	}
+	created := register(tokenCredential)
+	if created.Code != http.StatusCreated || store.register != 1 || store.sealed == nil || strings.Contains(string(store.sealed.Sealed), "kubeconfig-token") || strings.Contains(created.Body.String(), "kubeconfig-token") {
+		t.Fatalf("register status=%d sealed=%v body=%s", created.Code, store.sealed != nil, created.Body.String())
+	}
+	probed := request("/kubernetes-alpha:probe", `{"expectedGeneration":1}`, "kubernetes-probe-key")
+	if probed.Code != http.StatusOK || !store.completion.Succeeded || store.completion.EngineVersion != "v1.34.2" {
+		t.Fatalf("probe status=%d completion=%#v body=%s", probed.Code, store.completion, probed.Body.String())
+	}
+}
+
+func (fake *deploymentTargetStoreFake) LoadDeploymentTargetCredential(_ context.Context, tenantID, projectID, targetID string) (string, []byte, bool, error) {
+	if fake.sealed == nil || tenantID != fake.snapshot.Scope.TenantID || projectID != fake.snapshot.Scope.ProjectID || targetID != fake.snapshot.TargetID {
+		return "", nil, false, nil
+	}
+	return fake.sealed.KeyID, fake.sealed.Sealed, true, nil
+}
+
 func (fake *deploymentTargetStoreFake) RegisterDeploymentTarget(_ context.Context, _ string, _ *authn.VerifiedPrincipal, input internaldeploymenttarget.RegisterInput) (internaldeploymenttarget.Snapshot, error) {
 	fake.register++
+	fake.sealed = input.SealedCredential
 	fake.snapshot.Scope = input.Scope
 	fake.snapshot.TargetID = input.TargetID
 	fake.snapshot.TargetName = input.TargetName

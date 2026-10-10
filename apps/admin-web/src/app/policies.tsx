@@ -1,6 +1,8 @@
 import { useI18n } from "../i18n";
 import type { FormEvent, ReactNode } from "react";
-import { AdminSheet } from "../AdminSheet";
+import { AdminSheet, SheetHeading } from "../AdminSheet";
+import { identifierFromName } from "../admin";
+import { NameField } from "./form-fields";
 import { shortDigest } from "./presentation";
 import {
   type ProjectLeaseQuota,
@@ -20,7 +22,6 @@ export function quotaFormFrom(quota?: ProjectLeaseQuota) {
 
 export function storagePolicyFormFrom(policy?: StoragePolicy) {
   return {
-    policyId: policy?.metadata.uid ?? "",
     policyName: policy?.metadata.name ?? "",
     userSummary: policy?.spec.userSummary ?? "",
     workspaceCapacityGiB: String(
@@ -94,7 +95,6 @@ export function StoragePolicyTable({
 }
 
 export type WorkerReleaseDraft = {
-  releaseId: string;
   releaseName: string;
   imageRepository: string;
   releaseDigest: string;
@@ -109,7 +109,6 @@ export type WorkerReleaseDraft = {
 
 export function workerReleaseForm(): WorkerReleaseDraft {
   return {
-    releaseId: "",
     releaseName: "",
     imageRepository: "",
     releaseDigest: "",
@@ -129,9 +128,10 @@ export function workerReleaseRegisterRequestFrom(
   const architectures: ("linux/amd64" | "linux/arm64")[] = [];
   if (draft.amd64) architectures.push("linux/amd64");
   if (draft.arm64) architectures.push("linux/arm64");
+  const releaseName = draft.releaseName.trim();
   return {
-    releaseId: draft.releaseId.trim(),
-    releaseName: draft.releaseName.trim(),
+    releaseId: identifierFromName(releaseName, "worker-release"),
+    releaseName,
     imageRepository: draft.imageRepository.trim(),
     releaseDigest: draft.releaseDigest.trim() as `sha256:${string}`,
     platformVersion: draft.platformVersion.trim(),
@@ -147,6 +147,7 @@ export function ReleaseRegistrationForm({
   draft,
   feedback,
   disabled,
+  nameTaken,
   onDraftChange,
   onClose,
   onSubmit,
@@ -154,6 +155,7 @@ export function ReleaseRegistrationForm({
   draft: WorkerReleaseDraft;
   feedback: ReactNode;
   disabled: boolean;
+  nameTaken: boolean;
   onDraftChange: (draft: WorkerReleaseDraft) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -162,58 +164,16 @@ export function ReleaseRegistrationForm({
   return (
     <AdminSheet label={t("release.register.title")} feedback={feedback} onClose={onClose}>
       <section className="dialog" aria-labelledby="register-release-title">
-        <div className="panel-heading">
-          <div>
-            <div className="eyebrow">{t("release.register.eyebrow")}</div>
-            <h2 id="register-release-title">{t("release.register.title")}</h2>
-            <p>{t("release.register.description")}</p>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={t("action.close")}
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
-        </div>
+        <SheetHeading id="register-release-title" title={t("release.register.title")} onClose={onClose} />
         <form className="resource-form" onSubmit={onSubmit}>
-          <div className="form-row">
-            <label>
-              <span>{t("release.id")}</span>
-              <input
-                value={draft.releaseId}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    releaseId: event.target.value,
-                  })
-                }
-                placeholder="worker-v1"
-                maxLength={128}
-                required
-                autoFocus
-                data-sheet-autofocus
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              <span>{t("release.name")}</span>
-              <input
-                value={draft.releaseName}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    releaseName: event.target.value,
-                  })
-                }
-                placeholder="worker-v1"
-                maxLength={128}
-                required
-                spellCheck={false}
-              />
-            </label>
-          </div>
+          <NameField
+            label={t("release.name")}
+            value={draft.releaseName}
+            takenMessage={nameTaken ? t("form.nameTaken") : ""}
+            placeholder="worker-v1"
+            autoFocus
+            onChange={(releaseName) => onDraftChange({ ...draft, releaseName })}
+          />
           <label>
             <span>{t("release.imageRepository")}</span>
             <input

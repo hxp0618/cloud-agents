@@ -14,7 +14,7 @@
   "currentOutputSet": {
     "algorithm": "utf8-bytewise-sorted-path-nul-sha256-nul-git-mode-v1",
     "count": 47,
-    "manifestSha256": "sha256:faa17d2883409cda0723c0f7ff01a23ec70610bba8682f29389a85f9c77def8b",
+    "manifestSha256": "sha256:368c7a8829065285a28b98cbdba49ee4e64e432c45765bc3acf7216ac90d131c",
     "files": [
       {
         "path": "contracts/generated/platform/v1alpha1/ajv-official-suite-audit-v1.json",
@@ -144,7 +144,7 @@
       },
       {
         "path": "contracts/generated/proto/manifest.json",
-        "sha256": "sha256:bf753e591a91ee275242ddb0b1b78bdc8263172666cfae2c2e1c72a8828f6f52",
+        "sha256": "sha256:a6ce812e85f537dcc9c6f26f60ebb00c0a9363b3bc9527c22e2065f52e324b25",
         "sizeBytes": 6413,
         "gitMode": "100644"
       },
@@ -204,49 +204,49 @@
       },
       {
         "path": "sdk/go/gen/openapi/v1alpha1/client_generated.go",
-        "sha256": "sha256:698238f0c7d65f4048b51dad6792c6be07e2e0b940badc9c7f8198b4eae43b33",
-        "sizeBytes": 354423,
+        "sha256": "sha256:3408067b74ddb870efa6ef0f1e83a6d69c56e3cdae1638c8f04a934d034d74b6",
+        "sizeBytes": 525092,
         "gitMode": "100644"
       },
       {
         "path": "sdk/go/gen/platform/v1alpha1/json_generated.go",
-        "sha256": "sha256:7fa9cc7af96274106ad516b7a4d2e66a0061e5f6ced737d2148c411d3634a73c",
-        "sizeBytes": 467243,
+        "sha256": "sha256:038234355ec28f213d8a6ba1fb8c4655e2ad0a8e8ddb408d7f6f780a066a26a7",
+        "sizeBytes": 470611,
         "gitMode": "100644"
       },
       {
         "path": "sdk/go/generated-manifest.json",
-        "sha256": "sha256:64f88fcf0f4690fe6fbc4c45f615aff1088224144721f943963b20c044cf20d1",
+        "sha256": "sha256:40ebe3e455fa1620ac0664668a3714386686c36502fb64149865cdb7d07c0f20",
         "sizeBytes": 4445,
         "gitMode": "100644"
       },
       {
         "path": "sdk/go/json-generated-manifest.json",
-        "sha256": "sha256:270f73902aafdace570676c989648f67122424d3467634c0e2e99377e14f95e6",
-        "sizeBytes": 21739,
+        "sha256": "sha256:f8c03106b05e404ef5e8868ed986ffa81e5a40d3e83565c3fb9488108ce527d3",
+        "sizeBytes": 29115,
         "gitMode": "100644"
       },
       {
         "path": "sdk/go/proto-generated-manifest.json",
-        "sha256": "sha256:0387408c185ea21976853ed1e4a3827b054e6bb7cb4b7ad12775a32af78575f5",
+        "sha256": "sha256:266de09089999098b217d0eec8ca7998472fcd3b5452797155a8580423c3826c",
         "sizeBytes": 9358,
         "gitMode": "100644"
       },
       {
         "path": "sdk/typescript/generated-manifest.json",
-        "sha256": "sha256:10e3307b358be4d47d9bff974866508219dceaa07e058f7bbc6744fe4ffdaec4",
+        "sha256": "sha256:61e006e718e7d35b8895fb274d831b28bc61c63136c80ac3beabc86424f586c9",
         "sizeBytes": 4096,
         "gitMode": "100644"
       },
       {
         "path": "sdk/typescript/json-generated-manifest.json",
-        "sha256": "sha256:1979c5c8f11ff5e4d536b62d4fb7f71949521bb63d41233597a5f42018280259",
-        "sizeBytes": 21401,
+        "sha256": "sha256:85fc2415150380dd73724c29ed545447e6e2a02f0a3e64591ce0f18197cb5722",
+        "sizeBytes": 28777,
         "gitMode": "100644"
       },
       {
         "path": "sdk/typescript/proto-generated-manifest.json",
-        "sha256": "sha256:5f379f13c13f1070958938c30d5b6480084c6699cc8a648095e24c13a2a3eae6",
+        "sha256": "sha256:dc75cbe0f40b9b2bdd107c8ed8d0f7a3d497e3d82f8a03660d91f550947ca8e0",
         "sizeBytes": 7887,
         "gitMode": "100644"
       },
@@ -276,8 +276,8 @@
       },
       {
         "path": "sdk/typescript/src/platform.ts",
-        "sha256": "sha256:aeeb76aff789221c19b4f6077a163406cd05513d4afdfae2a3652c89875a093e",
-        "sizeBytes": 596421,
+        "sha256": "sha256:7012ead518af7e26546202e5901ec3963fb5de8ed4b65545a3ab21d3a1d1f425",
+        "sizeBytes": 736243,
         "gitMode": "100644"
       },
       {
@@ -316,5 +316,5 @@
     "publication": "NOT_AUTHORIZED",
     "gateStatus": "ALL_GATES_OPEN"
   },
-  "lockDigest": "sha256:75feb8b77b9cb0b0ede62de4effdfb30390bb20a031592f863e4178a930024b4"
+  "lockDigest": "sha256:b9ab8cc31e6c2d6cc15a3d034f6ec3920be816d91c561caf635353e1b0f9fa8e"
 }

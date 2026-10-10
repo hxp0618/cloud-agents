@@ -2,6 +2,8 @@ ARG BASE_IMAGE=node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e92553
 FROM ${BASE_IMAGE}
 
 COPY web/server.mjs /opt/cloud-agents/web/server.mjs
+COPY web/platform.mjs /opt/cloud-agents/web/platform.mjs
+COPY web/index.mjs /opt/cloud-agents/web/index.mjs
 COPY user-web/dist /opt/cloud-agents/web/dist
 
 ENV CLOUD_AGENTS_WEB_SCOPE=user CLOUD_AGENTS_WEB_PORT=4173

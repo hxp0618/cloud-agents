@@ -1,0 +1,4 @@
+{
+  "expectedResourceVersion": "1",
+  "allowedDomains": ["example.com", "xn--bcher-kva.example"]
+}

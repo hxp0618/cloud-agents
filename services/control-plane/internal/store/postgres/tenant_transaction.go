@@ -73,6 +73,7 @@ type TenantTransactionRunner struct {
 	pool           physicalPool
 	cleanupTimeout time.Duration
 	clock          func() time.Time
+	application    string
 }
 
 // NewTenantTransactionRunner binds the runtime helper to a pgxpool. Each call
@@ -94,6 +95,7 @@ func newTenantTransactionRunner(pool physicalPool, cleanupTimeout time.Duration)
 		pool:           pool,
 		cleanupTimeout: cleanupTimeout,
 		clock:          time.Now,
+		application:    "user",
 	}
 }
 
@@ -159,6 +161,7 @@ func (runner *TenantTransactionRunner) withTenantReadBinder(
 		transaction: transaction,
 		tenantID:    tenantID,
 		clock:       runner.clock,
+		application: runner.application,
 	}
 
 	callbackErr, panicValue, panicked := invokeTenantCallback(ctx, callback, handle)
@@ -315,6 +318,7 @@ type tenantReadHandle struct {
 	transaction tenantTransaction
 	tenantID    string
 	clock       func() time.Time
+	application string
 }
 
 func (handle *tenantReadHandle) GetPlatformTenant(ctx context.Context) (PlatformTenant, error) {

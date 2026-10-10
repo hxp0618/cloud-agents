@@ -25,7 +25,18 @@ const ALLOWED_GRANTEES = new Set([
   "CLOUD_AGENTS_RUNTIME",
   "CLOUD_AGENTS_BOOTSTRAP_ADMIN",
 ]);
-const INITIAL_DO_SHA256 = "sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281";
+const IDENTITY_MIGRATION_INTRODUCTION = "000105";
+const IDENTITY_AUDIT_CHECK_INTRODUCTION = "000111";
+const IDENTITY_SERVICE_ACCOUNT_INTRODUCTION = "000118";
+const IDENTITY_SCHEMA = "CLOUD_AGENTS_IDENTITY";
+const IDENTITY_SERVICE_ROLE = "CLOUD_AGENTS_IDENTITY_SERVICE";
+const MIGRATION_OWNER_ROLE = "CLOUD_AGENTS_MIGRATION_OWNER";
+const IDENTITY_AUDIT_CHECK_CONSTRAINTS = new Set([
+  "AUDIT_EVENTS_EVENT_KIND_CHECK",
+  "AUDIT_EVENTS_REASON_CODE_CHECK",
+]);
+const INITIAL_DO_SHA256 =
+  "sha256:4cce367246af1fe1e08191df7d48bf8b9dad7ee2696b754f6c2df9f66c559281";
 const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
   string,
   {
@@ -47,13 +58,23 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
     {
       migrationId: "000003",
       statementIndex: 45,
-      targetIdentity: "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
+      targetIdentity:
+        "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
     },
   ],
   ...[
-    ["sha256:db2e0b4fd4de31148de656ef0dae22b56df2ca849210a50135f283c19f4fddef", 11],
-    ["sha256:33fe97ecb61ab7cfa2a052a5bd12def489f64195a8a00fb557ec329badd6afba", 12],
-    ["sha256:a7a12b830059c90bc169e082191893fc7624b0653648d08fae3f597b3afcc42d", 13],
+    [
+      "sha256:db2e0b4fd4de31148de656ef0dae22b56df2ca849210a50135f283c19f4fddef",
+      11,
+    ],
+    [
+      "sha256:33fe97ecb61ab7cfa2a052a5bd12def489f64195a8a00fb557ec329badd6afba",
+      12,
+    ],
+    [
+      "sha256:a7a12b830059c90bc169e082191893fc7624b0653648d08fae3f597b3afcc42d",
+      13,
+    ],
   ].map(
     ([sha256, statementIndex]) =>
       [
@@ -61,7 +82,8 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
         {
           migrationId: "000039",
           statementIndex,
-          targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_target_activity",
+          targetIdentity:
+            "table:unquoted:cloud_agents/unquoted:deployment_target_activity",
         },
       ] as const,
   ),
@@ -89,27 +111,51 @@ const EXACT_INSERT_SPECIAL_CASES: ReadonlyMap<
       targetIdentity: "table:unquoted:cloud_agents/unquoted:deployment_targets",
     },
   ],
+  [
+    "sha256:d86252579a082debdc3fde69b06cb9e8d55482c6281f076d43034e2bc855e9ad",
+    {
+      migrationId: "000108",
+      statementIndex: 0,
+      targetIdentity: "table:unquoted:cloud_agents/unquoted:builtin_roles",
+    },
+  ],
+  [
+    "sha256:068c765dc7c59d1371246bce5e95b2bda6527ae0eb8221c7ea4a6b0ae4ea091a",
+    {
+      migrationId: "000108",
+      statementIndex: 1,
+      targetIdentity:
+        "table:unquoted:cloud_agents/unquoted:builtin_role_permissions",
+    },
+  ],
 ]);
 const DURABLE_COORDINATION_OPERATION_EFFECT_INDEX = {
   migrationId: "000007",
   statementIndex: 26,
-  sha256: "sha256:a068696a4c581b604a9f08d6a99e6d0e4c3a2336cd2342de533fc1f3b9162fc4",
-  targetIdentity: "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
+  sha256:
+    "sha256:a068696a4c581b604a9f08d6a99e6d0e4c3a2336cd2342de533fc1f3b9162fc4",
+  targetIdentity:
+    "index:unquoted:cloud_agents/unquoted:outbox_events_operation_effect_unique_idx",
 } as const;
 const MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX = {
   migrationId: "000021",
   statementIndex: 1,
-  sha256: "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
-  targetIdentity: "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
+  sha256:
+    "sha256:a8bf73adb48cb4be976422e41e1ec546a4490a7f1e8b167ae5287e7743c6f83d",
+  targetIdentity:
+    "index:unquoted:cloud_agents/unquoted:managed_host_leases_create_key_idx",
 } as const;
 const DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX = {
   migrationId: "000039",
   statementIndex: 3,
-  sha256: "sha256:3e4b0db7f82734bf6f0237fd19679cce1bd4fd31c6e34612c417694b58681984",
+  sha256:
+    "sha256:3e4b0db7f82734bf6f0237fd19679cce1bd4fd31c6e34612c417694b58681984",
   name: "DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_IDX",
 } as const;
 
-export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlStatementSlice> {
+export function splitPostgresStatements(
+  input: Uint8Array,
+): ReadonlyArray<SqlStatementSlice> {
   const statements: SqlStatementSlice[] = [];
   let start = 0;
   let index = 0;
@@ -188,7 +234,10 @@ export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlSta
     if (byte === 0x3b) {
       const bytes = input.slice(start, offset + 1);
       if (!containsSqlToken(input.slice(start, offset))) {
-        throw new MigrationValidationError("EMPTY_SQL_STATEMENT", `statement ${index}`);
+        throw new MigrationValidationError(
+          "EMPTY_SQL_STATEMENT",
+          `statement ${index}`,
+        );
       }
       statements.push({
         index,
@@ -201,7 +250,13 @@ export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlSta
       start = offset + 1;
     }
   }
-  if (blockDepth !== 0 || lineComment || singleQuote || doubleQuote || dollarTag) {
+  if (
+    blockDepth !== 0 ||
+    lineComment ||
+    singleQuote ||
+    doubleQuote ||
+    dollarTag
+  ) {
     if (blockDepth !== 0 || singleQuote || doubleQuote || dollarTag) {
       throw new MigrationValidationError(
         "UNTERMINATED_SQL_LEXEME",
@@ -210,7 +265,10 @@ export function splitPostgresStatements(input: Uint8Array): ReadonlyArray<SqlSta
     }
   }
   if (containsSqlToken(input.slice(start))) {
-    throw new MigrationValidationError("SQL_TERMINATOR_REQUIRED", `offset ${start}`);
+    throw new MigrationValidationError(
+      "SQL_TERMINATOR_REQUIRED",
+      `offset ${start}`,
+    );
   }
   return statements;
 }
@@ -222,14 +280,21 @@ export function classifyMigrationStatement(
 ): SqlStatementClassification {
   const tokens = lexTopLevelTokens(statement.bytes);
   const first = tokens[0];
-  if (!first) throw new MigrationValidationError("EMPTY_SQL_STATEMENT", String(statement.index));
+  if (!first)
+    throw new MigrationValidationError(
+      "EMPTY_SQL_STATEMENT",
+      String(statement.index),
+    );
   if (first === "DO") {
     if (
       migrationId !== "000001" ||
       statement.index !== 0 ||
       statement.sha256 !== INITIAL_DO_SHA256
     ) {
-      throw new MigrationValidationError("SQL_DO_SPECIAL_CASE_MISMATCH", statement.sha256);
+      throw new MigrationValidationError(
+        "SQL_DO_SPECIAL_CASE_MISMATCH",
+        statement.sha256,
+      );
     }
     return {
       profile: "postgresql-ddl-v1",
@@ -241,9 +306,29 @@ export function classifyMigrationStatement(
     };
   }
   if (first === "CREATE") {
+    if (
+      identitySchemaAvailable(migrationId) &&
+      tokens.join("\0") ===
+        [
+          "CREATE",
+          "SCHEMA",
+          IDENTITY_SCHEMA,
+          "AUTHORIZATION",
+          MIGRATION_OWNER_ROLE,
+          ";",
+        ].join("\0")
+    ) {
+      return classification(
+        "CREATE",
+        "SCHEMA",
+        "schema:unquoted:cloud_agents_identity",
+        null,
+      );
+    }
     if (tokens[1] === "TRIGGER") {
       let on = simpleBeforeRowTrigger(tokens);
-      if (on < 0) on = simpleAfterUpdateRowTrigger(tokens);
+      if (on < 0)
+        on = simpleAfterUpdateRowTrigger(tokens, identitySchemaAvailable(migrationId));
       if (
         on < 0 &&
         migrationId === "000067" &&
@@ -265,10 +350,16 @@ export function classifyMigrationStatement(
       tokens[1] === "VIEW" &&
       migrationId === "000067" &&
       statement.index === 11 &&
-      statement.sha256 === "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313"
+      statement.sha256 ===
+        "sha256:414854f0544ff507be5b1fad6c72d40f606dbe231195c577a232b4125150c313"
     ) {
       requireCloudAgentsQualified(tokens, 2);
-      return classification("CREATE", "VIEW", qualifiedIdentity("view", tokens, 2), null);
+      return classification(
+        "CREATE",
+        "VIEW",
+        qualifiedIdentity("view", tokens, 2),
+        null,
+      );
     }
     if (tokens[1] === "UNIQUE" && tokens[2] === "INDEX") {
       if (
@@ -289,7 +380,8 @@ export function classifyMigrationStatement(
       }
       if (
         migrationId === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.migrationId &&
-        statement.index === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.statementIndex &&
+        statement.index ===
+          DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.statementIndex &&
         statement.sha256 === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.sha256 &&
         tokens[3] === DEPLOYMENT_TARGET_ACTIVITY_TERMINAL_INDEX.name &&
         tokens[4] === "ON"
@@ -304,7 +396,8 @@ export function classifyMigrationStatement(
       }
       if (
         migrationId === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.migrationId &&
-        statement.index === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.statementIndex &&
+        statement.index ===
+          MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.statementIndex &&
         statement.sha256 === MANAGED_HOST_CREATE_IDEMPOTENCY_INDEX.sha256 &&
         tokens[3] === "MANAGED_HOST_LEASES_CREATE_KEY_IDX" &&
         tokens[4] === "ON"
@@ -318,9 +411,12 @@ export function classifyMigrationStatement(
         );
       }
       if (
-        migrationId !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.migrationId ||
-        statement.index !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.statementIndex ||
-        statement.sha256 !== DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.sha256 ||
+        migrationId !==
+          DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.migrationId ||
+        statement.index !==
+          DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.statementIndex ||
+        statement.sha256 !==
+          DURABLE_COORDINATION_OPERATION_EFFECT_INDEX.sha256 ||
         tokens[3] !== "OUTBOX_EVENTS_OPERATION_EFFECT_UNIQUE_IDX" ||
         tokens[4] !== "ON"
       ) {
@@ -334,44 +430,85 @@ export function classifyMigrationStatement(
         null,
       );
     }
+    if (
+      identitySchemaAvailable(migrationId) &&
+      tokens[1] === "TABLE" &&
+      tokens[2] === IDENTITY_SCHEMA
+    ) {
+      requireIdentityQualified(tokens, 2);
+      const closing = matchingCloseParenthesis(tokens, 5);
+      if (closing !== tokens.length - 2) reject(tokens);
+      validateIdentityTableReferences(tokens.slice(6, closing));
+      return classification(
+        "CREATE",
+        "TABLE",
+        qualifiedIdentity("table", tokens, 2),
+        null,
+      );
+    }
+    if (
+      identitySchemaAvailable(migrationId) &&
+      tokens[1] === "FUNCTION" &&
+      tokens[2] === IDENTITY_SCHEMA
+    ) {
+      requireIdentityQualified(tokens, 2);
+      const signatureEnd = matchingCloseParenthesis(tokens, 5);
+      const body = tokens.lastIndexOf("$BODY$");
+      const options = tokens.slice(signatureEnd + 1, body - 1);
+      if (
+        signatureEnd < 0 ||
+        body <= signatureEnd ||
+        body !== tokens.length - 2 ||
+        tokens[body - 1] !== "AS"
+      ) {
+        reject(tokens);
+      }
+      validateIdentityFunctionOptions(options, tokens);
+      return classification(
+        "CREATE",
+        "FUNCTION",
+        qualifiedIdentity("function", tokens, 2, signatureEnd),
+        null,
+      );
+    }
     const orReplace = tokens[1] === "OR" && tokens[2] === "REPLACE";
     if (
       orReplace &&
       ((existingFunctionTargets === undefined &&
         !new Set([
-        "000005",
-        "000006",
-        "000009",
-        "000012",
-        "000013",
-        "000014",
-        "000016",
-        "000022",
-        "000023",
-        "000028",
-        "000036",
-        "000053",
-        "000055",
-        "000059",
-        "000066",
-        "000068",
-        "000077",
-        "000078",
-        "000079",
-        "000080",
-        "000081",
-        "000082",
-        "000084",
-        "000089",
-        "000090",
-        "000091",
-        "000092",
-        "000094",
-        "000095",
-        "000096",
-        "000097",
-        "000100",
-        "000102",
+          "000005",
+          "000006",
+          "000009",
+          "000012",
+          "000013",
+          "000014",
+          "000016",
+          "000022",
+          "000023",
+          "000028",
+          "000036",
+          "000053",
+          "000055",
+          "000059",
+          "000066",
+          "000068",
+          "000077",
+          "000078",
+          "000079",
+          "000080",
+          "000081",
+          "000082",
+          "000084",
+          "000089",
+          "000090",
+          "000091",
+          "000092",
+          "000094",
+          "000095",
+          "000096",
+          "000097",
+          "000100",
+          "000102",
         ]).has(migrationId)) ||
         tokens[3] !== "FUNCTION")
     ) {
@@ -415,21 +552,46 @@ export function classifyMigrationStatement(
           )
         )
           reject(tokens);
-        targetIdentity = qualifiedIdentity("function", tokens, targetOffset, signatureEnd);
+        targetIdentity = qualifiedIdentity(
+          "function",
+          tokens,
+          targetOffset,
+          signatureEnd,
+        );
       }
     } else if (kind === "INDEX") {
       const on = tokens.indexOf("ON");
       if (on !== 3) reject(tokens);
-      requireCloudAgentsQualified(tokens, on + 1);
+      const identityIndex =
+        identitySchemaAvailable(migrationId) &&
+        tokens[on + 1] === IDENTITY_SCHEMA;
+      if (identityIndex) {
+        requireIdentityQualified(tokens, on + 1);
+      } else {
+        requireCloudAgentsQualified(tokens, on + 1);
+      }
       const closing = matchingCloseParenthesis(tokens, on + 4);
       if (closing !== tokens.length - 2) reject(tokens);
-      targetIdentity = qualifiedDerivedIdentity("index", tokens, on + 1, tokens[2]!);
+      targetIdentity = identityIndex
+        ? qualifiedOwnedDerivedIdentity(
+            "index",
+            tokens,
+            on + 1,
+            on + 3,
+            tokens[2]!,
+          )
+        : qualifiedDerivedIdentity("index", tokens, on + 1, tokens[2]!);
     } else if (kind === "POLICY") {
       const on = tokens.indexOf("ON");
       if (on !== 3) reject(tokens);
       requireCloudAgentsQualified(tokens, on + 1);
       validateCreatePolicyTail(tokens, on + 4);
-      targetIdentity = qualifiedDerivedIdentity("policy", tokens, on + 1, tokens[2]!);
+      targetIdentity = qualifiedDerivedIdentity(
+        "policy",
+        tokens,
+        on + 1,
+        tokens[2]!,
+      );
     } else {
       reject(tokens);
     }
@@ -690,11 +852,24 @@ export function classifyMigrationStatement(
             "function:unquoted:cloud_agents/unquoted:request_remote_worker_sandbox_file_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:integer,unquoted:text,unquoted:bytea,unquoted:text)",
           ],
         ],
+        [
+          "000118",
+          [
+            "function:unquoted:cloud_agents/unquoted:record_rbac_audit_context_v1(unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:create_membership_v3(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:transition_membership_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:suspend_membership_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:resume_membership_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:revoke_membership_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:bind_role_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:timestamptz,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+            "function:unquoted:cloud_agents/unquoted:revoke_role_binding_v2(unquoted:text,unquoted:bigint,unquoted:text,unquoted:bigint,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
+          ],
+        ],
       ]).get(migrationId);
-      if (
-        !(existingFunctionTargets?.has(targetIdentity) ??
-          expectedReplacements?.includes(targetIdentity))
-      )
+      if (!(
+        existingFunctionTargets?.has(targetIdentity) ??
+        expectedReplacements?.includes(targetIdentity)
+      ))
         reject(tokens);
     }
     return classification("CREATE", kind!, targetIdentity!, null);
@@ -705,12 +880,43 @@ export function classifyMigrationStatement(
       kind === "VIEW" &&
       migrationId === "000067" &&
       statement.index === 14 &&
-      statement.sha256 === "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b"
+      statement.sha256 ===
+        "sha256:96eb4e40e2e00ce727b5dcb8272d6bd9c9a97c1bfb24c108ac2b44487d81189b"
     ) {
       requireCloudAgentsQualified(tokens, 2);
-      return classification("ALTER", "VIEW", qualifiedIdentity("view", tokens, 2), null);
+      return classification(
+        "ALTER",
+        "VIEW",
+        qualifiedIdentity("view", tokens, 2),
+        null,
+      );
     }
     if (kind === "TABLE") {
+      if (
+        identitySchemaAvailable(migrationId) &&
+        tokens[2] === IDENTITY_SCHEMA
+      ) {
+        requireIdentityQualified(tokens, 2);
+        const targetIdentity = qualifiedIdentity("table", tokens, 2);
+        const subcommand = tokens.slice(5, -1);
+        const owner =
+          subcommand.join("\0") ===
+          ["OWNER", "TO", MIGRATION_OWNER_ROLE].join("\0");
+        const auditCheckReplacement =
+          identityAuditCheckAvailable(migrationId) &&
+          targetIdentity ===
+            "table:unquoted:cloud_agents_identity/unquoted:audit_events" &&
+          isIdentityAuditCheckReplacement(subcommand);
+        const serviceAccountAuditAlter =
+          identityServiceAccountAvailable(migrationId) &&
+          targetIdentity ===
+            "table:unquoted:cloud_agents_identity/unquoted:audit_events" &&
+          isIdentityServiceAccountAuditAlter(subcommand);
+        if (!owner && !auditCheckReplacement && !serviceAccountAuditAlter) {
+          reject(tokens);
+        }
+        return classification("ALTER", "TABLE", targetIdentity, null);
+      }
       requireCloudAgentsQualified(tokens, 2);
       const subcommand = tokens.slice(5, -1);
       const exact = [
@@ -723,22 +929,30 @@ export function classifyMigrationStatement(
         additiveCommands.length > 0 &&
         additiveCommands.every(
           (command) =>
-            command[0] === "ADD" && (command[1] === "COLUMN" || command[1] === "CONSTRAINT"),
+            command[0] === "ADD" &&
+            (command[1] === "COLUMN" || command[1] === "CONSTRAINT"),
         );
       const targetIdentity = qualifiedIdentity("table", tokens, 2);
       const dropRuntimeProfileTargetNotNull =
         migrationId === "000080" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
         subcommand.join("\0") ===
           ["ALTER", "COLUMN", "TARGET_UID", "DROP", "NOT", "NULL"].join("\0");
       const dropRuntimeProfileTargetConstraint =
         migrationId === "000080" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:runtime_profiles" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "RUNTIME_PROFILES_TARGET_UID_CHECK"].join("\0");
+          ["DROP", "CONSTRAINT", "RUNTIME_PROFILES_TARGET_UID_CHECK"].join(
+            "\0",
+          );
       const dropResourceKindConstraint =
-        (migrationId === "000003" || migrationId === "000055" || migrationId === "000082") &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:resource_changes" &&
+        (migrationId === "000003" ||
+          migrationId === "000055" ||
+          migrationId === "000082") &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:resource_changes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "RESOURCE_CHANGES_RESOURCE_KIND"].join("\0");
       const dropAuditFactConstraint =
@@ -759,7 +973,10 @@ export function classifyMigrationStatement(
               ["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION_RESOURCE"].join("\0"),
             ]),
           ],
-          ["000028", new Set([["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0")])],
+          [
+            "000028",
+            new Set([["DROP", "CONSTRAINT", "AUDIT_FACTS_ACTION"].join("\0")]),
+          ],
         ])
           .get(migrationId)
           ?.has(subcommand.join("\0")) === true;
@@ -774,7 +991,10 @@ export function classifyMigrationStatement(
             "table:unquoted:cloud_agents/unquoted:idempotency_records",
             "IDEMPOTENCY_RECORDS_REGISTRY_DIGEST",
           ],
-          ["table:unquoted:cloud_agents/unquoted:outbox_events", "OUTBOX_EVENTS_REGISTRY_DIGEST"],
+          [
+            "table:unquoted:cloud_agents/unquoted:outbox_events",
+            "OUTBOX_EVENTS_REGISTRY_DIGEST",
+          ],
           [
             "table:unquoted:cloud_agents/unquoted:coordination_audit_facts",
             "COORDINATION_AUDIT_FACTS_REGISTRY_DIGEST",
@@ -783,43 +1003,64 @@ export function classifyMigrationStatement(
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
       const dropDeploymentTargetConstraint =
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_targets" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:deployment_targets" &&
         ((new Set(["000035", "000036", "000067"]).has(migrationId) &&
-          subcommand.join("\0") === ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0")) ||
+          subcommand.join("\0") ===
+            ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_KIND"].join("\0")) ||
           (new Set(["000038", "000067"]).has(migrationId) &&
             subcommand.join("\0") ===
-              ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_ENDPOINT"].join("\0")));
+              ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGETS_ENDPOINT"].join(
+                "\0",
+              )));
       const dropDeploymentTargetActivityConstraint =
         new Set(["000040", "000044", "000046"]).has(migrationId) &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:deployment_target_activity" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:deployment_target_activity" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGET_ACTIVITY_ACTION"].join("\0");
+          ["DROP", "CONSTRAINT", "DEPLOYMENT_TARGET_ACTIVITY_ACTION"].join(
+            "\0",
+          );
       const dropEnvironmentProfileActivityConstraint =
         migrationId === "000042" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profile_activity" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:environment_profile_activity" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join("\0");
+          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILE_ACTIVITY_ACTION"].join(
+            "\0",
+          );
       const dropEnvironmentProfileProviderKindsConstraint =
         migrationId === "000090" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:environment_profiles" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:environment_profiles" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILES_PROVIDER_KINDS"].join("\0");
+          ["DROP", "CONSTRAINT", "ENVIRONMENT_PROFILES_PROVIDER_KINDS"].join(
+            "\0",
+          );
       const dropManagedAgentRuntimeMessagesConstraint =
         new Set(["000092", "000100"]).has(migrationId) &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_executions" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:managed_agent_executions" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "MANAGED_AGENT_EXECUTIONS_RUNTIME_MESSAGES"].join("\0");
+          [
+            "DROP",
+            "CONSTRAINT",
+            "MANAGED_AGENT_EXECUTIONS_RUNTIME_MESSAGES",
+          ].join("\0");
       const dropManagedAgentEventOperationConstraint =
         migrationId === "000092" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "MANAGED_AGENT_EVENTS_OPERATION"].join("\0");
       const dropManagedAgentCapabilityEventConstraint =
         migrationId === "000099" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
-        ["MANAGED_AGENT_EVENTS_OPERATION", "MANAGED_AGENT_EVENTS_RESOURCE"].includes(
-          subcommand[2] ?? "",
-        ) &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:managed_agent_events" &&
+        [
+          "MANAGED_AGENT_EVENTS_OPERATION",
+          "MANAGED_AGENT_EVENTS_RESOURCE",
+        ].includes(subcommand[2] ?? "") &&
         subcommand[0] === "DROP" &&
         subcommand[1] === "CONSTRAINT";
       const dropRemoteWorkerPTYShapeConstraint =
@@ -827,22 +1068,39 @@ export function classifyMigrationStatement(
         targetIdentity ===
           "table:unquoted:cloud_agents/unquoted:remote_worker_sandbox_pty_commands" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "REMOTE_WORKER_SANDBOX_PTY_SSH_SHAPE"].join("\0");
+          ["DROP", "CONSTRAINT", "REMOTE_WORKER_SANDBOX_PTY_SSH_SHAPE"].join(
+            "\0",
+          );
       const dropRemoteWorkerEnrollmentActivityConstraint =
         migrationId === "000063" &&
         targetIdentity ===
           "table:unquoted:cloud_agents/unquoted:remote_worker_enrollment_activity" &&
         subcommand.join("\0") ===
-          ["DROP", "CONSTRAINT", "REMOTE_WORKER_ENROLLMENT_ACTIVITY_ACTION_CHECK"].join("\0");
+          [
+            "DROP",
+            "CONSTRAINT",
+            "REMOTE_WORKER_ENROLLMENT_ACTIVITY_ACTION_CHECK",
+          ].join("\0");
       const dropAdminDeniedWriteConstraint =
-        new Set(["000054", "000056", "000058", "000062", "000066", "000088"]).has(migrationId) &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:admin_denied_writes" &&
+        new Set([
+          "000054",
+          "000056",
+          "000058",
+          "000062",
+          "000066",
+          "000088",
+          "000118",
+        ]).has(migrationId) &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:admin_denied_writes" &&
         subcommand.join("\0") ===
           ["DROP", "CONSTRAINT", "ADMIN_DENIED_WRITES_ACTION_CHECK"].join("\0");
       const dropFoundationObservationConstraint =
         migrationId === "000056" &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:sandbox_sessions" &&
-        subcommand.join("\0") === ["DROP", "CONSTRAINT", "SANDBOX_SESSIONS_OBSERVATION"].join("\0");
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:sandbox_sessions" &&
+        subcommand.join("\0") ===
+          ["DROP", "CONSTRAINT", "SANDBOX_SESSIONS_OBSERVATION"].join("\0");
       const dropSandboxAccessConstraint =
         migrationId === "000059" &&
         new Map([
@@ -859,7 +1117,8 @@ export function classifyMigrationStatement(
         subcommand[1] === "CONSTRAINT";
       const dropWorkspaceSnapshotConstraint =
         new Set(["000084", "000091"]).has(migrationId) &&
-        targetIdentity === "table:unquoted:cloud_agents/unquoted:workspace_snapshots" &&
+        targetIdentity ===
+          "table:unquoted:cloud_agents/unquoted:workspace_snapshots" &&
         new Set([
           "WORKSPACE_SNAPSHOTS_STATUS_CHECK",
           "WORKSPACE_SNAPSHOTS_CHECK",
@@ -893,6 +1152,26 @@ export function classifyMigrationStatement(
       return classification("ALTER", "TABLE", targetIdentity, null);
     }
     if (kind === "FUNCTION") {
+      if (
+        identitySchemaAvailable(migrationId) &&
+        tokens[2] === IDENTITY_SCHEMA
+      ) {
+        requireIdentityQualified(tokens, 2);
+        const closing = matchingCloseParenthesis(tokens, 5);
+        if (
+          closing < 0 ||
+          tokens.slice(closing + 1).join("\0") !==
+            ["OWNER", "TO", MIGRATION_OWNER_ROLE, ";"].join("\0")
+        ) {
+          reject(tokens);
+        }
+        return classification(
+          "ALTER",
+          "FUNCTION",
+          qualifiedIdentity("function", tokens, 2, closing),
+          null,
+        );
+      }
       requireCloudAgentsQualified(tokens, 2);
       const closing = matchingCloseParenthesis(tokens, 5);
       if (
@@ -909,17 +1188,79 @@ export function classifyMigrationStatement(
         null,
       );
     }
+    const identityDefaultPrivilege = tokens.slice(3).join("\0");
+    const identityDefaultPrefix = [
+      "FOR",
+      "ROLE",
+      MIGRATION_OWNER_ROLE,
+      "IN",
+      "SCHEMA",
+      IDENTITY_SCHEMA,
+    ];
+    if (
+      identitySchemaAvailable(migrationId) &&
+      kind === "DEFAULT" &&
+      tokens[2] === "PRIVILEGES" &&
+      new Set([
+        [
+          ...identityDefaultPrefix,
+          "REVOKE",
+          "ALL",
+          "ON",
+          "TABLES",
+          "FROM",
+          "PUBLIC",
+          ";",
+        ].join("\0"),
+        [
+          ...identityDefaultPrefix,
+          "REVOKE",
+          "ALL",
+          "ON",
+          "SEQUENCES",
+          "FROM",
+          "PUBLIC",
+          ";",
+        ].join("\0"),
+        [
+          "FOR",
+          "ROLE",
+          MIGRATION_OWNER_ROLE,
+          "REVOKE",
+          "EXECUTE",
+          "ON",
+          "FUNCTIONS",
+          "FROM",
+          "PUBLIC",
+          ";",
+        ].join("\0"),
+      ]).has(identityDefaultPrivilege)
+    ) {
+      return classification(
+        "ALTER",
+        "DEFAULT_PRIVILEGES",
+        "schema:unquoted:cloud_agents_identity",
+        "PUBLIC",
+      );
+    }
     if (
       kind === "DEFAULT" &&
       tokens[2] === "PRIVILEGES" &&
       tokens.slice(3, 9).join("\0") ===
-        ["FOR", "ROLE", "CLOUD_AGENTS_MIGRATION_OWNER", "IN", "SCHEMA", "CLOUD_AGENTS"].join(
-          "\0",
-        ) &&
+        [
+          "FOR",
+          "ROLE",
+          "CLOUD_AGENTS_MIGRATION_OWNER",
+          "IN",
+          "SCHEMA",
+          "CLOUD_AGENTS",
+        ].join("\0") &&
       new Set([
         ["REVOKE", "ALL", "ON", "TABLES", "FROM", "PUBLIC", ";"].join("\0"),
         ["REVOKE", "ALL", "ON", "SEQUENCES", "FROM", "PUBLIC", ";"].join("\0"),
-        ["REVOKE", "EXECUTE", "ON", "FUNCTIONS", "FROM", "PUBLIC", ";"].join("\0"),
+        ["REVOKE", "EXECUTE", "ON", "FUNCTIONS", "FROM", "PUBLIC", ";"].join(
+          "\0",
+        ),
       ]).has(tokens.slice(9).join("\0"))
     ) {
       return classification(
@@ -953,6 +1294,8 @@ export function classifyMigrationStatement(
     return classification("UPDATE", "TABLE", targetIdentity, null);
   }
   if (first === "GRANT" || first === "REVOKE") {
+    const identityPrivilege = classifyIdentityPrivilege(tokens, migrationId);
+    if (identityPrivilege) return identityPrivilege;
     if (
       migrationId === "000004" &&
       tokens.join("\0") ===
@@ -970,10 +1313,19 @@ export function classifyMigrationStatement(
           ";",
         ].join("\0")
     ) {
-      return classification("REVOKE", "ALL_FUNCTIONS", "schema:unquoted:cloud_agents", "PUBLIC");
+      return classification(
+        "REVOKE",
+        "ALL_FUNCTIONS",
+        "schema:unquoted:cloud_agents",
+        "PUBLIC",
+      );
     }
     const on = findTopLevelToken(tokens, "ON", 1);
-    const direction = findTopLevelToken(tokens, first === "GRANT" ? "TO" : "FROM", on + 1);
+    const direction = findTopLevelToken(
+      tokens,
+      first === "GRANT" ? "TO" : "FROM",
+      on + 1,
+    );
     const objectKind = tokens[on + 1];
     const grantee = tokens[direction + 1];
     const privileges = tokens.slice(1, on);
@@ -992,7 +1344,8 @@ export function classifyMigrationStatement(
       reject(tokens);
     }
     if (objectKind === "SCHEMA") {
-      if (tokens.slice(on + 2, direction).join("\0") !== "CLOUD_AGENTS") reject(tokens);
+      if (tokens.slice(on + 2, direction).join("\0") !== "CLOUD_AGENTS")
+        reject(tokens);
     } else {
       requireCloudAgentsQualified(tokens, on + 2);
       if (objectKind === "TABLE" && direction !== on + 5) reject(tokens);
@@ -1021,7 +1374,8 @@ function simpleBackfill(tokens: ReadonlyArray<string>): boolean {
   let assignments = 0;
   while (
     simpleUnquotedIdentifier(tokens[offset]) &&
-    (simpleUnquotedIdentifier(tokens[offset + 1]) || tokens[offset + 1] === "$STRING$")
+    (simpleUnquotedIdentifier(tokens[offset + 1]) ||
+      tokens[offset + 1] === "$STRING$")
   ) {
     assignments += 1;
     offset += 2;
@@ -1046,8 +1400,11 @@ function simpleBackfill(tokens: ReadonlyArray<string>): boolean {
 
 function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
   const on = tokens.indexOf("ON", 4);
+  const schema = tokens[on + 1];
   if (
     on < 0 ||
+    !new Set(["CLOUD_AGENTS", IDENTITY_SCHEMA]).has(schema ?? "") ||
+    tokens[on + 9] !== schema ||
     !simpleUnquotedIdentifier(tokens[2]) ||
     !simpleUnquotedIdentifier(tokens[on + 3]) ||
     !simpleUnquotedIdentifier(tokens[on + 11])
@@ -1060,10 +1417,11 @@ function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
       event.slice(0, 3).join("\0") === ["BEFORE", "UPDATE", "OF"].join("\0") &&
       simpleUnquotedIdentifier(event[3])) ||
     (event.length === 6 &&
-      event.slice(0, 5).join("\0") === ["BEFORE", "INSERT", "OR", "UPDATE", "OF"].join("\0") &&
+      event.slice(0, 5).join("\0") ===
+        ["BEFORE", "INSERT", "OR", "UPDATE", "OF"].join("\0") &&
       simpleUnquotedIdentifier(event[5]));
   const tail = [
-    "CLOUD_AGENTS",
+    schema!,
     ".",
     tokens[on + 3]!,
     "FOR",
@@ -1071,27 +1429,36 @@ function simpleBeforeRowTrigger(tokens: ReadonlyArray<string>): number {
     "ROW",
     "EXECUTE",
     "FUNCTION",
-    "CLOUD_AGENTS",
+    schema!,
     ".",
     tokens[on + 11]!,
     "(",
     ")",
     ";",
   ];
-  return validEvent && tokens.slice(on + 1).join("\0") === tail.join("\0") ? on : -1;
+  return validEvent && tokens.slice(on + 1).join("\0") === tail.join("\0")
+    ? on
+    : -1;
 }
 
-function simpleAfterUpdateRowTrigger(tokens: ReadonlyArray<string>): number {
+function simpleAfterUpdateRowTrigger(
+  tokens: ReadonlyArray<string>,
+  allowIdentitySchema: boolean,
+): number {
   const on = tokens.indexOf("ON", 4);
+  const schema = tokens[on + 1];
   if (
     on < 0 ||
+    (schema !== "CLOUD_AGENTS" &&
+      !(allowIdentitySchema && schema === IDENTITY_SCHEMA)) ||
     !simpleUnquotedIdentifier(tokens[2]) ||
     !simpleUnquotedIdentifier(tokens[on + 3]) ||
     !simpleUnquotedIdentifier(tokens[on + 11])
   )
     return -1;
   const event = tokens.slice(3, on);
-  if (event.slice(0, 3).join("\0") !== ["AFTER", "UPDATE", "OF"].join("\0")) return -1;
+  if (event.slice(0, 3).join("\0") !== ["AFTER", "UPDATE", "OF"].join("\0"))
+    return -1;
   const columns = event.slice(3);
   if (
     columns.length === 0 ||
@@ -1101,7 +1468,7 @@ function simpleAfterUpdateRowTrigger(tokens: ReadonlyArray<string>): number {
   )
     return -1;
   const tail = [
-    "CLOUD_AGENTS",
+    schema!,
     ".",
     tokens[on + 3]!,
     "FOR",
@@ -1109,7 +1476,7 @@ function simpleAfterUpdateRowTrigger(tokens: ReadonlyArray<string>): number {
     "ROW",
     "EXECUTE",
     "FUNCTION",
-    "CLOUD_AGENTS",
+    schema!,
     ".",
     tokens[on + 11]!,
     "(",
@@ -1194,12 +1561,14 @@ function lexTopLevelTokens(bytes: Uint8Array): string[] {
     }
     if (byte >= 0x30 && byte <= 0x39) {
       let end = offset + 1;
-      while (end < bytes.length && bytes[end]! >= 0x30 && bytes[end]! <= 0x39) end += 1;
+      while (end < bytes.length && bytes[end]! >= 0x30 && bytes[end]! <= 0x39)
+        end += 1;
       tokens.push(ASCII.decode(bytes.slice(offset, end)));
       offset = end;
       continue;
     }
-    if (new Set([0x28, 0x29, 0x2c, 0x2e, 0x3b]).has(byte)) tokens.push(String.fromCharCode(byte));
+    if (new Set([0x28, 0x29, 0x2c, 0x2e, 0x3b]).has(byte))
+      tokens.push(String.fromCharCode(byte));
     offset += 1;
   }
   return tokens;
@@ -1209,10 +1578,14 @@ function containsSqlToken(bytes: Uint8Array): boolean {
   return lexTopLevelTokens(bytes).length > 0;
 }
 
-function readDollarTag(input: Uint8Array, offset: number): Uint8Array | undefined {
+function readDollarTag(
+  input: Uint8Array,
+  offset: number,
+): Uint8Array | undefined {
   let cursor = offset + 1;
   if (input[cursor] === 0x24) return input.slice(offset, cursor + 1);
-  if (input[cursor] === undefined || !isIdentifierStart(input[cursor]!)) return undefined;
+  if (input[cursor] === undefined || !isIdentifierStart(input[cursor]!))
+    return undefined;
   cursor += 1;
   while (cursor < input.length && isDollarTagPart(input[cursor]!)) cursor += 1;
   if (input[cursor] !== 0x24) return undefined;
@@ -1220,11 +1593,17 @@ function readDollarTag(input: Uint8Array, offset: number): Uint8Array | undefine
 }
 
 function isIdentifierStart(byte: number): boolean {
-  return (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a) || byte === 0x5f;
+  return (
+    (byte >= 0x41 && byte <= 0x5a) ||
+    (byte >= 0x61 && byte <= 0x7a) ||
+    byte === 0x5f
+  );
 }
 
 function isIdentifierPart(byte: number): boolean {
-  return isIdentifierStart(byte) || (byte >= 0x30 && byte <= 0x39) || byte === 0x24;
+  return (
+    isIdentifierStart(byte) || (byte >= 0x30 && byte <= 0x39) || byte === 0x24
+  );
 }
 
 function isDollarTagPart(byte: number): boolean {
@@ -1279,13 +1658,25 @@ function skipNestedBlockComment(input: Uint8Array, offset: number): number {
       if (depth === 0) return cursor;
     } else cursor += 1;
   }
-  throw new MigrationValidationError("UNTERMINATED_SQL_LEXEME", "block comment");
+  throw new MigrationValidationError(
+    "UNTERMINATED_SQL_LEXEME",
+    "block comment",
+  );
 }
 
-function skipSingleQuoted(input: Uint8Array, quoteOffset: number, escapes: boolean): number {
+function skipSingleQuoted(
+  input: Uint8Array,
+  quoteOffset: number,
+  escapes: boolean,
+): number {
   for (let cursor = quoteOffset + 1; cursor < input.length; cursor += 1) {
     if (input[cursor] === 0x27 && input[cursor + 1] === 0x27) cursor += 1;
-    else if (escapes && input[cursor] === 0x5c && input[cursor + 1] !== undefined) cursor += 1;
+    else if (
+      escapes &&
+      input[cursor] === 0x5c &&
+      input[cursor + 1] !== undefined
+    )
+      cursor += 1;
     else if (input[cursor] === 0x27) return cursor + 1;
   }
   throw new MigrationValidationError("UNTERMINATED_SQL_LEXEME", "string");
@@ -1302,25 +1693,348 @@ function readQuotedIdentifier(
       cursor += 1;
     } else if (input[cursor] === 0x22) {
       return {
-        value: new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bytes)),
+        value: new TextDecoder("utf-8", { fatal: true }).decode(
+          Uint8Array.from(bytes),
+        ),
         end: cursor + 1,
       };
     } else bytes.push(input[cursor]!);
   }
-  throw new MigrationValidationError("UNTERMINATED_SQL_LEXEME", "quoted identifier");
+  throw new MigrationValidationError(
+    "UNTERMINATED_SQL_LEXEME",
+    "quoted identifier",
+  );
 }
 
-function skipDollarBody(input: Uint8Array, offset: number, tag: Uint8Array): number {
+function skipDollarBody(
+  input: Uint8Array,
+  offset: number,
+  tag: Uint8Array,
+): number {
   for (let cursor = offset + tag.length; cursor < input.length; cursor += 1) {
     if (matchesAt(input, tag, cursor)) return cursor + tag.length;
   }
   throw new MigrationValidationError("UNTERMINATED_SQL_LEXEME", "dollar body");
 }
 
-function requireCloudAgentsQualified(tokens: ReadonlyArray<string>, offset: number): void {
-  if (tokens[offset] !== "CLOUD_AGENTS" || tokens[offset + 1] !== "." || !tokens[offset + 2]) {
+function requireCloudAgentsQualified(
+  tokens: ReadonlyArray<string>,
+  offset: number,
+): void {
+  if (
+    tokens[offset] !== "CLOUD_AGENTS" ||
+    tokens[offset + 1] !== "." ||
+    !tokens[offset + 2]
+  ) {
     reject(tokens);
   }
+}
+
+function requireIdentityQualified(
+  tokens: ReadonlyArray<string>,
+  offset: number,
+): void {
+  if (
+    tokens[offset] !== IDENTITY_SCHEMA ||
+    tokens[offset + 1] !== "." ||
+    !tokens[offset + 2]
+  ) {
+    reject(tokens);
+  }
+}
+
+function identitySchemaAvailable(migrationId: string): boolean {
+  return (
+    /^[0-9]{6}$/u.test(migrationId) &&
+    migrationId >= IDENTITY_MIGRATION_INTRODUCTION
+  );
+}
+
+function identityAuditCheckAvailable(migrationId: string): boolean {
+  return (
+    /^[0-9]{6}$/u.test(migrationId) &&
+    migrationId >= IDENTITY_AUDIT_CHECK_INTRODUCTION
+  );
+}
+
+function identityServiceAccountAvailable(migrationId: string): boolean {
+  return (
+    /^[0-9]{6}$/u.test(migrationId) &&
+    migrationId >= IDENTITY_SERVICE_ACCOUNT_INTRODUCTION
+  );
+}
+
+function isIdentityAuditCheckReplacement(
+  tokens: ReadonlyArray<string>,
+): boolean {
+  if (!IDENTITY_AUDIT_CHECK_CONSTRAINTS.has(tokens[2] ?? "")) return false;
+  if (tokens.length === 3)
+    return tokens[0] === "DROP" && tokens[1] === "CONSTRAINT";
+  if (
+    tokens[0] !== "ADD" ||
+    tokens[1] !== "CONSTRAINT" ||
+    tokens[3] !== "CHECK" ||
+    tokens[4] !== "(" ||
+    splitTopLevelCommands(tokens).length !== 1
+  ) {
+    return false;
+  }
+  return matchingCloseParenthesis(tokens, 4) === tokens.length - 1;
+}
+
+function isIdentityServiceAccountAuditAlter(
+  tokens: ReadonlyArray<string>,
+): boolean {
+  const exact = new Set([
+    ["ADD", "COLUMN", "ACTOR_SERVICE_ACCOUNT_ID", "TEXT"].join("\0"),
+    ["ADD", "COLUMN", "TARGET_SERVICE_ACCOUNT_ID", "TEXT"].join("\0"),
+    [
+      "ADD",
+      "CONSTRAINT",
+      "AUDIT_EVENTS_ACTOR_SERVICE_ACCOUNT_FK",
+      "FOREIGN",
+      "KEY",
+      "(",
+      "TENANT_ID",
+      ",",
+      "ACTOR_SERVICE_ACCOUNT_ID",
+      ")",
+      "REFERENCES",
+      IDENTITY_SCHEMA,
+      ".",
+      "SERVICE_ACCOUNTS",
+      "(",
+      "TENANT_ID",
+      ",",
+      "ID",
+      ")",
+      "ON",
+      "UPDATE",
+      "RESTRICT",
+      "ON",
+      "DELETE",
+      "RESTRICT",
+    ].join("\0"),
+    [
+      "ADD",
+      "CONSTRAINT",
+      "AUDIT_EVENTS_TARGET_SERVICE_ACCOUNT_FK",
+      "FOREIGN",
+      "KEY",
+      "(",
+      "TENANT_ID",
+      ",",
+      "TARGET_SERVICE_ACCOUNT_ID",
+      ")",
+      "REFERENCES",
+      IDENTITY_SCHEMA,
+      ".",
+      "SERVICE_ACCOUNTS",
+      "(",
+      "TENANT_ID",
+      ",",
+      "ID",
+      ")",
+      "ON",
+      "UPDATE",
+      "RESTRICT",
+      "ON",
+      "DELETE",
+      "RESTRICT",
+    ].join("\0"),
+    [
+      "ADD",
+      "CONSTRAINT",
+      "AUDIT_EVENTS_ACTOR_IDENTITY_CHECK",
+      "CHECK",
+      "(",
+      "ACTOR_USER_ID",
+      "IS",
+      "NULL",
+      "OR",
+      "ACTOR_SERVICE_ACCOUNT_ID",
+      "IS",
+      "NULL",
+      ")",
+    ].join("\0"),
+  ]);
+  return exact.has(tokens.join("\0"));
+}
+
+function validateIdentityTableReferences(tokens: ReadonlyArray<string>): void {
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index] !== "REFERENCES") continue;
+    if (
+      !new Set(["CLOUD_AGENTS", IDENTITY_SCHEMA]).has(
+        tokens[index + 1] ?? "",
+      ) ||
+      tokens[index + 2] !== "." ||
+      !isIdentifierToken(tokens[index + 3] ?? "")
+    ) {
+      reject(tokens);
+    }
+  }
+}
+
+function validateIdentityFunctionOptions(
+  options: ReadonlyArray<string>,
+  statementTokens: ReadonlyArray<string>,
+): void {
+  const securityIndexes = options.flatMap((token, index) =>
+    token === "SECURITY" ? [index] : [],
+  );
+  const setIndexes = options.flatMap((token, index) =>
+    token === "SET" ? [index] : [],
+  );
+  const languageIndexes = options.flatMap((token, index) =>
+    token === "LANGUAGE" ? [index] : [],
+  );
+  const fixedSearchPath = [
+    "SET",
+    "SEARCH_PATH",
+    "PG_CATALOG",
+    ",",
+    IDENTITY_SCHEMA,
+  ];
+  if (
+    securityIndexes.length !== 1 ||
+    options[securityIndexes[0]! + 1] !== "DEFINER" ||
+    setIndexes.length !== 1 ||
+    options.slice(setIndexes[0]).join("\0") !== fixedSearchPath.join("\0") ||
+    languageIndexes.length !== 1 ||
+    !new Set(["SQL", "PLPGSQL"]).has(options[languageIndexes[0]! + 1] ?? "") ||
+    options.some((token) =>
+      new Set([
+        "TABLESPACE",
+        "WITH",
+        "EXTRA",
+        "OWNER",
+        "DROP",
+        "ALTER",
+        "CREATE",
+        "GRANT",
+        "REVOKE",
+        ";",
+      ]).has(token),
+    )
+  ) {
+    reject(statementTokens);
+  }
+}
+
+function classifyIdentityPrivilege(
+  tokens: ReadonlyArray<string>,
+  migrationId: string,
+): SqlStatementClassification | undefined {
+  if (!identitySchemaAvailable(migrationId)) return undefined;
+  const command = tokens[0];
+  if (command !== "GRANT" && command !== "REVOKE") return undefined;
+  const on = findTopLevelToken(tokens, "ON", 1);
+  const direction = findTopLevelToken(
+    tokens,
+    command === "GRANT" ? "TO" : "FROM",
+    on + 1,
+  );
+  const privilege = tokens[1];
+  const objectKind = tokens[on + 1];
+  const grantee = tokens[direction + 1];
+  if (
+    on !== 2 ||
+    direction <= on ||
+    !privilege ||
+    !objectKind ||
+    !grantee ||
+    tokens[direction + 2] !== ";" ||
+    direction + 3 !== tokens.length
+  ) {
+    return undefined;
+  }
+  if (objectKind === "SCHEMA") {
+    if (tokens.slice(on + 2, direction).join("\0") !== IDENTITY_SCHEMA)
+      return undefined;
+    const allowed =
+      (command === "REVOKE" && privilege === "ALL" && grantee === "PUBLIC") ||
+      (command === "GRANT" &&
+        privilege === "USAGE" &&
+        (grantee === IDENTITY_SERVICE_ROLE ||
+          grantee === "CLOUD_AGENTS_BOOTSTRAP_ADMIN" ||
+          grantee === "CLOUD_AGENTS_RUNTIME"));
+    return allowed
+      ? classification(
+          command,
+          "SCHEMA",
+          "schema:unquoted:cloud_agents_identity",
+          grantee,
+        )
+      : undefined;
+  }
+  if (objectKind !== "TABLE" && objectKind !== "FUNCTION") return undefined;
+  if (tokens[on + 2] !== IDENTITY_SCHEMA) return undefined;
+  requireIdentityQualified(tokens, on + 2);
+  if (objectKind === "TABLE" && direction !== on + 5) return undefined;
+  if (objectKind === "FUNCTION") {
+    const closing = matchingCloseParenthesis(tokens, on + 5);
+    if (closing !== direction - 1) return undefined;
+    if (
+      command === "GRANT" &&
+      tokens[on + 4]?.toUpperCase() ===
+        "RECORD_SERVICE_ACCOUNT_MANAGEMENT_DENIAL" &&
+      grantee !== "CLOUD_AGENTS_RUNTIME"
+    )
+      return undefined;
+  }
+  const allowed =
+    (command === "REVOKE" &&
+      privilege === "ALL" &&
+      (grantee === "PUBLIC" ||
+        (objectKind === "TABLE" &&
+          (grantee === IDENTITY_SERVICE_ROLE ||
+            (identityServiceAccountAvailable(migrationId) &&
+              grantee === "CLOUD_AGENTS_RUNTIME"))))) ||
+    (command === "GRANT" &&
+      objectKind === "FUNCTION" &&
+      privilege === "EXECUTE" &&
+      (grantee === IDENTITY_SERVICE_ROLE ||
+        (grantee === "CLOUD_AGENTS_BOOTSTRAP_ADMIN" &&
+          ["INITIALIZE_REALM", "INITIALIZE_SIGNING_AUTHORITY"].includes(
+            tokens[on + 4]!,
+          )) ||
+        (grantee === "CLOUD_AGENTS_RUNTIME" &&
+          [
+            "LOAD_TRUST_CHECKPOINT",
+            "COMPARE_TRUST_CHECKPOINT",
+            "READ_PLATFORM_ADMIN",
+            "READ_SESSION_SUBJECT",
+            ...(identityServiceAccountAvailable(migrationId)
+              ? [
+                  "READ_CLI_GRANT_SUBJECT",
+                  "CREATE_SERVICE_ACCOUNT_RECORD",
+                  "LOCK_SERVICE_ACCOUNT_TENANT_REVISION",
+                  "LOCK_SERVICE_ACCOUNT_MANAGEMENT",
+                  "ROTATE_SERVICE_ACCOUNT_CREDENTIAL",
+                  "DISABLE_SERVICE_ACCOUNT_RECORD",
+                  "LIST_SERVICE_ACCOUNT_RECORDS",
+                  "READ_SERVICE_ACCOUNT_SUBJECT",
+                ]
+              : []),
+          ].includes(tokens[on + 4]!) ||
+          (identityServiceAccountAvailable(migrationId) &&
+            tokens[on + 4]?.toUpperCase() ===
+              "RECORD_SERVICE_ACCOUNT_MANAGEMENT_DENIAL" &&
+            canonicalFunctionSignature(tokens.slice(on + 6, direction - 1)) ===
+              Array(10).fill("unquoted:text").join(",")))));
+  if (!allowed) return undefined;
+  return classification(
+    command,
+    objectKind,
+    qualifiedIdentity(
+      objectKind.toLowerCase(),
+      tokens,
+      on + 2,
+      objectKind === "FUNCTION" ? direction - 1 : undefined,
+    ),
+    grantee,
+  );
 }
 
 function qualifiedIdentity(
@@ -1333,7 +2047,9 @@ function qualifiedIdentity(
     tokens[offset + 2]!,
   )}`;
   if (signatureEnd === undefined) return base;
-  const signature = canonicalFunctionSignature(tokens.slice(offset + 4, signatureEnd));
+  const signature = canonicalFunctionSignature(
+    tokens.slice(offset + 4, signatureEnd),
+  );
   return `${base}(${signature})`;
 }
 
@@ -1350,10 +2066,14 @@ function canonicalFunctionSignature(tokens: ReadonlyArray<string>): string {
     .filter((group) => group.length > 0)
     .map((group) => {
       const typeTokens = [...group];
-      if (new Set(["IN", "OUT", "INOUT", "VARIADIC"]).has(typeTokens[0]!)) typeTokens.shift();
-      if (typeTokens.length >= 2 && isIdentifierToken(typeTokens[0]!)) typeTokens.shift();
+      if (new Set(["IN", "OUT", "INOUT", "VARIADIC"]).has(typeTokens[0]!))
+        typeTokens.shift();
+      if (typeTokens.length >= 2 && isIdentifierToken(typeTokens[0]!))
+        typeTokens.shift();
       return typeTokens
-        .map((token) => (isIdentifierToken(token) ? canonicalIdentifier(token) : token))
+        .map((token) =>
+          isIdentifierToken(token) ? canonicalIdentifier(token) : token,
+        )
         .join("");
     })
     .join(",");
@@ -1368,8 +2088,19 @@ function qualifiedDerivedIdentity(
   return `${kind}:${canonicalIdentifier(tokens[qualifiedOffset]!)}/${canonicalIdentifier(name)}`;
 }
 
+function qualifiedOwnedDerivedIdentity(
+  kind: string,
+  tokens: ReadonlyArray<string>,
+  qualifiedOffset: number,
+  relationOffset: number,
+  name: string,
+): string {
+  return `${kind}:${canonicalIdentifier(tokens[qualifiedOffset]!)}/${canonicalIdentifier(tokens[relationOffset]!)}/${canonicalIdentifier(name)}`;
+}
+
 function canonicalIdentifier(token: string): string {
-  if (token.startsWith("@quoted:")) return `quoted:${token.slice("@quoted:".length)}`;
+  if (token.startsWith("@quoted:"))
+    return `quoted:${token.slice("@quoted:".length)}`;
   return `unquoted:${token.toLowerCase()}`;
 }
 
@@ -1377,7 +2108,10 @@ function isIdentifierToken(token: string): boolean {
   return token.startsWith("@quoted:") || /^[A-Z_][A-Z0-9_$]*$/u.test(token);
 }
 
-function validateCreatePolicyTail(tokens: ReadonlyArray<string>, offset: number): void {
+function validateCreatePolicyTail(
+  tokens: ReadonlyArray<string>,
+  offset: number,
+): void {
   let cursor = offset;
   if (tokens[cursor] === "FOR") {
     if (!new Set(["SELECT", "ALL"]).has(tokens[cursor + 1]!)) reject(tokens);
@@ -1385,7 +2119,9 @@ function validateCreatePolicyTail(tokens: ReadonlyArray<string>, offset: number)
   }
   if (
     tokens[cursor] !== "TO" ||
-    !new Set(["CLOUD_AGENTS_RUNTIME", "CLOUD_AGENTS_MIGRATION_OWNER"]).has(tokens[cursor + 1]!) ||
+    !new Set(["CLOUD_AGENTS_RUNTIME", "CLOUD_AGENTS_MIGRATION_OWNER"]).has(
+      tokens[cursor + 1]!,
+    ) ||
     tokens[cursor + 2] !== "USING"
   ) {
     reject(tokens);
@@ -1396,10 +2132,14 @@ function validateCreatePolicyTail(tokens: ReadonlyArray<string>, offset: number)
   if (remainder.join("\0") === ";") return;
   if (remainder[0] !== "WITH" || remainder[1] !== "CHECK") reject(tokens);
   const checkEnd = matchingCloseParenthesis(remainder, 2);
-  if (checkEnd !== remainder.length - 2 || remainder.at(-1) !== ";") reject(tokens);
+  if (checkEnd !== remainder.length - 2 || remainder.at(-1) !== ";")
+    reject(tokens);
 }
 
-function matchingCloseParenthesis(tokens: ReadonlyArray<string>, open: number): number {
+function matchingCloseParenthesis(
+  tokens: ReadonlyArray<string>,
+  open: number,
+): number {
   if (tokens[open] !== "(") return -1;
   let depth = 0;
   for (let index = open; index < tokens.length; index += 1) {
@@ -1432,7 +2172,11 @@ function splitTopLevelCommands(
   return depth === 0 ? result : [];
 }
 
-function findTopLevelToken(tokens: ReadonlyArray<string>, expected: string, start: number): number {
+function findTopLevelToken(
+  tokens: ReadonlyArray<string>,
+  expected: string,
+  start: number,
+): number {
   let depth = 0;
   for (let index = start; index < tokens.length; index += 1) {
     if (tokens[index] === "(") depth += 1;
@@ -1442,6 +2186,10 @@ function findTopLevelToken(tokens: ReadonlyArray<string>, expected: string, star
   return -1;
 }
 
-function matchesAt(input: Uint8Array, expected: Uint8Array, offset: number): boolean {
+function matchesAt(
+  input: Uint8Array,
+  expected: Uint8Array,
+  offset: number,
+): boolean {
   return expected.every((byte, index) => input[offset + index] === byte);
 }

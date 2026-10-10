@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/current-user.schema.json",
+  "title": "CurrentUser",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "email", "displayName", "displayRoles"],
+  "properties": {
+    "id": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "email": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 320,
+      "pattern": "^[^\\s@]+@[^\\s@]+$"
+    },
+    "displayName": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "displayRoles": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["platform.admin"]
+      }
+    }
+  },
+  "description": "Account display facts. displayRoles are hints for rendering and are not authorization authority."
+}

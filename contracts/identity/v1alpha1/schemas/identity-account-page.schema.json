@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/identity-account-page.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accounts"],
+  "properties": {
+    "accounts": { "type": "array", "maxItems": 200, "items": { "$ref": "identity-account.schema.json" } },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

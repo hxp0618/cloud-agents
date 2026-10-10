@@ -1,0 +1,21 @@
+{
+  "listen": ":8443",
+  "databaseUrlFile": "/run/cloud-agents/identity/secrets/database-url",
+  "tlsCertificateFile": "/run/cloud-agents/identity/secrets/tls.crt",
+  "tlsPrivateKeyFile": "/run/cloud-agents/identity/secrets/tls.key",
+  "issuer": "https://identity.cloud-agents.example",
+  "adminAudience": "https://admin.cloud-agents.example:4174",
+  "userAudience": "https://user.cloud-agents.example:4173",
+  "signingKeyId": "identity-signing-1",
+  "signingPrivateKeyFile": "/run/cloud-agents/identity/secrets/signing.key",
+  "csrfKeyFile": "/run/cloud-agents/identity/secrets/csrf.key",
+  "providerFlowKeyFile": "/run/cloud-agents/identity/secrets/provider-flow.key",
+  "providerSecretFiles": {},
+  "providerRootCaFiles": {},
+  "adminWebCredentialFile": "/run/cloud-agents/identity/secrets/admin-web.proof",
+  "userWebCredentialFile": "/run/cloud-agents/identity/secrets/user-web.proof",
+  "controlPlaneCredentialFile": "/run/cloud-agents/identity/secrets/control-plane.proof",
+  "controlPlaneUrl": "https://control-plane:8080",
+  "controlPlaneRootCaFile": "/run/cloud-agents/identity/secrets/control-plane-ca.crt",
+  "controlPlaneAuthorizationCredentialFile": "/run/cloud-agents/identity/secrets/identity-control-plane.proof"
+}

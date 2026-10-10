@@ -3,6 +3,8 @@
 set -eu
 
 : "${CLOUD_AGENTS_ENDPOINT:?set the public Control Plane HTTPS endpoint}"
+: "${CLOUD_AGENTS_ADMIN_CLI_PROFILE:?set the Admin service-account CLI profile}"
+: "${CLOUD_AGENTS_USER_CLI_PROFILE:?set the User service-account CLI profile}"
 : "${CLOUD_AGENTS_ADMIN_TOKEN_FILE:?set the Admin API bearer token file}"
 : "${CLOUD_AGENTS_USER_TOKEN_FILE:?set the User API bearer token file}"
 : "${CLOUD_AGENTS_TENANT:?set the tenant id}"
@@ -28,8 +30,8 @@ ca_file=${CLOUD_AGENTS_CA_FILE-}
 target_name=${CLOUD_AGENTS_TARGET_NAME-$CLOUD_AGENTS_TARGET_ID}
 script_directory=$(CDPATH= cd "$(dirname "$0")" && pwd)
 
-if [ ! -f "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_USER_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_KUBECONFIG" ] || [ -e "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ] || [ "${#CLOUD_AGENTS_TARGET_ID}" -gt 90 ]; then
-  echo "Admin/User token files and kubeconfig must exist, target id must be at most 90 characters, and CLOUD_AGENTS_E2E_OUTPUT_DIR must be new" >&2
+if [ ! -f "$CLOUD_AGENTS_ADMIN_CLI_PROFILE" ] || [ ! -f "$CLOUD_AGENTS_USER_CLI_PROFILE" ] || [ ! -f "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_USER_TOKEN_FILE" ] || [ ! -f "$CLOUD_AGENTS_KUBECONFIG" ] || [ -e "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ] || [ "${#CLOUD_AGENTS_TARGET_ID}" -gt 90 ]; then
+  echo "Admin/User CLI profiles, automation token files, and kubeconfig must exist, target id must be at most 90 characters, and CLOUD_AGENTS_E2E_OUTPUT_DIR must be new" >&2
   exit 1
 fi
 command -v "$cloud_agentsctl" >/dev/null
@@ -40,9 +42,6 @@ mkdir -m 0700 "$CLOUD_AGENTS_E2E_OUTPUT_DIR"
 
 admin_curl_config="$CLOUD_AGENTS_E2E_OUTPUT_DIR/.admin-curl.conf"
 user_curl_config="$CLOUD_AGENTS_E2E_OUTPUT_DIR/.user-curl.conf"
-printf 'header = "Authorization: Bearer %s"\n' "$(sed -n '1p' "$CLOUD_AGENTS_ADMIN_TOKEN_FILE")" >"$admin_curl_config"
-printf 'header = "Authorization: Bearer %s"\n' "$(sed -n '1p' "$CLOUD_AGENTS_USER_TOKEN_FILE")" >"$user_curl_config"
-chmod 0600 "$admin_curl_config" "$user_curl_config"
 
 run_id="kubernetes-e2e-$(date -u +%Y%m%d%H%M%S)-$$"
 lease_id="$run_id-lease"
@@ -51,19 +50,28 @@ claude_session="$run_id-claude"
 lease_created=
 
 run_ctl() {
-  if [ -n "$ca_file" ]; then
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_USER_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  else
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_USER_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  fi
+  "$cloud_agentsctl" --profile "$CLOUD_AGENTS_USER_CLI_PROFILE" "$@"
 }
 
 run_admin_ctl() {
-  if [ -n "$ca_file" ]; then
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  else
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_ADMIN_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  fi
+  "$cloud_agentsctl" --profile "$CLOUD_AGENTS_ADMIN_CLI_PROFILE" "$@"
+}
+
+refresh_api_config() {
+  config=$1
+  case "$config" in
+    "$admin_curl_config") token_file=$CLOUD_AGENTS_ADMIN_TOKEN_FILE ;;
+    "$user_curl_config") token_file=$CLOUD_AGENTS_USER_TOKEN_FILE ;;
+    *) echo "unknown API authorization config" >&2; return 1 ;;
+  esac
+  token=$(sed -n '1p' "$token_file")
+  case "$token" in
+    '' | *[!A-Za-z0-9._-]*) echo "automation token file is invalid" >&2; return 1 ;;
+  esac
+  temporary_config="$config.next"
+  printf 'header = "Authorization: Bearer %s"\n' "$token" >"$temporary_config"
+  chmod 0600 "$temporary_config"
+  mv -f "$temporary_config" "$config"
 }
 
 run_api() {
@@ -72,6 +80,7 @@ run_api() {
   path=$3
   request_id=$4
   shift 4
+  refresh_api_config "$config"
   if [ -n "$ca_file" ]; then
     curl --silent --show-error --fail-with-body --cacert "$ca_file" --config "$config" --request "$method" \
       --header "X-Request-ID: $request_id" "$@" "$CLOUD_AGENTS_ENDPOINT$path"
@@ -96,19 +105,19 @@ terminate_on_failure() {
 trap terminate_on_failure EXIT HUP INT TERM
 
 target_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/target.json"
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "kubernetes-target-register-$CLOUD_AGENTS_TARGET_ID" \
   --idempotency-key "kubernetes-target-register-$CLOUD_AGENTS_TARGET_ID" \
   target register --target-name "$target_name" --kind kubernetes \
   --target-endpoint "$CLOUD_AGENTS_TARGET_ENDPOINT" --credential-ref "$CLOUD_AGENTS_TARGET_CREDENTIAL_REF" >"$target_file"
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-probe" --idempotency-key "$run_id-target-probe" \
   target probe --expected-generation 1 >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-probe.json")" in
   *'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
   *) echo "Kubernetes target probe did not become ready" >&2; exit 1 ;;
 esac
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-status" target get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-status.json")" in
   *'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
@@ -196,7 +205,7 @@ case "$(cat "$lease_file")" in
   *'"observedPhase":"ready"'*) ;;
   *) echo "Kubernetes target Worker did not become ready" >&2; exit 1 ;;
 esac
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+run_admin_ctl --lease "$lease_id" \
   --request-id "$run_id-lease-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-status.json")" in
   *'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"'"$CLOUD_AGENTS_TARGET_ID"'"'*) ;;
@@ -222,7 +231,7 @@ NODE
 create_session() {
   provider=$1
   session_id=$2
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" --session "$session_id" \
+  run_ctl --lease "$lease_id" --session "$session_id" \
     --request-id "$session_id-create" --idempotency-key "$session_id-create" session create --provider "$provider" >/dev/null
 }
 
@@ -240,10 +249,10 @@ run_real_turn() {
     *) echo "unsupported Provider $provider" >&2; exit 1 ;;
   esac
   prompt="$file_tool exactly one file at $artifact_path. Its complete contents must be the single ASCII line '$expected_content' followed by a newline. Do not modify any other file. Then reply done."
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" \
     --request-id "$turn_id-create" --idempotency-key "$turn_id-create" turn create --input "$prompt" >/dev/null
   execution_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id.json"
-  run_ctl --timeout 10m --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --timeout 10m --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-run" --idempotency-key "$execution_id-run" execution execute \
     --runtime-mode full-access --interaction-mode default --input "$prompt" >"$execution_file"
   artifact_index=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$execution_file" CLOUD_AGENTS_E2E_ARTIFACT_PATH="$artifact_path" node <<'NODE'
@@ -259,14 +268,14 @@ process.stdout.write(String(indexes[0]));
 NODE
   )
   artifact_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-artifact.txt"
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-artifact" execution download-artifact --message-index "$artifact_index" >"$artifact_file"
   CLOUD_AGENTS_E2E_ARTIFACT_FILE="$artifact_file" CLOUD_AGENTS_E2E_EXPECTED_CONTENT="$expected_content" node <<'NODE'
 const { readFileSync } = require("node:fs");
 const expected = Buffer.from(`${process.env.CLOUD_AGENTS_E2E_EXPECTED_CONTENT}\n`);
 if (!readFileSync(process.env.CLOUD_AGENTS_E2E_ARTIFACT_FILE).equals(expected)) throw new Error("downloaded Artifact content changed");
 NODE
-  run_ctl --timeout 1m --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --execution "$execution_id" \
+  run_ctl --timeout 1m --session "$session_id" --execution "$execution_id" \
     --request-id "$execution_id-events" events watch --limit 64 --until-terminal >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-events.jsonl"
 }
 
@@ -282,7 +291,7 @@ CLOUD_AGENTS_E2E_LEASE_ID="$lease_id" CLOUD_AGENTS_E2E_RUN_ID="$run_id" \
   sh "$script_directory/test-platform-agent-interactions.sh"
 
 for session_id in "$codex_session" "$claude_session"; do
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --request-id "$session_id-close" \
+  run_ctl --session "$session_id" --request-id "$session_id-close" \
     --idempotency-key "$session_id-close" session close >/dev/null
 done
 
@@ -298,7 +307,7 @@ case "$(cat "$terminate_file")" in
   *) echo "Kubernetes target Lease did not terminate cleanly" >&2; exit 1 ;;
 esac
 cmp "$terminate_file" "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminate-replay.json"
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+run_admin_ctl --lease "$lease_id" \
   --request-id "$run_id-lease-terminated-status" environment-lease get >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminated-status.json"
 case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminated-status.json")" in
   *'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
@@ -306,7 +315,7 @@ case "$(cat "$CLOUD_AGENTS_E2E_OUTPUT_DIR/lease-terminated-status.json")" in
 esac
 lease_created=
 
-run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_TARGET_ID" \
+run_admin_ctl --target "$CLOUD_AGENTS_TARGET_ID" \
   --request-id "$run_id-target-cleanup" --idempotency-key "$run_id-target-cleanup" \
   target cleanup --expected-generation 1 --confirm-target-id "$CLOUD_AGENTS_TARGET_ID" >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/target-cleanup.json"
 for resource in deployments services persistentvolumeclaims; do

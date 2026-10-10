@@ -1,0 +1,52 @@
+{{- if eq .Values.identity.adminAudience .Values.identity.userAudience }}
+{{- fail "identity Admin and User audiences must be distinct" }}
+{{- end }}
+{{- $providerSecrets := dict }}
+{{- $providerRoots := dict }}
+{{- range $ref, $key := .Values.identity.providers.clientSecrets }}
+{{- $_ := set $providerSecrets $ref (printf "/run/cloud-agents/identity/secrets/provider-%s" $key) }}
+{{- end }}
+{{- range $ref, $key := .Values.identity.providers.rootCAs }}
+{{- $_ := set $providerRoots $ref (printf "/run/cloud-agents/identity/secrets/provider-%s" $key) }}
+{{- end }}
+{{- if and (or $providerSecrets $providerRoots) (not .Values.identity.providers.secretName) }}
+{{- fail "identity.providers.secretName is required for provider material references" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-identity-config
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity
+data:
+  run.json: {{ dict
+    "listen" (printf ":%v" .Values.identity.service.port)
+    "databaseUrlFile" "/run/cloud-agents/identity/secrets/database-url"
+    "tlsCertificateFile" "/run/cloud-agents/identity/secrets/tls.crt"
+    "tlsPrivateKeyFile" "/run/cloud-agents/identity/secrets/tls.key"
+    "issuer" .Values.identity.issuer
+    "adminAudience" .Values.identity.adminAudience
+    "userAudience" .Values.identity.userAudience
+    "signingKeyId" .Values.identity.signingKeyId
+    "signingPrivateKeyFile" "/run/cloud-agents/identity/secrets/signing.key"
+    "csrfKeyFile" "/run/cloud-agents/identity/secrets/csrf.key"
+    "providerFlowKeyFile" "/run/cloud-agents/identity/secrets/provider-flow.key"
+    "providerSecretFiles" $providerSecrets
+    "providerRootCaFiles" $providerRoots
+    "adminWebCredentialFile" "/run/cloud-agents/identity/secrets/admin-web.proof"
+    "userWebCredentialFile" "/run/cloud-agents/identity/secrets/user-web.proof"
+    "controlPlaneCredentialFile" "/run/cloud-agents/identity/secrets/control-plane.proof"
+    "controlPlaneUrl" (printf "https://%s-control-plane:%v" (include "cloud-agents.fullname" .) .Values.controlPlane.service.port)
+    "controlPlaneRootCaFile" "/run/cloud-agents/identity/secrets/control-plane-ca.crt"
+    "controlPlaneAuthorizationCredentialFile" "/run/cloud-agents/identity/secrets/identity-control-plane.proof"
+    | toJson | quote }}
+  control-plane.json: {{ dict
+    "issuer" .Values.identity.issuer
+    "userAudience" .Values.identity.userAudience
+    "adminAudience" .Values.identity.adminAudience
+    "identityBaseUrl" (printf "https://%s-identity:%v" (include "cloud-agents.fullname" .) .Values.identity.service.port)
+    "caFile" "/run/cloud-agents/identity/secrets/identity-ca.crt"
+    "controlPlaneCredentialFile" "/run/cloud-agents/identity/secrets/control-plane.proof"
+    "identityCredentialFile" "/run/cloud-agents/identity/secrets/identity-control-plane.proof"
+    | toJson | quote }}

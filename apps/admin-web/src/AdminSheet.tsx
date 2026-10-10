@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useI18n } from "./i18n";
 
 export function AdminSheet({
   label,
@@ -49,5 +50,33 @@ export function AdminSheet({
       {children}
       {feedback}
     </dialog>
+  );
+}
+
+export function SheetHeading({
+  id,
+  title,
+  subject,
+  disabled = false,
+  onClose,
+}: Readonly<{
+  id: string;
+  title: ReactNode;
+  subject?: ReactNode;
+  disabled?: boolean;
+  onClose: () => void;
+}>) {
+  const { t } = useI18n();
+  return (
+    <div className="sheet-heading">
+      <h2 id={id}>{title}</h2>
+      <button className="icon-button" type="button" aria-label={t("action.close")}
+        disabled={disabled}
+        onClick={onClose}
+      >
+        ×
+      </button>
+      {subject === undefined ? null : <p>{subject}</p>}
+    </div>
   );
 }

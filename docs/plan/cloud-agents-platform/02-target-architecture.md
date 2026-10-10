@@ -135,9 +135,9 @@ Resource health observer 只提供观察，不替代生命周期调谐、到期�
 
 <a id="identity-v1-architecture"></a>
 
-### 0.8 内置身份与会话代理（IDENTITY-V1，P0 提案）
+### 0.8 内置身份与会话代理（IDENTITY-V1）
 
-本节依 [ADR-0033](../adr/0033-built-in-identity-service.md) 描述待批准的目标；不是当前运行状态。身份服务为新进程，复用当前 Go 与 PostgreSQL 基础，不把登录逻辑放进离线 verifier。
+本节依 [ADR-0033](../adr/0033-built-in-identity-service.md) 描述已批准的目标；不是当前运行状态。身份服务为新进程，复用当前 Go 与 PostgreSQL 基础，不把登录逻辑放进离线 verifier。
 
 ```text
 Admin Browser ── Admin HttpOnly cookie ── Admin Web server ──┐

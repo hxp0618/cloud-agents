@@ -268,14 +268,20 @@ export function buildPlatformDeploymentPackage(
     "deploy/compose/docker-compose.managed-agent.yml",
     "deploy/compose/docker-compose.remote-worker.yml",
     "deploy/compose/docker-compose.yml",
+    "deploy/compose/control-plane-identity.json.example",
+    "deploy/compose/identity-initialize.json.example",
+    "deploy/compose/identity-run.json.example",
     "deploy/compose/provision.sql",
     "deploy/compose/runtime.env.example",
     "deploy/web/server.mjs",
+    "sdk/typescript/dist/platform.mjs",
+    "sdk/typescript/dist/index.mjs",
     ...readTree(root, "apps/admin-web/dist"),
     ...readTree(root, "apps/user-web/dist"),
     "deploy/docker/admin-web.Dockerfile",
     "deploy/docker/access-gateway.Dockerfile",
     "deploy/docker/control-plane.Dockerfile",
+    "deploy/docker/identity.Dockerfile",
     "deploy/docker/migrate.Dockerfile",
     "deploy/docker/user-web.Dockerfile",
     ...workerSupply.sourceFiles.keys(),
@@ -298,6 +304,7 @@ export function buildPlatformDeploymentPackage(
     "scripts/bootstrap-platform-remote-worker.sh",
     "scripts/lib/platform-release-verifier.ts",
     "test/e2e/test-platform-compose-admin-web.mjs",
+    "test/e2e/identity-automation-fixture.mjs",
     "test/scripts/test-platform-helm.sh",
     "test/e2e/test-platform-agent-interactions.sh",
     "test/e2e/test-platform-kubernetes-target.sh",
@@ -305,6 +312,7 @@ export function buildPlatformDeploymentPackage(
     ...readTree(root, "deploy/helm/cloud-agents"),
     "services/control-plane/migrations/bootstrap/database.sql",
     "services/control-plane/migrations/bootstrap/roles.sql",
+    "services/control-plane/migrations/bootstrap/roles_identity_service.sql",
   ];
   return createDeterministicUstar([
     ...paths.map((path) => ({
@@ -323,6 +331,8 @@ export function buildPlatformDeploymentPackage(
 }
 
 function deploymentPackagePath(root: string, path: string): string {
+  if (path.startsWith("sdk/typescript/dist/"))
+    return path.replace("sdk/typescript/dist/", "deploy/web/");
   if (path.startsWith("services/")) {
     return path.replace("services/control-plane/migrations/bootstrap/", "deploy/bootstrap/");
   }
@@ -339,6 +349,13 @@ function deploymentPackagePath(root: string, path: string): string {
 
 function deploymentPackageMember(root: string, path: string): Buffer {
   const source = readFileSync(resolve(root, path));
+  if (path === "deploy/web/server.mjs") {
+    return Buffer.from(
+      source
+        .toString("utf8")
+        .replace('from "../../sdk/typescript/dist/platform.mjs";', 'from "./platform.mjs";'),
+    );
+  }
   if (path === "deploy/docker/migrate.Dockerfile") {
     return Buffer.from(
       source
@@ -379,6 +396,7 @@ export function buildPlatformContractPackage(root: string): Uint8Array {
     "LICENSE",
     ...readTree(root, "contracts/common/v1alpha1").filter((path) => !path.endsWith("README.md")),
     ...readTree(root, "contracts/managed-agent/v1alpha1"),
+    ...readTree(root, "contracts/identity/v1alpha1").filter((path) => !path.endsWith("README.md")),
     ...readTree(root, "contracts/managed-host/v1alpha1"),
     ...readTree(root, "contracts/worker/v1alpha1").filter((path) => !path.endsWith("README.md")),
     ...readTree(root, "contracts/worker/runtime/v1alpha1"),

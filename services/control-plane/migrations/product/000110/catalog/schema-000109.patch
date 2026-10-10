@@ -1,0 +1,135 @@
+--- services/control-plane/migrations/product/000109/catalog/schema-000108.json
++++ services/control-plane/migrations/product/000110/catalog/schema-000109.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000109",
++  "schema_head": "000110",
+@@ -30774,0 +30775,90 @@
++    },
++    {
++      "migration_id": "000110",
++      "sql_sha256": "sha256:7f1e2df50f505a7bbe01ad43e1dae751defc83ce50d970ff87546b6c1e092202",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 1097,
++          "sha256": "sha256:0ad47cba8bfc0de1a3c52d68f092fe12a2c4dc0b144a2cdacc11d7016b533d60",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_platform_admin(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 1097,
++          "end": 2578,
++          "sha256": "sha256:e8b89d8d28ece3612336e7d67099be57dfb69536bd4132ad67823f79b02e294b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_session_subject(unquoted:bytea,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 2578,
++          "end": 2675,
++          "sha256": "sha256:ad9d5f9865262f7eafcbd1a6b8810a6677d085a5a069bcfcc2ed0dd78bb2761c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_platform_admin(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 2675,
++          "end": 2767,
++          "sha256": "sha256:161391f8c63af5862b02ceea8db37ff4a712e1d9196798097c337e58bbdb0f05",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_session_subject(unquoted:bytea,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 2767,
++          "end": 2878,
++          "sha256": "sha256:9fe328765930352b010875e9f5827794ded7671443d41d8f953a309cfae93fa7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_platform_admin(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 2878,
++          "end": 2985,
++          "sha256": "sha256:1ea4f5dfa030153c4a0179ffd25795ba9b452474614a39ee11ea0cb2af59f9e0",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:read_session_subject(unquoted:bytea,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -46582,0 +46673,38 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "read_platform_admin",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "read_session_subject",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

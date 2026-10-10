@@ -148,6 +148,23 @@ describe("P1-A2.1a strict authority and catalog projection contracts", () => {
     const collationVersion = structuredClone(authority);
     (collationVersion.database as JsonObject).collation_version = "2.39";
     expect(() => validateAuthorityProfile(collationVersion)).toThrow(/UNEXPECTED_VALUE/u);
+
+    const identityAuthority = JSON.parse(
+      readFileSync(
+        resolve(root, "services/control-plane/migrations/catalog/authority-v2.json"),
+        "utf8",
+      ),
+    ) as JsonObject;
+    expect(() => validateAuthorityProfile(identityAuthority)).not.toThrow();
+    expect(identityAuthority.group_roles).toEqual([
+      "cloud_agents_migration_owner",
+      "cloud_agents_runtime",
+      "cloud_agents_bootstrap_admin",
+      "cloud_agents_identity_service",
+    ]);
+    const missingIdentityService = structuredClone(identityAuthority);
+    (missingIdentityService.group_roles as string[]).pop();
+    expect(() => validateAuthorityProfile(missingIdentityService)).toThrow(/CLOSED_LIST/u);
   });
 
   it("rejects mechanical authority invariant drift in the signed binding", () => {

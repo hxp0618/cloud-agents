@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/browser-tenant-page.schema.json",
+  "title": "BrowserTenantPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenants"],
+  "properties": {
+    "tenants": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "browser-tenant.schema.json" }
+    },
+    "nextPageToken": { "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json" }
+  }
+}

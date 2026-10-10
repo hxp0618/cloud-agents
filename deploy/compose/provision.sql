@@ -36,18 +36,40 @@ END
 $cloud_agents_missing_tenant_bootstrap_password$;
 \endif
 
+\if :{?cloud_agents_identity_bootstrap_password}
+\else
+DO $cloud_agents_missing_identity_bootstrap_password$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'cloud_agents_identity_bootstrap_password is required';
+END
+$cloud_agents_missing_identity_bootstrap_password$;
+\endif
+
+\if :{?cloud_agents_identity_service_password}
+\else
+DO $cloud_agents_missing_identity_service_password$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'cloud_agents_identity_service_password is required';
+END
+$cloud_agents_missing_identity_service_password$;
+\endif
+
 CREATE TEMP TABLE cloud_agents_compose_inputs (
     database_name text NOT NULL,
     migration_password text NOT NULL,
     runtime_password text NOT NULL,
-    tenant_bootstrap_password text NOT NULL
+    tenant_bootstrap_password text NOT NULL,
+    identity_bootstrap_password text NOT NULL,
+    identity_service_password text NOT NULL
 ) ON COMMIT DROP;
 REVOKE ALL ON TABLE cloud_agents_compose_inputs FROM PUBLIC;
 INSERT INTO cloud_agents_compose_inputs VALUES (
     :'cloud_agents_database',
     :'cloud_agents_migration_password',
     :'cloud_agents_runtime_password',
-    :'cloud_agents_tenant_bootstrap_password'
+    :'cloud_agents_tenant_bootstrap_password',
+    :'cloud_agents_identity_bootstrap_password',
+    :'cloud_agents_identity_service_password'
 );
 
 DO $cloud_agents_compose_provision$
@@ -61,9 +83,13 @@ BEGIN
     IF pg_catalog.octet_length(compose_input.migration_password) NOT BETWEEN 16 AND 1024
         OR pg_catalog.octet_length(compose_input.runtime_password) NOT BETWEEN 16 AND 1024
         OR pg_catalog.octet_length(compose_input.tenant_bootstrap_password) NOT BETWEEN 16 AND 1024
+        OR pg_catalog.octet_length(compose_input.identity_bootstrap_password) NOT BETWEEN 16 AND 1024
+        OR pg_catalog.octet_length(compose_input.identity_service_password) NOT BETWEEN 16 AND 1024
         OR compose_input.migration_password ~ '[[:cntrl:]]'
         OR compose_input.runtime_password ~ '[[:cntrl:]]'
         OR compose_input.tenant_bootstrap_password ~ '[[:cntrl:]]'
+        OR compose_input.identity_bootstrap_password ~ '[[:cntrl:]]'
+        OR compose_input.identity_service_password ~ '[[:cntrl:]]'
     THEN
         RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Compose database credentials are invalid';
     END IF;
@@ -80,6 +106,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'cloud_agents_tenant_bootstrap') THEN
         CREATE ROLE cloud_agents_tenant_bootstrap LOGIN NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'cloud_agents_identity_service_login') THEN
+        CREATE ROLE cloud_agents_identity_service_login LOGIN NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'cloud_agents_identity_bootstrap') THEN
+        CREATE ROLE cloud_agents_identity_bootstrap LOGIN NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    END IF;
 
     EXECUTE pg_catalog.format(
         'ALTER ROLE cloud_agents_migration PASSWORD %L VALID UNTIL ''infinity''',
@@ -93,15 +125,27 @@ BEGIN
         'ALTER ROLE cloud_agents_tenant_bootstrap PASSWORD %L VALID UNTIL ''infinity''',
         compose_input.tenant_bootstrap_password
     );
+    EXECUTE pg_catalog.format(
+        'ALTER ROLE cloud_agents_identity_bootstrap PASSWORD %L VALID UNTIL ''infinity''',
+        compose_input.identity_bootstrap_password
+    );
+    EXECUTE pg_catalog.format(
+        'ALTER ROLE cloud_agents_identity_service_login PASSWORD %L VALID UNTIL ''infinity''',
+        compose_input.identity_service_password
+    );
 
     IF pg_catalog.current_setting('server_version_num')::integer >= 160000 THEN
         EXECUTE 'GRANT cloud_agents_migration_owner TO cloud_agents_migration WITH ADMIN FALSE, INHERIT FALSE, SET TRUE';
         EXECUTE 'GRANT cloud_agents_runtime TO cloud_agents_runtime_login WITH ADMIN FALSE, INHERIT TRUE, SET TRUE';
         EXECUTE 'GRANT cloud_agents_bootstrap_admin TO cloud_agents_tenant_bootstrap WITH ADMIN FALSE, INHERIT TRUE, SET TRUE';
+        EXECUTE 'GRANT cloud_agents_bootstrap_admin TO cloud_agents_identity_bootstrap WITH ADMIN FALSE, INHERIT TRUE, SET TRUE';
+        EXECUTE 'GRANT cloud_agents_identity_service TO cloud_agents_identity_service_login WITH ADMIN FALSE, INHERIT TRUE, SET TRUE';
     ELSE
         GRANT cloud_agents_migration_owner TO cloud_agents_migration;
         GRANT cloud_agents_runtime TO cloud_agents_runtime_login;
         GRANT cloud_agents_bootstrap_admin TO cloud_agents_tenant_bootstrap;
+        GRANT cloud_agents_bootstrap_admin TO cloud_agents_identity_bootstrap;
+        GRANT cloud_agents_identity_service TO cloud_agents_identity_service_login;
     END IF;
 
     EXECUTE pg_catalog.format(

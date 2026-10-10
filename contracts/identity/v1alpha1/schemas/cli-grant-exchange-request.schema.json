@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/cli-grant-exchange-request.schema.json",
+  "title": "CliGrantExchangeRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorizationId",
+    "authorizationCode",
+    "codeVerifier"
+  ],
+  "properties": {
+    "authorizationId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "authorizationCode": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "codeVerifier": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

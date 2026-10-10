@@ -1,0 +1,24 @@
+{
+  "providers": [
+    {
+      "providerId": "oidc-main",
+      "application": "admin",
+      "displayName": "Company SSO",
+      "providerKind": "oidc",
+      "issuer": "https://id.example/realms/cloud-agents",
+      "clientId": "cloud-agents-admin",
+      "redirectUri": "https://admin.example/auth/provider/callback",
+      "secretRef": "oidc-admin-client-secret",
+      "rootCaRef": "company-idp-ca",
+      "scopes": [
+        "email",
+        "openid",
+        "profile"
+      ],
+      "trustProviderEmail": false,
+      "allowedOrganizationIds": [],
+      "enabled": true,
+      "resourceVersion": "7"
+    }
+  ]
+}

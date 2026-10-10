@@ -1,0 +1,5 @@
+{
+  "tenantId": "tenant-alpha",
+  "resourceVersion": "1",
+  "allowedDomains": ["example.com", "example.com"]
+}

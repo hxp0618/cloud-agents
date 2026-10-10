@@ -4,10 +4,13 @@ package v1alpha1
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"mime"
+	"net/netip"
 	"net/url"
 	"path"
 	"strconv"
@@ -21,6 +24,7 @@ const (
 	HeaderRequestID              = "X-Request-ID"
 	HeaderIdempotencyKey         = "Idempotency-Key"
 	HeaderResourceVersion        = "X-Resource-Version"
+	HeaderIdentityClientIP       = "X-Cloud-Agents-Client-IP"
 	MaxManagedAgentArtifactBytes = 16 * 1024 * 1024
 )
 
@@ -77,6 +81,2390 @@ func (err *ClientError) Unwrap() error {
 		return nil
 	}
 	return err.Cause
+}
+
+type IdentityApplication string
+
+const (
+	IdentityApplicationAdmin IdentityApplication = "admin"
+	IdentityApplicationUser  IdentityApplication = "user"
+)
+
+type PasswordLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+type CurrentUser struct {
+	ID           string   `json:"id"`
+	Email        string   `json:"email"`
+	DisplayName  string   `json:"displayName"`
+	DisplayRoles []string `json:"displayRoles"`
+}
+type BrowserTenant struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	DisplayRoles []string `json:"displayRoles"`
+}
+type BrowserTenantPage struct {
+	Tenants       []BrowserTenant `json:"tenants"`
+	NextPageToken string          `json:"nextPageToken,omitempty"`
+}
+type BrowserSession struct {
+	Application   IdentityApplication `json:"application"`
+	User          CurrentUser         `json:"user"`
+	Tenants       []BrowserTenant     `json:"tenants"`
+	NextPageToken string              `json:"nextPageToken,omitempty"`
+	CSRFToken     string              `json:"csrfToken"`
+}
+type EmailSuffixPolicy struct {
+	TenantID        string   `json:"tenantId"`
+	ResourceVersion string   `json:"resourceVersion"`
+	AllowedDomains  []string `json:"allowedDomains"`
+}
+type EmailSuffixPolicyUpdate struct {
+	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
+	AllowedDomains          []string `json:"allowedDomains"`
+}
+type IdentityAccount struct {
+	ID              string            `json:"id"`
+	Subject         common.SubjectRef `json:"subject"`
+	Email           string            `json:"email"`
+	DisplayName     string            `json:"displayName"`
+	State           string            `json:"state"`
+	PlatformAdmin   bool              `json:"platformAdmin"`
+	EmailVerifiedAt string            `json:"emailVerifiedAt"`
+	CreatedAt       string            `json:"createdAt"`
+}
+type IdentityAccountPage struct {
+	Accounts      []IdentityAccount `json:"accounts"`
+	NextPageToken string            `json:"nextPageToken,omitempty"`
+}
+type PasswordChangeRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+type PasswordResetCreated struct {
+	UserID    string `json:"userId"`
+	ResetCode string `json:"resetCode"`
+	ExpiresAt string `json:"expiresAt"`
+}
+type PasswordResetAcceptRequest struct {
+	ResetCode   string `json:"resetCode"`
+	NewPassword string `json:"newPassword"`
+}
+type IdentityAuditEvent struct {
+	ID            string              `json:"id"`
+	EventKind     string              `json:"eventKind"`
+	ActorUserID   string              `json:"actorUserId,omitempty"`
+	TargetUserID  string              `json:"targetUserId,omitempty"`
+	TenantID      string              `json:"tenantId,omitempty"`
+	Application   IdentityApplication `json:"application,omitempty"`
+	Decision      string              `json:"decision"`
+	ReasonCode    string              `json:"reasonCode"`
+	CorrelationID string              `json:"correlationId"`
+	OccurredAt    string              `json:"occurredAt"`
+}
+type IdentityAuditPage struct {
+	Events        []IdentityAuditEvent `json:"events"`
+	NextPageToken string               `json:"nextPageToken,omitempty"`
+}
+type LoginProvider struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	DisplayName string `json:"displayName"`
+}
+type LoginProviderPage struct {
+	Providers []LoginProvider `json:"providers"`
+}
+type ProviderAuthorizationRequest struct {
+	ProviderID     string `json:"providerId"`
+	Purpose        string `json:"purpose"`
+	InvitationCode string `json:"invitationCode,omitempty"`
+	DisplayName    string `json:"displayName,omitempty"`
+}
+type ProviderAuthorization struct {
+	AuthorizationURL string `json:"authorizationUrl"`
+	ExpiresAt        string `json:"expiresAt"`
+}
+type ProviderAuthorizationResult struct {
+	Authorization ProviderAuthorization
+	State         string
+}
+type ProviderCallbackRequest struct {
+	State        string `json:"state"`
+	Code         string `json:"code"`
+	Issuer       string `json:"issuer,omitempty"`
+	SessionState string `json:"sessionState,omitempty"`
+}
+type LoginMethod struct {
+	ID         string `json:"id"`
+	ProviderID string `json:"providerId"`
+	Issuer     string `json:"issuer"`
+	Subject    string `json:"subject"`
+	CreatedAt  string `json:"createdAt"`
+}
+type LoginMethodList struct {
+	PasswordEnabled bool          `json:"passwordEnabled"`
+	LoginMethods    []LoginMethod `json:"loginMethods"`
+}
+type ProviderCallback struct {
+	Action      string          `json:"action"`
+	Session     *BrowserSession `json:"session,omitempty"`
+	ExpiresAt   string          `json:"expiresAt,omitempty"`
+	LoginMethod *LoginMethod    `json:"loginMethod,omitempty"`
+}
+type ProviderCallbackResult struct {
+	Callback      ProviderCallback
+	SessionHandle string
+	ReauthProof   string
+}
+type PasswordReauthRequest struct {
+	Password string `json:"password"`
+}
+type Reauthentication struct {
+	ExpiresAt string `json:"expiresAt"`
+}
+type ReauthenticationResult struct {
+	Reauthentication Reauthentication
+	ReauthProof      string
+	SessionHandle    string
+}
+type EnablePasswordRequest struct {
+	NewPassword string `json:"newPassword"`
+}
+type ProviderClient struct {
+	ProviderID             string              `json:"providerId"`
+	Application            IdentityApplication `json:"application"`
+	DisplayName            string              `json:"displayName"`
+	ProviderKind           string              `json:"providerKind"`
+	Issuer                 string              `json:"issuer"`
+	ClientID               string              `json:"clientId"`
+	RedirectURI            string              `json:"redirectUri"`
+	SecretRef              string              `json:"secretRef"`
+	RootCARef              string              `json:"rootCaRef,omitempty"`
+	AgentID                string              `json:"agentId,omitempty"`
+	Scopes                 []string            `json:"scopes"`
+	TrustProviderEmail     bool                `json:"trustProviderEmail"`
+	AllowedOrganizationIDs []string            `json:"allowedOrganizationIds"`
+	Enabled                bool                `json:"enabled"`
+	ResourceVersion        string              `json:"resourceVersion"`
+}
+type ProviderClientPage struct {
+	Providers []ProviderClient `json:"providers"`
+}
+type ProviderClientUpdate struct {
+	DisplayName             string   `json:"displayName"`
+	ProviderKind            string   `json:"providerKind"`
+	Issuer                  string   `json:"issuer"`
+	ClientID                string   `json:"clientId"`
+	RedirectURI             string   `json:"redirectUri"`
+	SecretRef               string   `json:"secretRef"`
+	RootCARef               string   `json:"rootCaRef,omitempty"`
+	AgentID                 string   `json:"agentId,omitempty"`
+	Scopes                  []string `json:"scopes"`
+	TrustProviderEmail      bool     `json:"trustProviderEmail"`
+	AllowedOrganizationIDs  []string `json:"allowedOrganizationIds"`
+	Enabled                 bool     `json:"enabled"`
+	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
+}
+type TenantTokenIssueRequest struct {
+	TenantID  string `json:"tenantId"`
+	ProjectID string `json:"projectId,omitempty"`
+}
+type TenantToken struct {
+	AccessToken string `json:"accessToken"`
+	TokenType   string `json:"tokenType"`
+	ExpiresAt   string `json:"expiresAt"`
+}
+type IdentityLoginResult struct {
+	Session       BrowserSession
+	SessionHandle string
+}
+type TokenStatusRequest struct {
+	TokenSHA256         string              `json:"tokenSha256"`
+	ExpectedClientID    string              `json:"expectedClientId"`
+	ExpectedApplication IdentityApplication `json:"expectedApplication"`
+	ExpectedTenantID    string              `json:"expectedTenantId"`
+	ExpectedProjectID   string              `json:"expectedProjectId,omitempty"`
+}
+type TokenStatus struct {
+	Status string `json:"status"`
+}
+type TenantTokenAuthorizationRequest struct {
+	Application   IdentityApplication `json:"application"`
+	SessionSHA256 string              `json:"sessionSha256"`
+	TenantID      string              `json:"tenantId"`
+	ProjectID     string              `json:"projectId,omitempty"`
+}
+type TenantTokenAuthorization struct {
+	UserID      string              `json:"userId"`
+	Issuer      string              `json:"issuer"`
+	TenantID    string              `json:"tenantId"`
+	ProjectID   string              `json:"projectId,omitempty"`
+	Application IdentityApplication `json:"application"`
+	Scopes      []string            `json:"scopes"`
+}
+type CLIAuthorizationStartRequest struct {
+	Application   IdentityApplication `json:"application"`
+	CallbackPort  int                 `json:"callbackPort"`
+	State         string              `json:"state"`
+	CodeChallenge string              `json:"codeChallenge"`
+}
+type CLILogin struct {
+	AuthorizationID string `json:"authorizationId"`
+	VerificationURL string `json:"verificationUrl"`
+	ExpiresAt       string `json:"expiresAt"`
+}
+type CLIAuthorizationRequest struct {
+	Pending     bool                `json:"pending"`
+	Application IdentityApplication `json:"application"`
+}
+type CLIAuthorization struct {
+	AuthorizationID string `json:"authorizationId"`
+	ExpiresAt       string `json:"expiresAt"`
+}
+type CLIAuthorizationApproveRequest struct {
+	State string `json:"state"`
+}
+type CLIAuthorizationApproved struct {
+	CallbackPort      int    `json:"callbackPort"`
+	State             string `json:"state"`
+	AuthorizationCode string `json:"authorizationCode"`
+	ExpiresAt         string `json:"expiresAt"`
+}
+type CLIGrantExchangeRequest struct {
+	AuthorizationID   string `json:"authorizationId"`
+	AuthorizationCode string `json:"authorizationCode"`
+	CodeVerifier      string `json:"codeVerifier"`
+}
+type CLIGrant struct {
+	Credential  string              `json:"credential"`
+	Application IdentityApplication `json:"application"`
+	ExpiresAt   string              `json:"expiresAt"`
+}
+type ServiceAccount struct {
+	ID              string              `json:"id"`
+	TenantID        string              `json:"tenantId"`
+	DisplayName     string              `json:"displayName"`
+	Application     IdentityApplication `json:"application"`
+	ScopeLevel      string              `json:"scopeLevel"`
+	ScopeID         string              `json:"scopeId"`
+	RoleName        string              `json:"roleName"`
+	State           string              `json:"state"`
+	ResourceVersion string              `json:"resourceVersion"`
+	Subject         common.SubjectRef   `json:"subject"`
+	CreatedAt       string              `json:"createdAt"`
+	UpdatedAt       string              `json:"updatedAt"`
+}
+type ServiceAccountCreateRequest struct {
+	ServiceAccountID string              `json:"serviceAccountId"`
+	DisplayName      string              `json:"displayName"`
+	Application      IdentityApplication `json:"application"`
+	RoleName         string              `json:"roleName"`
+	ScopeLevel       string              `json:"scopeLevel"`
+	ScopeID          string              `json:"scopeId"`
+}
+type ServiceAccountCreated struct {
+	ServiceAccount      ServiceAccount `json:"serviceAccount"`
+	Credential          string         `json:"credential"`
+	CredentialExpiresAt string         `json:"credentialExpiresAt"`
+}
+type ServiceAccountRotateRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+}
+type ServiceAccountDisableRequest struct {
+	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+}
+type ServiceAccountRotated struct {
+	ResourceVersion     string `json:"resourceVersion"`
+	CredentialVersion   string `json:"credentialVersion"`
+	Credential          string `json:"credential"`
+	CredentialExpiresAt string `json:"credentialExpiresAt"`
+}
+type ServiceAccountPage struct {
+	ServiceAccounts []ServiceAccount `json:"serviceAccounts"`
+	NextPageToken   string           `json:"nextPageToken,omitempty"`
+}
+type PrincipalTokenAuthorizationRequest struct {
+	Application      IdentityApplication `json:"application"`
+	ClientID         string              `json:"clientId"`
+	CredentialSHA256 string              `json:"credentialSha256"`
+	TenantID         string              `json:"tenantId"`
+	ProjectID        string              `json:"projectId,omitempty"`
+}
+type PrincipalTokenAuthorization struct {
+	PrincipalID string              `json:"principalId"`
+	Subject     common.SubjectRef   `json:"subject"`
+	Issuer      string              `json:"issuer"`
+	TenantID    string              `json:"tenantId"`
+	ProjectID   string              `json:"projectId,omitempty"`
+	Application IdentityApplication `json:"application"`
+	Scopes      []string            `json:"scopes"`
+}
+type ControlPlaneAuditEvent struct {
+	ID            string              `json:"id"`
+	Action        string              `json:"action"`
+	Actor         *common.SubjectRef  `json:"actor,omitempty"`
+	Application   IdentityApplication `json:"application,omitempty"`
+	ResourceKind  string              `json:"resourceKind"`
+	ResourceID    string              `json:"resourceId"`
+	TenantID      string              `json:"tenantId"`
+	Decision      string              `json:"decision"`
+	ReasonCode    string              `json:"reasonCode"`
+	CorrelationID string              `json:"correlationId,omitempty"`
+	OccurredAt    string              `json:"occurredAt"`
+}
+type ControlPlaneAuditPage struct {
+	Events        []ControlPlaneAuditEvent `json:"events"`
+	NextPageToken string                   `json:"nextPageToken,omitempty"`
+}
+type IdentityJWK struct {
+	Alg    string   `json:"alg"`
+	E      string   `json:"e"`
+	KeyOps []string `json:"key_ops"`
+	Kid    string   `json:"kid"`
+	Kty    string   `json:"kty"`
+	N      string   `json:"n"`
+	Use    string   `json:"use"`
+}
+type IdentityJWKSLineageKey struct {
+	JWK       IdentityJWK `json:"jwk"`
+	Enabled   bool        `json:"enabled"`
+	NotBefore int64       `json:"notBefore"`
+	NotAfter  int64       `json:"notAfter"`
+}
+type IdentityJWKSAuthority struct {
+	Issuer        string                   `json:"issuer"`
+	Revision      string                   `json:"revision"`
+	SecurityEpoch string                   `json:"securityEpoch"`
+	NotBefore     int64                    `json:"notBefore"`
+	ExpiresAt     int64                    `json:"expiresAt"`
+	Lineage       []IdentityJWKSLineageKey `json:"lineage"`
+}
+type IdentityJWKS struct {
+	Keys                 []IdentityJWK         `json:"keys"`
+	CloudAgentsAuthority IdentityJWKSAuthority `json:"cloudAgentsAuthority"`
+}
+
+func DecodePasswordLoginRequestJSON(data []byte) (PasswordLoginRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"email", "password"}, []string{"email", "password"})
+	if err != nil {
+		return PasswordLoginRequest{}, err
+	}
+	var value PasswordLoginRequest
+	if json.Unmarshal(data, &value) != nil {
+		return PasswordLoginRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if _, err := encodePasswordLoginRequest(value); err != nil {
+		return PasswordLoginRequest{}, err
+	}
+	return value, nil
+}
+func DecodeEmailSuffixPolicyUpdateJSON(data []byte) (EmailSuffixPolicyUpdate, error) {
+	_, err := common.DecodeStrictObject(data, []string{"expectedResourceVersion", "allowedDomains"}, []string{"expectedResourceVersion", "allowedDomains"})
+	if err != nil {
+		return EmailSuffixPolicyUpdate{}, err
+	}
+	var value EmailSuffixPolicyUpdate
+	if json.Unmarshal(data, &value) != nil {
+		return EmailSuffixPolicyUpdate{}, common.ContractError("INVALID_JSON", "")
+	}
+	if _, err := encodeEmailSuffixPolicyUpdate(value); err != nil {
+		return EmailSuffixPolicyUpdate{}, err
+	}
+	return value, nil
+}
+func DecodeTenantTokenIssueRequestJSON(data []byte) (TenantTokenIssueRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"tenantId", "projectId"}, []string{"tenantId"})
+	if err != nil {
+		return TenantTokenIssueRequest{}, err
+	}
+	var value TenantTokenIssueRequest
+	if json.Unmarshal(data, &value) != nil {
+		return TenantTokenIssueRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if _, err := encodeTenantTokenIssueRequest(value); err != nil {
+		return TenantTokenIssueRequest{}, err
+	}
+	return value, nil
+}
+func DecodeTokenStatusRequestJSON(data []byte) (TokenStatusRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"tokenSha256", "expectedClientId", "expectedApplication", "expectedTenantId", "expectedProjectId"}, []string{"tokenSha256", "expectedClientId", "expectedApplication", "expectedTenantId"})
+	if err != nil {
+		return TokenStatusRequest{}, err
+	}
+	var value TokenStatusRequest
+	if json.Unmarshal(data, &value) != nil {
+		return TokenStatusRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if _, err := encodeTokenStatusRequest(value); err != nil {
+		return TokenStatusRequest{}, err
+	}
+	return value, nil
+}
+func DecodeTenantTokenAuthorizationRequestJSON(data []byte) (TenantTokenAuthorizationRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"application", "sessionSha256", "tenantId", "projectId"}, []string{"application", "sessionSha256", "tenantId"})
+	if err != nil {
+		return TenantTokenAuthorizationRequest{}, err
+	}
+	var value TenantTokenAuthorizationRequest
+	if json.Unmarshal(data, &value) != nil {
+		return TenantTokenAuthorizationRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if _, err := encodeTenantTokenAuthorizationRequest(value); err != nil {
+		return TenantTokenAuthorizationRequest{}, err
+	}
+	return value, nil
+}
+func decodeIdentityModel(data []byte, allowed, required []string, value any) error {
+	if _, err := common.DecodeStrictObject(data, allowed, required); err != nil {
+		return err
+	}
+	if json.Unmarshal(data, value) != nil {
+		return common.ContractError("INVALID_JSON", "")
+	}
+	return nil
+}
+func validCLIProof(value string) bool { return validIdentityOpaqueToken(value, 43, 43) }
+func DecodeCLIAuthorizationStartRequestJSON(data []byte) (CLIAuthorizationStartRequest, error) {
+	var v CLIAuthorizationStartRequest
+	if err := decodeIdentityModel(data, []string{"application", "callbackPort", "state", "codeChallenge"}, []string{"application", "callbackPort", "state", "codeChallenge"}, &v); err != nil {
+		return v, err
+	}
+	if !validIdentityApplication(v.Application) || v.CallbackPort < 1024 || v.CallbackPort > 65535 || !validCLIProof(v.State) || !validCLIProof(v.CodeChallenge) {
+		return v, common.ContractError("INVALID_CLI_AUTHORIZATION", "")
+	}
+	return v, nil
+}
+func EncodeCLIAuthorizationStartRequestJSON(v CLIAuthorizationStartRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIAuthorizationStartRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLILoginJSON(data []byte) (CLILogin, error) {
+	var v CLILogin
+	if err := decodeIdentityModel(data, []string{"authorizationId", "verificationUrl", "expiresAt"}, []string{"authorizationId", "verificationUrl", "expiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if common.ValidateIdentifier(v.AuthorizationID, "/authorizationId") != nil || !validIdentityHTTPSURL(v.VerificationURL, 2048) || common.ValidateDateTime(v.ExpiresAt, "/expiresAt") != nil {
+		return v, common.ContractError("INVALID_CLI_LOGIN", "")
+	}
+	return v, nil
+}
+func EncodeCLILoginJSON(v CLILogin) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLILoginJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIAuthorizationRequestJSON(data []byte) (CLIAuthorizationRequest, error) {
+	var v CLIAuthorizationRequest
+	if err := decodeIdentityModel(data, []string{"pending", "application"}, []string{"pending", "application"}, &v); err != nil {
+		return v, err
+	}
+	if !validIdentityApplication(v.Application) {
+		return v, common.ContractError("INVALID_CLI_AUTHORIZATION_REQUEST", "")
+	}
+	return v, nil
+}
+func EncodeCLIAuthorizationRequestJSON(v CLIAuthorizationRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIAuthorizationRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIAuthorizationJSON(data []byte) (CLIAuthorization, error) {
+	var v CLIAuthorization
+	if err := decodeIdentityModel(data, []string{"authorizationId", "expiresAt"}, []string{"authorizationId", "expiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if common.ValidateIdentifier(v.AuthorizationID, "/authorizationId") != nil || common.ValidateDateTime(v.ExpiresAt, "/expiresAt") != nil {
+		return v, common.ContractError("INVALID_CLI_AUTHORIZATION", "")
+	}
+	return v, nil
+}
+func EncodeCLIAuthorizationJSON(v CLIAuthorization) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIAuthorizationJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIAuthorizationApproveRequestJSON(data []byte) (CLIAuthorizationApproveRequest, error) {
+	var v CLIAuthorizationApproveRequest
+	if err := decodeIdentityModel(data, []string{"state"}, []string{"state"}, &v); err != nil {
+		return v, err
+	}
+	if !validCLIProof(v.State) {
+		return v, common.ContractError("INVALID_CLI_STATE", "/state")
+	}
+	return v, nil
+}
+func EncodeCLIAuthorizationApproveRequestJSON(v CLIAuthorizationApproveRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIAuthorizationApproveRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIAuthorizationApprovedJSON(data []byte) (CLIAuthorizationApproved, error) {
+	var v CLIAuthorizationApproved
+	if err := decodeIdentityModel(data, []string{"callbackPort", "state", "authorizationCode", "expiresAt"}, []string{"callbackPort", "state", "authorizationCode", "expiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if v.CallbackPort < 1024 || v.CallbackPort > 65535 || !validCLIProof(v.State) || !validCLIProof(v.AuthorizationCode) || common.ValidateDateTime(v.ExpiresAt, "/expiresAt") != nil {
+		return v, common.ContractError("INVALID_CLI_AUTHORIZATION", "")
+	}
+	return v, nil
+}
+func EncodeCLIAuthorizationApprovedJSON(v CLIAuthorizationApproved) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIAuthorizationApprovedJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIGrantExchangeRequestJSON(data []byte) (CLIGrantExchangeRequest, error) {
+	var v CLIGrantExchangeRequest
+	if err := decodeIdentityModel(data, []string{"authorizationId", "authorizationCode", "codeVerifier"}, []string{"authorizationId", "authorizationCode", "codeVerifier"}, &v); err != nil {
+		return v, err
+	}
+	if common.ValidateIdentifier(v.AuthorizationID, "/authorizationId") != nil || !validCLIProof(v.AuthorizationCode) || !validCLIProof(v.CodeVerifier) {
+		return v, common.ContractError("INVALID_CLI_GRANT_EXCHANGE", "")
+	}
+	return v, nil
+}
+func EncodeCLIGrantExchangeRequestJSON(v CLIGrantExchangeRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIGrantExchangeRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeCLIGrantJSON(data []byte) (CLIGrant, error) {
+	var v CLIGrant
+	if err := decodeIdentityModel(data, []string{"credential", "application", "expiresAt"}, []string{"credential", "application", "expiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if !validCLIProof(v.Credential) || !validIdentityApplication(v.Application) || common.ValidateDateTime(v.ExpiresAt, "/expiresAt") != nil {
+		return v, common.ContractError("INVALID_CLI_GRANT", "")
+	}
+	return v, nil
+}
+func EncodeCLIGrantJSON(v CLIGrant) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeCLIGrantJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func validServiceScope(level, id, tenant string) bool {
+	return (level == "tenant" || level == "organization" || level == "project") && common.ValidateIdentifier(id, "/scopeId") == nil && (level != "tenant" || id == tenant)
+}
+func validServiceAccountCreateScope(level, id string) bool {
+	return (level == "tenant" || level == "organization" || level == "project") && common.ValidateIdentifier(id, "/scopeId") == nil
+}
+func validateServiceAccount(v ServiceAccount) error {
+	if common.ValidateIdentifier(v.ID, "/id") != nil || common.ValidateIdentifier(v.TenantID, "/tenantId") != nil || common.ValidateString(v.DisplayName, 1, 160, "/displayName") != nil || !validIdentityApplication(v.Application) || !validServiceScope(v.ScopeLevel, v.ScopeID, v.TenantID) || common.ValidateIdentifier(v.RoleName, "/roleName") != nil || (v.State != "active" && v.State != "disabled") || !validPositiveVersion(v.ResourceVersion) || v.Subject.Validate() != nil || v.Subject.Kind != "serviceAccount" || v.Subject.Subject != "service-"+v.ID || common.ValidateDateTime(v.CreatedAt, "/createdAt") != nil || common.ValidateDateTime(v.UpdatedAt, "/updatedAt") != nil {
+		return common.ContractError("INVALID_SERVICE_ACCOUNT", "")
+	}
+	return nil
+}
+func DecodeServiceAccountJSON(data []byte) (ServiceAccount, error) {
+	var v ServiceAccount
+	if err := decodeIdentityModel(data, []string{"id", "tenantId", "displayName", "application", "scopeLevel", "scopeId", "roleName", "state", "resourceVersion", "subject", "createdAt", "updatedAt"}, []string{"id", "tenantId", "displayName", "application", "scopeLevel", "scopeId", "roleName", "state", "resourceVersion", "subject", "createdAt", "updatedAt"}, &v); err != nil {
+		return v, err
+	}
+	return v, validateServiceAccount(v)
+}
+func EncodeServiceAccountJSON(v ServiceAccount) ([]byte, error) {
+	if err := validateServiceAccount(v); err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
+}
+func DecodeServiceAccountCreateRequestJSON(data []byte) (ServiceAccountCreateRequest, error) {
+	var v ServiceAccountCreateRequest
+	if err := decodeIdentityModel(data, []string{"serviceAccountId", "displayName", "application", "roleName", "scopeLevel", "scopeId"}, []string{"serviceAccountId", "displayName", "application", "roleName", "scopeLevel", "scopeId"}, &v); err != nil {
+		return v, err
+	}
+	if common.ValidateIdentifier(v.ServiceAccountID, "/serviceAccountId") != nil || common.ValidateString(v.DisplayName, 1, 160, "/displayName") != nil || !validIdentityApplication(v.Application) || common.ValidateIdentifier(v.RoleName, "/roleName") != nil || v.RoleName == "platform.admin" || !validServiceAccountCreateScope(v.ScopeLevel, v.ScopeID) {
+		return v, common.ContractError("INVALID_SERVICE_ACCOUNT_CREATE", "")
+	}
+	return v, nil
+}
+func EncodeServiceAccountCreateRequestJSON(v ServiceAccountCreateRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountCreateRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeServiceAccountCreatedJSON(data []byte) (ServiceAccountCreated, error) {
+	var v ServiceAccountCreated
+	if err := decodeIdentityModel(data, []string{"serviceAccount", "credential", "credentialExpiresAt"}, []string{"serviceAccount", "credential", "credentialExpiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if validateServiceAccount(v.ServiceAccount) != nil || !validCLIProof(v.Credential) || common.ValidateDateTime(v.CredentialExpiresAt, "/credentialExpiresAt") != nil {
+		return v, common.ContractError("INVALID_SERVICE_ACCOUNT_CREATED", "")
+	}
+	return v, nil
+}
+func EncodeServiceAccountCreatedJSON(v ServiceAccountCreated) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountCreatedJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeServiceAccountRotateRequestJSON(data []byte) (ServiceAccountRotateRequest, error) {
+	var v ServiceAccountRotateRequest
+	if err := decodeIdentityModel(data, []string{"expectedResourceVersion"}, []string{"expectedResourceVersion"}, &v); err != nil {
+		return v, err
+	}
+	if !validPositiveVersion(v.ExpectedResourceVersion) {
+		return v, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	return v, nil
+}
+func EncodeServiceAccountRotateRequestJSON(v ServiceAccountRotateRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountRotateRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeServiceAccountDisableRequestJSON(data []byte) (ServiceAccountDisableRequest, error) {
+	var v ServiceAccountDisableRequest
+	if err := decodeIdentityModel(data, []string{"expectedResourceVersion"}, []string{"expectedResourceVersion"}, &v); err != nil {
+		return v, err
+	}
+	if !validPositiveVersion(v.ExpectedResourceVersion) {
+		return v, common.ContractError("INVALID_RESOURCE_VERSION", "/expectedResourceVersion")
+	}
+	return v, nil
+}
+func EncodeServiceAccountDisableRequestJSON(v ServiceAccountDisableRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountDisableRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeServiceAccountRotatedJSON(data []byte) (ServiceAccountRotated, error) {
+	var v ServiceAccountRotated
+	if err := decodeIdentityModel(data, []string{"resourceVersion", "credentialVersion", "credential", "credentialExpiresAt"}, []string{"resourceVersion", "credentialVersion", "credential", "credentialExpiresAt"}, &v); err != nil {
+		return v, err
+	}
+	if !validPositiveVersion(v.ResourceVersion) || !validPositiveVersion(v.CredentialVersion) || !validCLIProof(v.Credential) || common.ValidateDateTime(v.CredentialExpiresAt, "/credentialExpiresAt") != nil {
+		return v, common.ContractError("INVALID_SERVICE_ACCOUNT_ROTATED", "")
+	}
+	return v, nil
+}
+func EncodeServiceAccountRotatedJSON(v ServiceAccountRotated) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountRotatedJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeServiceAccountPageJSON(data []byte) (ServiceAccountPage, error) {
+	var v ServiceAccountPage
+	if err := decodeIdentityModel(data, []string{"serviceAccounts", "nextPageToken"}, []string{"serviceAccounts"}, &v); err != nil {
+		return v, err
+	}
+	if v.ServiceAccounts == nil || len(v.ServiceAccounts) > 200 {
+		return v, common.ContractError("INVALID_SERVICE_ACCOUNT_PAGE", "")
+	}
+	seen := map[string]bool{}
+	for _, a := range v.ServiceAccounts {
+		if validateServiceAccount(a) != nil || seen[a.ID] {
+			return v, common.ContractError("INVALID_SERVICE_ACCOUNT_PAGE", "")
+		}
+		seen[a.ID] = true
+	}
+	if v.NextPageToken != "" && !validIdentityOpaqueToken(v.NextPageToken, 1, 2048) {
+		return v, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return v, nil
+}
+func EncodeServiceAccountPageJSON(v ServiceAccountPage) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeServiceAccountPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePrincipalTokenAuthorizationRequestJSON(data []byte) (PrincipalTokenAuthorizationRequest, error) {
+	var v PrincipalTokenAuthorizationRequest
+	if err := decodeIdentityModel(data, []string{"application", "clientId", "credentialSha256", "tenantId", "projectId"}, []string{"application", "clientId", "credentialSha256", "tenantId"}, &v); err != nil {
+		return v, err
+	}
+	if !validIdentityApplication(v.Application) || (v.ClientID != "cloud-agents-cli" && v.ClientID != "cloud-agents-automation") || !validCapabilityDigest(v.CredentialSHA256) || common.ValidateIdentifier(v.TenantID, "/tenantId") != nil || (v.ProjectID != "" && common.ValidateIdentifier(v.ProjectID, "/projectId") != nil) {
+		return v, common.ContractError("INVALID_PRINCIPAL_AUTHORIZATION", "")
+	}
+	return v, nil
+}
+func EncodePrincipalTokenAuthorizationRequestJSON(v PrincipalTokenAuthorizationRequest) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePrincipalTokenAuthorizationRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePrincipalTokenAuthorizationJSON(data []byte) (PrincipalTokenAuthorization, error) {
+	var v PrincipalTokenAuthorization
+	if err := decodeIdentityModel(data, []string{"principalId", "subject", "issuer", "tenantId", "projectId", "application", "scopes"}, []string{"principalId", "subject", "issuer", "tenantId", "application", "scopes"}, &v); err != nil {
+		return v, err
+	}
+	if common.ValidateIdentifier(v.PrincipalID, "/principalId") != nil || v.Subject.Validate() != nil || v.Subject.Issuer != v.Issuer || !validIdentityIssuer(v.Issuer) || common.ValidateIdentifier(v.TenantID, "/tenantId") != nil || (v.ProjectID != "" && common.ValidateIdentifier(v.ProjectID, "/projectId") != nil) || !validIdentityApplication(v.Application) || !validIdentityAuthorizationScopes(v.Scopes) {
+		return v, common.ContractError("INVALID_PRINCIPAL_AUTHORIZATION", "")
+	}
+	return v, nil
+}
+func EncodePrincipalTokenAuthorizationJSON(v PrincipalTokenAuthorization) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePrincipalTokenAuthorizationJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func validControlPlaneAuditEvent(e ControlPlaneAuditEvent) bool {
+	authorityFields := 0
+	if e.Actor != nil {
+		authorityFields++
+	}
+	if e.Application != "" {
+		authorityFields++
+	}
+	if e.CorrelationID != "" {
+		authorityFields++
+	}
+	return common.ValidateIdentifier(e.ID, "/id") == nil && common.ValidateString(e.Action, 1, 128, "/action") == nil && (e.Actor == nil || e.Actor.Validate() == nil) && (e.Application == "" || validIdentityApplication(e.Application)) && (authorityFields == 0 || authorityFields == 3) && (e.ResourceKind == "membership" || e.ResourceKind == "role_binding") && common.ValidateIdentifier(e.ResourceID, "/resourceId") == nil && common.ValidateIdentifier(e.TenantID, "/tenantId") == nil && e.Decision == "allow" && common.ValidateIdentifier(e.ReasonCode, "/reasonCode") == nil && (e.CorrelationID == "" || common.ValidateIdentifier(e.CorrelationID, "/correlationId") == nil) && common.ValidateDateTime(e.OccurredAt, "/occurredAt") == nil
+}
+func DecodeControlPlaneAuditPageJSON(data []byte) (ControlPlaneAuditPage, error) {
+	var v ControlPlaneAuditPage
+	if err := decodeIdentityModel(data, []string{"events", "nextPageToken"}, []string{"events"}, &v); err != nil {
+		return v, err
+	}
+	if v.Events == nil || len(v.Events) > 200 {
+		return v, common.ContractError("INVALID_AUDIT_PAGE", "")
+	}
+	for _, e := range v.Events {
+		if !validControlPlaneAuditEvent(e) {
+			return v, common.ContractError("INVALID_AUDIT_EVENT", "")
+		}
+	}
+	if v.NextPageToken != "" && !validIdentityOpaqueToken(v.NextPageToken, 1, 2048) {
+		return v, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return v, nil
+}
+func EncodeControlPlaneAuditPageJSON(v ControlPlaneAuditPage) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeControlPlaneAuditPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeCurrentUserJSON(value CurrentUser) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeCurrentUserJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeBrowserTenantPageJSON(value BrowserTenantPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeBrowserTenantPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeBrowserSessionJSON(value BrowserSession) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeBrowserSessionJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeEmailSuffixPolicyJSON(value EmailSuffixPolicy) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeEmailSuffixPolicyJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeTenantTokenJSON(value TenantToken) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeTenantTokenJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeTokenStatusJSON(value TokenStatus) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeTokenStatusJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeTenantTokenAuthorizationJSON(value TenantTokenAuthorization) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeTenantTokenAuthorizationJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func EncodeIdentityJWKSJSON(value IdentityJWKS) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeIdentityJWKSJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePasswordChangeRequestJSON(data []byte) (PasswordChangeRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"currentPassword", "newPassword"}, []string{"currentPassword", "newPassword"})
+	if err != nil {
+		return PasswordChangeRequest{}, err
+	}
+	var value PasswordChangeRequest
+	if json.Unmarshal(data, &value) != nil {
+		return PasswordChangeRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if !validIdentityPassword(value.CurrentPassword, 1, 1024) || !validIdentityPassword(value.NewPassword, 15, 128) {
+		return PasswordChangeRequest{}, common.ContractError("INVALID_PASSWORD", "")
+	}
+	return value, nil
+}
+func EncodePasswordChangeRequestJSON(value PasswordChangeRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePasswordChangeRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePasswordResetAcceptRequestJSON(data []byte) (PasswordResetAcceptRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"resetCode", "newPassword"}, []string{"resetCode", "newPassword"})
+	if err != nil {
+		return PasswordResetAcceptRequest{}, err
+	}
+	var value PasswordResetAcceptRequest
+	if json.Unmarshal(data, &value) != nil {
+		return PasswordResetAcceptRequest{}, common.ContractError("INVALID_JSON", "")
+	}
+	if !validIdentityOpaqueToken(value.ResetCode, 43, 43) || !validIdentityPassword(value.NewPassword, 15, 128) {
+		return PasswordResetAcceptRequest{}, common.ContractError("INVALID_PASSWORD_RESET", "")
+	}
+	return value, nil
+}
+func EncodePasswordResetAcceptRequestJSON(value PasswordResetAcceptRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePasswordResetAcceptRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeIdentityAccountPageJSON(data []byte) (IdentityAccountPage, error) {
+	_, err := common.DecodeStrictObject(data, []string{"accounts", "nextPageToken"}, []string{"accounts"})
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	var value IdentityAccountPage
+	if json.Unmarshal(data, &value) != nil || value.Accounts == nil || len(value.Accounts) > 200 {
+		return IdentityAccountPage{}, common.ContractError("INVALID_JSON", "")
+	}
+	for _, account := range value.Accounts {
+		if common.ValidateIdentifier(account.ID, "/id") != nil || account.Subject.Validate() != nil || account.Subject.Kind != "user" || account.Subject.Subject != "user-"+account.ID || !validIdentityEmail(account.Email) || common.ValidateString(account.DisplayName, 1, 160, "/displayName") != nil || (account.State != "active" && account.State != "disabled") || common.ValidateDateTime(account.EmailVerifiedAt, "/emailVerifiedAt") != nil || common.ValidateDateTime(account.CreatedAt, "/createdAt") != nil {
+			return IdentityAccountPage{}, common.ContractError("INVALID_IDENTITY_ACCOUNT", "")
+		}
+	}
+	if value.NextPageToken != "" && !validIdentityOpaqueToken(value.NextPageToken, 1, 2048) {
+		return IdentityAccountPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return value, nil
+}
+func EncodeIdentityAccountPageJSON(value IdentityAccountPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeIdentityAccountPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePasswordResetCreatedJSON(data []byte) (PasswordResetCreated, error) {
+	_, err := common.DecodeStrictObject(data, []string{"userId", "resetCode", "expiresAt"}, []string{"userId", "resetCode", "expiresAt"})
+	if err != nil {
+		return PasswordResetCreated{}, err
+	}
+	var value PasswordResetCreated
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.UserID, "/userId") != nil || !validIdentityOpaqueToken(value.ResetCode, 43, 43) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return PasswordResetCreated{}, common.ContractError("INVALID_PASSWORD_RESET", "")
+	}
+	return value, nil
+}
+func EncodePasswordResetCreatedJSON(value PasswordResetCreated) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePasswordResetCreatedJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeIdentityAuditPageJSON(data []byte) (IdentityAuditPage, error) {
+	_, err := common.DecodeStrictObject(data, []string{"events", "nextPageToken"}, []string{"events"})
+	if err != nil {
+		return IdentityAuditPage{}, err
+	}
+	var value IdentityAuditPage
+	if json.Unmarshal(data, &value) != nil || value.Events == nil || len(value.Events) > 200 {
+		return IdentityAuditPage{}, common.ContractError("INVALID_JSON", "")
+	}
+	for _, event := range value.Events {
+		if !validIdentityAuditID(event.ID) || common.ValidateString(event.EventKind, 1, 64, "/eventKind") != nil || (event.Decision != "allow" && event.Decision != "deny") || common.ValidateString(event.ReasonCode, 1, 64, "/reasonCode") != nil || (event.ActorUserID != "" && common.ValidateIdentifier(event.ActorUserID, "/actorUserId") != nil) || (event.TargetUserID != "" && common.ValidateIdentifier(event.TargetUserID, "/targetUserId") != nil) || (event.TenantID != "" && common.ValidateIdentifier(event.TenantID, "/tenantId") != nil) || (event.Application != "" && event.Application != IdentityApplicationAdmin && event.Application != IdentityApplicationUser) || common.ValidateIdentifier(event.CorrelationID, "/correlationId") != nil || common.ValidateDateTime(event.OccurredAt, "/occurredAt") != nil {
+			return IdentityAuditPage{}, common.ContractError("INVALID_IDENTITY_AUDIT_EVENT", "")
+		}
+	}
+	if value.NextPageToken != "" && !validIdentityOpaqueToken(value.NextPageToken, 1, 2048) {
+		return IdentityAuditPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+	}
+	return value, nil
+}
+func EncodeIdentityAuditPageJSON(value IdentityAuditPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeIdentityAuditPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func DecodeLoginProviderPageJSON(data []byte) (LoginProviderPage, error) {
+	_, err := common.DecodeStrictObject(data, []string{"providers"}, []string{"providers"})
+	if err != nil {
+		return LoginProviderPage{}, err
+	}
+	var value LoginProviderPage
+	if json.Unmarshal(data, &value) != nil || value.Providers == nil || len(value.Providers) > 64 {
+		return LoginProviderPage{}, common.ContractError("INVALID_LOGIN_PROVIDERS", "")
+	}
+	seen := map[string]struct{}{}
+	for _, provider := range value.Providers {
+		if common.ValidateIdentifier(provider.ID, "/id") != nil || !validIdentityProviderKind(provider.Kind) || common.ValidateString(provider.DisplayName, 1, 160, "/displayName") != nil {
+			return LoginProviderPage{}, common.ContractError("INVALID_LOGIN_PROVIDER", "")
+		}
+		if _, ok := seen[provider.ID]; ok {
+			return LoginProviderPage{}, common.ContractError("DUPLICATE_LOGIN_PROVIDER", "/providers")
+		}
+		seen[provider.ID] = struct{}{}
+	}
+	return value, nil
+}
+func EncodeLoginProviderPageJSON(value LoginProviderPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeLoginProviderPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeProviderAuthorizationRequestJSON(data []byte) (ProviderAuthorizationRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"providerId", "purpose", "invitationCode", "displayName"}, []string{"providerId", "purpose"})
+	if err != nil {
+		return ProviderAuthorizationRequest{}, err
+	}
+	var value ProviderAuthorizationRequest
+	if json.Unmarshal(data, &value) != nil || common.ValidateIdentifier(value.ProviderID, "/providerId") != nil {
+		return ProviderAuthorizationRequest{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+	}
+	switch value.Purpose {
+	case "login", "reauth", "link":
+		if value.InvitationCode != "" || value.DisplayName != "" {
+			return ProviderAuthorizationRequest{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+		}
+	case "invitation":
+		if !validIdentityOpaqueToken(value.InvitationCode, 43, 43) || common.ValidateString(value.DisplayName, 1, 160, "/displayName") != nil {
+			return ProviderAuthorizationRequest{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+		}
+	default:
+		return ProviderAuthorizationRequest{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "/purpose")
+	}
+	return value, nil
+}
+func EncodeProviderAuthorizationRequestJSON(value ProviderAuthorizationRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderAuthorizationRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeProviderAuthorizationJSON(data []byte) (ProviderAuthorization, error) {
+	_, err := common.DecodeStrictObject(data, []string{"authorizationUrl", "expiresAt"}, []string{"authorizationUrl", "expiresAt"})
+	if err != nil {
+		return ProviderAuthorization{}, err
+	}
+	var value ProviderAuthorization
+	if json.Unmarshal(data, &value) != nil || !validIdentityHTTPSURL(value.AuthorizationURL, 4096) || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return ProviderAuthorization{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+	}
+	return value, nil
+}
+func EncodeProviderAuthorizationJSON(value ProviderAuthorization) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderAuthorizationJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeProviderCallbackRequestJSON(data []byte) (ProviderCallbackRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"state", "code", "issuer", "sessionState"}, []string{"state", "code"})
+	if err != nil {
+		return ProviderCallbackRequest{}, err
+	}
+	var value ProviderCallbackRequest
+	if json.Unmarshal(data, &value) != nil || !validIdentityOpaqueToken(value.State, 43, 43) || common.ValidateString(value.Code, 1, 4096, "/code") != nil || (value.Issuer != "" && !validIdentityHTTPSURL(value.Issuer, 512)) || (value.SessionState != "" && common.ValidateString(value.SessionState, 1, 512, "/sessionState") != nil) {
+		return ProviderCallbackRequest{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "")
+	}
+	return value, nil
+}
+func EncodeProviderCallbackRequestJSON(value ProviderCallbackRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderCallbackRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func validLoginMethod(value LoginMethod) bool {
+	return common.ValidateIdentifier(value.ID, "/id") == nil && common.ValidateIdentifier(value.ProviderID, "/providerId") == nil && common.ValidateString(value.Issuer, 1, 512, "/issuer") == nil && common.ValidateString(value.Subject, 1, 512, "/subject") == nil && common.ValidateDateTime(value.CreatedAt, "/createdAt") == nil
+}
+func DecodeLoginMethodListJSON(data []byte) (LoginMethodList, error) {
+	_, err := common.DecodeStrictObject(data, []string{"passwordEnabled", "loginMethods"}, []string{"passwordEnabled", "loginMethods"})
+	if err != nil {
+		return LoginMethodList{}, err
+	}
+	var value LoginMethodList
+	if json.Unmarshal(data, &value) != nil || value.LoginMethods == nil || len(value.LoginMethods) > 64 {
+		return LoginMethodList{}, common.ContractError("INVALID_LOGIN_METHODS", "")
+	}
+	seen := map[string]struct{}{}
+	for _, method := range value.LoginMethods {
+		if !validLoginMethod(method) {
+			return LoginMethodList{}, common.ContractError("INVALID_LOGIN_METHOD", "")
+		}
+		if _, ok := seen[method.ID]; ok {
+			return LoginMethodList{}, common.ContractError("DUPLICATE_LOGIN_METHOD", "/loginMethods")
+		}
+		seen[method.ID] = struct{}{}
+	}
+	return value, nil
+}
+func EncodeLoginMethodListJSON(value LoginMethodList) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeLoginMethodListJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeProviderCallbackJSON(data []byte) (ProviderCallback, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"action", "session", "expiresAt", "loginMethod"}, []string{"action"})
+	if err != nil {
+		return ProviderCallback{}, err
+	}
+	var value ProviderCallback
+	if json.Unmarshal(data, &value) != nil {
+		return ProviderCallback{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "")
+	}
+	switch value.Action {
+	case "login", "invitation":
+		if value.Session == nil || value.ExpiresAt != "" || value.LoginMethod != nil {
+			return ProviderCallback{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "")
+		}
+		session, err := DecodeBrowserSessionJSON(fields["session"])
+		if err != nil {
+			return ProviderCallback{}, err
+		}
+		value.Session = &session
+	case "reauth":
+		if value.Session != nil || value.LoginMethod != nil || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+			return ProviderCallback{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "")
+		}
+	case "link":
+		if value.Session != nil || value.ExpiresAt != "" || value.LoginMethod == nil || !validLoginMethod(*value.LoginMethod) {
+			return ProviderCallback{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "")
+		}
+	default:
+		return ProviderCallback{}, common.ContractError("INVALID_PROVIDER_CALLBACK", "/action")
+	}
+	return value, nil
+}
+func EncodeProviderCallbackJSON(value ProviderCallback) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderCallbackJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodePasswordReauthRequestJSON(data []byte) (PasswordReauthRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"password"}, []string{"password"})
+	if err != nil {
+		return PasswordReauthRequest{}, err
+	}
+	var value PasswordReauthRequest
+	if json.Unmarshal(data, &value) != nil || !validIdentityPassword(value.Password, 1, 1024) {
+		return PasswordReauthRequest{}, common.ContractError("INVALID_PASSWORD", "")
+	}
+	return value, nil
+}
+func EncodePasswordReauthRequestJSON(value PasswordReauthRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodePasswordReauthRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeReauthenticationJSON(data []byte) (Reauthentication, error) {
+	_, err := common.DecodeStrictObject(data, []string{"expiresAt"}, []string{"expiresAt"})
+	if err != nil {
+		return Reauthentication{}, err
+	}
+	var value Reauthentication
+	if json.Unmarshal(data, &value) != nil || common.ValidateDateTime(value.ExpiresAt, "/expiresAt") != nil {
+		return Reauthentication{}, common.ContractError("INVALID_REAUTHENTICATION", "")
+	}
+	return value, nil
+}
+func EncodeReauthenticationJSON(value Reauthentication) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeReauthenticationJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeEnablePasswordRequestJSON(data []byte) (EnablePasswordRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"newPassword"}, []string{"newPassword"})
+	if err != nil {
+		return EnablePasswordRequest{}, err
+	}
+	var value EnablePasswordRequest
+	if json.Unmarshal(data, &value) != nil || !validIdentityPassword(value.NewPassword, 15, 128) {
+		return EnablePasswordRequest{}, common.ContractError("INVALID_PASSWORD", "")
+	}
+	return value, nil
+}
+func EncodeEnablePasswordRequestJSON(value EnablePasswordRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeEnablePasswordRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func validProviderClient(value ProviderClient) bool {
+	return common.ValidateIdentifier(value.ProviderID, "/providerId") == nil && (value.Application == IdentityApplicationAdmin || value.Application == IdentityApplicationUser) && validIdentityProviderKind(value.ProviderKind) && common.ValidateString(value.DisplayName, 1, 160, "/displayName") == nil && validIdentityHTTPSURL(value.Issuer, 512) && common.ValidateString(value.ClientID, 1, 512, "/clientId") == nil && validIdentityHTTPSURL(value.RedirectURI, 2048) && common.ValidateIdentifier(value.SecretRef, "/secretRef") == nil && (value.RootCARef == "" || common.ValidateIdentifier(value.RootCARef, "/rootCaRef") == nil) && (value.AgentID == "" || common.ValidateString(value.AgentID, 1, 255, "/agentId") == nil) && validProviderStringList(value.Scopes, 32, 128) && validProviderStringList(value.AllowedOrganizationIDs, 32, 255) && validIdentityRevision(value.ResourceVersion) && (value.ProviderKind == "wecom") == (value.AgentID != "") && (!value.TrustProviderEmail || len(value.AllowedOrganizationIDs) > 0)
+}
+func EncodeProviderClientJSON(value ProviderClient) ([]byte, error) {
+	if !validProviderClient(value) {
+		return nil, common.ContractError("INVALID_PROVIDER_CLIENT", "")
+	}
+	return json.Marshal(value)
+}
+func DecodeProviderClientPageJSON(data []byte) (ProviderClientPage, error) {
+	_, err := common.DecodeStrictObject(data, []string{"providers"}, []string{"providers"})
+	if err != nil {
+		return ProviderClientPage{}, err
+	}
+	var value ProviderClientPage
+	if json.Unmarshal(data, &value) != nil || value.Providers == nil || len(value.Providers) > 128 {
+		return ProviderClientPage{}, common.ContractError("INVALID_PROVIDER_CLIENTS", "")
+	}
+	for _, provider := range value.Providers {
+		if !validProviderClient(provider) {
+			return ProviderClientPage{}, common.ContractError("INVALID_PROVIDER_CLIENT", "")
+		}
+	}
+	return value, nil
+}
+func EncodeProviderClientPageJSON(value ProviderClientPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderClientPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeProviderClientUpdateJSON(data []byte) (ProviderClientUpdate, error) {
+	_, err := common.DecodeStrictObject(data, []string{"displayName", "providerKind", "issuer", "clientId", "redirectUri", "secretRef", "rootCaRef", "agentId", "scopes", "trustProviderEmail", "allowedOrganizationIds", "enabled", "expectedResourceVersion"}, []string{"displayName", "providerKind", "issuer", "clientId", "redirectUri", "secretRef", "scopes", "trustProviderEmail", "allowedOrganizationIds", "enabled", "expectedResourceVersion"})
+	if err != nil {
+		return ProviderClientUpdate{}, err
+	}
+	var value ProviderClientUpdate
+	if json.Unmarshal(data, &value) != nil {
+		return ProviderClientUpdate{}, common.ContractError("INVALID_PROVIDER_CLIENT", "")
+	}
+	expected, parseErr := strconv.ParseInt(value.ExpectedResourceVersion, 10, 64)
+	candidate := ProviderClient{ProviderID: "provider", Application: IdentityApplicationAdmin, DisplayName: value.DisplayName, ProviderKind: value.ProviderKind, Issuer: value.Issuer, ClientID: value.ClientID, RedirectURI: value.RedirectURI, SecretRef: value.SecretRef, RootCARef: value.RootCARef, AgentID: value.AgentID, Scopes: value.Scopes, TrustProviderEmail: value.TrustProviderEmail, AllowedOrganizationIDs: value.AllowedOrganizationIDs, Enabled: value.Enabled, ResourceVersion: "1"}
+	if parseErr != nil || expected < 0 || len(value.ExpectedResourceVersion) > 19 || !validProviderClient(candidate) {
+		return ProviderClientUpdate{}, common.ContractError("INVALID_PROVIDER_CLIENT", "")
+	}
+	return value, nil
+}
+func EncodeProviderClientUpdateJSON(value ProviderClientUpdate) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = DecodeProviderClientUpdateJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// BrowserIdentityClient contains only same-origin browser-session operations.
+// Its transport owns the HttpOnly cookie; no method accepts a bearer token.
+type BrowserIdentityClient struct{ transport Transport }
+
+func NewBrowserIdentityClient(transport Transport) (*BrowserIdentityClient, error) {
+	if transport == nil {
+		return nil, errors.New("fixture transport is required")
+	}
+	return &BrowserIdentityClient{transport: transport}, nil
+}
+func (client *BrowserIdentityClient) PasswordLogin(ctx context.Context, requestID string, body PasswordLoginRequest) (BrowserSession, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return BrowserSession{}, err
+	}
+	encoded, err := encodePasswordLoginRequest(body)
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/login/password", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	if response.Status != 200 {
+		return BrowserSession{}, identityProblemError("identityPasswordLogin", response)
+	}
+	value, err := DecodeBrowserSessionJSON(response.Body)
+	if err != nil {
+		return BrowserSession{}, &ClientError{Operation: "identityPasswordLogin", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) GetBrowserSession(ctx context.Context, requestID string) (BrowserSession, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return BrowserSession{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/session", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	if response.Status != 200 {
+		return BrowserSession{}, identityProblemError("identityGetBrowserSession", response)
+	}
+	value, err := DecodeBrowserSessionJSON(response.Body)
+	if err != nil {
+		return BrowserSession{}, &ClientError{Operation: "identityGetBrowserSession", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) LogoutBrowserSession(ctx context.Context, requestID, csrfProof string) error {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/identity/session", Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityLogoutBrowserSession", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) GetCurrentUser(ctx context.Context, requestID string) (CurrentUser, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return CurrentUser{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/me", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return CurrentUser{}, err
+	}
+	if response.Status != 200 {
+		return CurrentUser{}, identityProblemError("identityGetCurrentUser", response)
+	}
+	value, err := DecodeCurrentUserJSON(response.Body)
+	if err != nil {
+		return CurrentUser{}, &ClientError{Operation: "identityGetCurrentUser", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) ListBrowserTenants(ctx context.Context, requestID string, pageSize int, pageToken string) (BrowserTenantPage, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return BrowserTenantPage{}, err
+	}
+	requestPath, err := identityTenantListPath(pageSize, pageToken)
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if response.Status != 200 {
+		return BrowserTenantPage{}, identityProblemError("identityListBrowserTenants", response)
+	}
+	value, err := DecodeBrowserTenantPageJSON(response.Body)
+	if err != nil {
+		return BrowserTenantPage{}, &ClientError{Operation: "identityListBrowserTenants", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) GetEmailSuffixPolicy(ctx context.Context, tenantID, requestID string) (EmailSuffixPolicy, error) {
+	requestPath, err := identityEmailPolicyPath(tenantID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if response.Status != 200 {
+		return EmailSuffixPolicy{}, identityProblemError("identityGetEmailSuffixPolicy", response)
+	}
+	value, err := DecodeEmailSuffixPolicyJSON(response.Body)
+	if err != nil {
+		return EmailSuffixPolicy{}, &ClientError{Operation: "identityGetEmailSuffixPolicy", Status: response.Status, Cause: err}
+	}
+	if value.TenantID != tenantID {
+		return EmailSuffixPolicy{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) UpdateEmailSuffixPolicy(ctx context.Context, tenantID, requestID, csrfProof string, body EmailSuffixPolicyUpdate) (EmailSuffixPolicy, error) {
+	requestPath, err := identityEmailPolicyPath(tenantID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return EmailSuffixPolicy{}, common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+	}
+	encoded, err := encodeEmailSuffixPolicyUpdate(body)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "PUT", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: encoded})
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if response.Status != 200 {
+		return EmailSuffixPolicy{}, identityProblemError("identityUpdateEmailSuffixPolicy", response)
+	}
+	value, err := DecodeEmailSuffixPolicyJSON(response.Body)
+	if err != nil {
+		return EmailSuffixPolicy{}, &ClientError{Operation: "identityUpdateEmailSuffixPolicy", Status: response.Status, Cause: err}
+	}
+	if value.TenantID != tenantID {
+		return EmailSuffixPolicy{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) ListLoginProviders(ctx context.Context, requestID string) (LoginProviderPage, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return LoginProviderPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/login/providers", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return LoginProviderPage{}, err
+	}
+	if response.Status != 200 {
+		return LoginProviderPage{}, identityProblemError("identityListLoginProviders", response)
+	}
+	return DecodeLoginProviderPageJSON(response.Body)
+}
+func (client *BrowserIdentityClient) StartProviderAuthorization(ctx context.Context, requestID, csrfProof string, body ProviderAuthorizationRequest) (ProviderAuthorization, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return ProviderAuthorization{}, err
+	}
+	encoded, err := EncodeProviderAuthorizationRequestJSON(body)
+	if err != nil {
+		return ProviderAuthorization{}, err
+	}
+	headers := map[string]string{HeaderRequestID: requestID}
+	if body.Purpose == "reauth" || body.Purpose == "link" {
+		if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+			return ProviderAuthorization{}, common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+		}
+		headers["X-CSRF-Token"] = csrfProof
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/login/provider/start", Headers: headers, Body: encoded})
+	if err != nil {
+		return ProviderAuthorization{}, err
+	}
+	if response.Status != 200 {
+		return ProviderAuthorization{}, identityProblemError("identityStartProviderAuthorization", response)
+	}
+	return DecodeProviderAuthorizationJSON(response.Body)
+}
+func (client *BrowserIdentityClient) ListLoginMethods(ctx context.Context, requestID string) (LoginMethodList, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return LoginMethodList{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/me/login-methods", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return LoginMethodList{}, err
+	}
+	if response.Status != 200 {
+		return LoginMethodList{}, identityProblemError("identityListLoginMethods", response)
+	}
+	return DecodeLoginMethodListJSON(response.Body)
+}
+func (client *BrowserIdentityClient) PasswordReauthenticate(ctx context.Context, requestID, csrfProof string, body PasswordReauthRequest) (Reauthentication, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return Reauthentication{}, common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := EncodePasswordReauthRequestJSON(body)
+	if err != nil {
+		return Reauthentication{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/me/reauthenticate/password", Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: encoded})
+	if err != nil {
+		return Reauthentication{}, err
+	}
+	if response.Status != 200 {
+		return Reauthentication{}, identityProblemError("identityPasswordReauthenticate", response)
+	}
+	return DecodeReauthenticationJSON(response.Body)
+}
+func (client *BrowserIdentityClient) UnlinkLoginMethod(ctx context.Context, methodID, requestID, csrfProof string) error {
+	if common.ValidateIdentifier(methodID, "/loginMethodId") != nil || common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/identity/me/login-methods/" + url.PathEscape(methodID), Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityUnlinkLoginMethod", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) EnablePassword(ctx context.Context, requestID, csrfProof string, body EnablePasswordRequest) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := EncodeEnablePasswordRequestJSON(body)
+	if err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/me/password", Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityEnablePassword", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) ListProviderClients(ctx context.Context, requestID string) (ProviderClientPage, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return ProviderClientPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/providers", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ProviderClientPage{}, err
+	}
+	if response.Status != 200 {
+		return ProviderClientPage{}, identityProblemError("identityListProviderClients", response)
+	}
+	return DecodeProviderClientPageJSON(response.Body)
+}
+func (client *BrowserIdentityClient) UpdateProviderClient(ctx context.Context, providerID string, application IdentityApplication, requestID, csrfProof string, body ProviderClientUpdate) (ProviderClient, error) {
+	if common.ValidateIdentifier(providerID, "/providerId") != nil || (application != IdentityApplicationAdmin && application != IdentityApplicationUser) || common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return ProviderClient{}, common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := EncodeProviderClientUpdateJSON(body)
+	if err != nil {
+		return ProviderClient{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "PUT", Path: "/v1/identity/providers/" + url.PathEscape(providerID) + "/applications/" + string(application), Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: encoded})
+	if err != nil {
+		return ProviderClient{}, err
+	}
+	if response.Status != 200 {
+		return ProviderClient{}, identityProblemError("identityUpdateProviderClient", response)
+	}
+	var page ProviderClientPage
+	if value, decodeErr := DecodeProviderClientPageJSON([]byte(`{"providers":[` + string(response.Body) + `]}`)); decodeErr == nil {
+		page = value
+	} else {
+		return ProviderClient{}, decodeErr
+	}
+	if len(page.Providers) != 1 || page.Providers[0].ProviderID != providerID || page.Providers[0].Application != application {
+		return ProviderClient{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "")
+	}
+	return page.Providers[0], nil
+}
+
+// IdentityServiceClient contains server-only operations. The supplied transport
+// must authenticate the configured Web or Control Plane service identity.
+type IdentityServiceClient struct{ transport Transport }
+
+func NewIdentityServiceClient(transport Transport) (*IdentityServiceClient, error) {
+	if transport == nil {
+		return nil, errors.New("fixture transport is required")
+	}
+	return &IdentityServiceClient{transport: transport}, nil
+}
+func (client *IdentityServiceClient) PasswordLogin(ctx context.Context, requestID, clientIP string, body PasswordLoginRequest) (IdentityLoginResult, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return IdentityLoginResult{}, err
+	}
+	if !validIdentityClientIP(clientIP) {
+		return IdentityLoginResult{}, common.ContractError("INVALID_CLIENT_IP", "/X-Cloud-Agents-Client-IP")
+	}
+	encoded, err := encodePasswordLoginRequest(body)
+	if err != nil {
+		return IdentityLoginResult{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/login/password", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdentityClientIP: clientIP}, Body: encoded})
+	if err != nil {
+		return IdentityLoginResult{}, err
+	}
+	if response.Status != 200 {
+		return IdentityLoginResult{}, identityProblemError("identityPasswordLogin", response)
+	}
+	session, err := DecodeBrowserSessionJSON(response.Body)
+	if err != nil {
+		return IdentityLoginResult{}, &ClientError{Operation: "identityPasswordLogin", Status: response.Status, Cause: err}
+	}
+	handle, err := identitySessionHandle(response)
+	if err != nil {
+		return IdentityLoginResult{}, &ClientError{Operation: "identityPasswordLogin", Status: response.Status, Cause: err}
+	}
+	return IdentityLoginResult{Session: session, SessionHandle: handle}, nil
+}
+func (client *IdentityServiceClient) GetBrowserSession(ctx context.Context, sessionHandle, requestID string) (BrowserSession, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/session", Headers: headers})
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	if response.Status != 200 {
+		return BrowserSession{}, identityProblemError("identityGetBrowserSession", response)
+	}
+	value, err := DecodeBrowserSessionJSON(response.Body)
+	if err != nil {
+		return BrowserSession{}, &ClientError{Operation: "identityGetBrowserSession", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) LogoutBrowserSession(ctx context.Context, sessionHandle, requestID, csrfProof string) error {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/identity/session", Headers: headers})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityLogoutBrowserSession", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) GetCurrentUser(ctx context.Context, sessionHandle, requestID string) (CurrentUser, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return CurrentUser{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/me", Headers: headers})
+	if err != nil {
+		return CurrentUser{}, err
+	}
+	if response.Status != 200 {
+		return CurrentUser{}, identityProblemError("identityGetCurrentUser", response)
+	}
+	value, err := DecodeCurrentUserJSON(response.Body)
+	if err != nil {
+		return CurrentUser{}, &ClientError{Operation: "identityGetCurrentUser", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) ListBrowserTenants(ctx context.Context, sessionHandle, requestID string, pageSize int, pageToken string) (BrowserTenantPage, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	requestPath, err := identityTenantListPath(pageSize, pageToken)
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: requestPath, Headers: headers})
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if response.Status != 200 {
+		return BrowserTenantPage{}, identityProblemError("identityListBrowserTenants", response)
+	}
+	value, err := DecodeBrowserTenantPageJSON(response.Body)
+	if err != nil {
+		return BrowserTenantPage{}, &ClientError{Operation: "identityListBrowserTenants", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) GetEmailSuffixPolicy(ctx context.Context, sessionHandle, tenantID, requestID string) (EmailSuffixPolicy, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	requestPath, err := identityEmailPolicyPath(tenantID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: requestPath, Headers: headers})
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if response.Status != 200 {
+		return EmailSuffixPolicy{}, identityProblemError("identityGetEmailSuffixPolicy", response)
+	}
+	value, err := DecodeEmailSuffixPolicyJSON(response.Body)
+	if err != nil {
+		return EmailSuffixPolicy{}, &ClientError{Operation: "identityGetEmailSuffixPolicy", Status: response.Status, Cause: err}
+	}
+	if value.TenantID != tenantID {
+		return EmailSuffixPolicy{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) UpdateEmailSuffixPolicy(ctx context.Context, sessionHandle, tenantID, requestID, csrfProof string, body EmailSuffixPolicyUpdate) (EmailSuffixPolicy, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	requestPath, err := identityEmailPolicyPath(tenantID)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return EmailSuffixPolicy{}, common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	encoded, err := encodeEmailSuffixPolicyUpdate(body)
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "PUT", Path: requestPath, Headers: headers, Body: encoded})
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if response.Status != 200 {
+		return EmailSuffixPolicy{}, identityProblemError("identityUpdateEmailSuffixPolicy", response)
+	}
+	value, err := DecodeEmailSuffixPolicyJSON(response.Body)
+	if err != nil {
+		return EmailSuffixPolicy{}, &ClientError{Operation: "identityUpdateEmailSuffixPolicy", Status: response.Status, Cause: err}
+	}
+	if value.TenantID != tenantID {
+		return EmailSuffixPolicy{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) ListLoginProviders(ctx context.Context, requestID string) (LoginProviderPage, error) {
+	return (&BrowserIdentityClient{transport: client.transport}).ListLoginProviders(ctx, requestID)
+}
+func (client *IdentityServiceClient) StartProviderAuthorization(ctx context.Context, sessionHandle, requestID, clientIP, csrfProof, reauthProof string, body ProviderAuthorizationRequest) (ProviderAuthorizationResult, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return ProviderAuthorizationResult{}, err
+	}
+	encoded, err := EncodeProviderAuthorizationRequestJSON(body)
+	if err != nil {
+		return ProviderAuthorizationResult{}, err
+	}
+	headers := map[string]string{HeaderRequestID: requestID}
+	switch body.Purpose {
+	case "login":
+		if sessionHandle != "" || clientIP != "" || csrfProof != "" || reauthProof != "" {
+			return ProviderAuthorizationResult{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+		}
+	case "invitation":
+		if sessionHandle != "" || !validIdentityClientIP(clientIP) || csrfProof != "" || reauthProof != "" {
+			return ProviderAuthorizationResult{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+		}
+		headers[HeaderIdentityClientIP] = clientIP
+	case "reauth", "link":
+		if !validIdentityOpaqueToken(sessionHandle, 16, 2048) || !validIdentityOpaqueToken(csrfProof, 43, 43) || clientIP != "" || (body.Purpose == "link") != (reauthProof != "") {
+			return ProviderAuthorizationResult{}, common.ContractError("INVALID_PROVIDER_AUTHORIZATION", "")
+		}
+		headers["X-Cloud-Agents-Session"] = sessionHandle
+		headers["X-CSRF-Token"] = csrfProof
+		if reauthProof != "" {
+			if !validIdentityOpaqueToken(reauthProof, 43, 43) {
+				return ProviderAuthorizationResult{}, common.ContractError("INVALID_REAUTHENTICATION", "")
+			}
+			headers["X-Cloud-Agents-Reauthentication"] = reauthProof
+		}
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/login/provider/start", Headers: headers, Body: encoded})
+	if err != nil {
+		return ProviderAuthorizationResult{}, err
+	}
+	if response.Status != 200 {
+		return ProviderAuthorizationResult{}, identityProblemError("identityStartProviderAuthorization", response)
+	}
+	authorization, err := DecodeProviderAuthorizationJSON(response.Body)
+	if err != nil {
+		return ProviderAuthorizationResult{}, err
+	}
+	state, err := identityPrivateProofHeader(response, "X-Cloud-Agents-OAuth-State")
+	if err != nil {
+		return ProviderAuthorizationResult{}, err
+	}
+	return ProviderAuthorizationResult{Authorization: authorization, State: state}, nil
+}
+func (client *IdentityServiceClient) CompleteProviderAuthorization(ctx context.Context, requestID string, body ProviderCallbackRequest) (ProviderCallbackResult, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return ProviderCallbackResult{}, err
+	}
+	encoded, err := EncodeProviderCallbackRequestJSON(body)
+	if err != nil {
+		return ProviderCallbackResult{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/login/provider/callback", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return ProviderCallbackResult{}, err
+	}
+	if response.Status != 200 {
+		return ProviderCallbackResult{}, identityProblemError("identityCompleteProviderAuthorization", response)
+	}
+	callback, err := DecodeProviderCallbackJSON(response.Body)
+	if err != nil {
+		return ProviderCallbackResult{}, err
+	}
+	result := ProviderCallbackResult{Callback: callback}
+	switch callback.Action {
+	case "login", "invitation":
+		result.SessionHandle, err = identitySessionHandle(response)
+	case "reauth":
+		result.SessionHandle, err = identitySessionHandle(response)
+		if err == nil {
+			result.ReauthProof, err = identityPrivateProofHeader(response, "X-Cloud-Agents-Reauthentication")
+		}
+	}
+	if err != nil {
+		return ProviderCallbackResult{}, err
+	}
+	return result, nil
+}
+func (client *IdentityServiceClient) ListLoginMethods(ctx context.Context, sessionHandle, requestID string) (LoginMethodList, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return LoginMethodList{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/me/login-methods", Headers: headers})
+	if err != nil {
+		return LoginMethodList{}, err
+	}
+	if response.Status != 200 {
+		return LoginMethodList{}, identityProblemError("identityListLoginMethods", response)
+	}
+	return DecodeLoginMethodListJSON(response.Body)
+}
+func (client *IdentityServiceClient) PasswordReauthenticate(ctx context.Context, sessionHandle, requestID, csrfProof string, body PasswordReauthRequest) (ReauthenticationResult, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return ReauthenticationResult{}, common.ContractError("INVALID_CSRF_TOKEN", "")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	encoded, err := EncodePasswordReauthRequestJSON(body)
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/me/reauthenticate/password", Headers: headers, Body: encoded})
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	if response.Status != 200 {
+		return ReauthenticationResult{}, identityProblemError("identityPasswordReauthenticate", response)
+	}
+	value, err := DecodeReauthenticationJSON(response.Body)
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	proof, err := identityPrivateProofHeader(response, "X-Cloud-Agents-Reauthentication")
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	rotated, err := identitySessionHandle(response)
+	if err != nil {
+		return ReauthenticationResult{}, err
+	}
+	return ReauthenticationResult{Reauthentication: value, ReauthProof: proof, SessionHandle: rotated}, nil
+}
+func (client *IdentityServiceClient) UnlinkLoginMethod(ctx context.Context, sessionHandle, methodID, requestID, csrfProof, reauthProof string) error {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return err
+	}
+	if common.ValidateIdentifier(methodID, "/loginMethodId") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) || !validIdentityOpaqueToken(reauthProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	headers["X-Cloud-Agents-Reauthentication"] = reauthProof
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/identity/me/login-methods/" + url.PathEscape(methodID), Headers: headers})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityUnlinkLoginMethod", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) EnablePassword(ctx context.Context, sessionHandle, requestID, csrfProof, reauthProof string, body EnablePasswordRequest) error {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return err
+	}
+	if !validIdentityOpaqueToken(csrfProof, 43, 43) || !validIdentityOpaqueToken(reauthProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	headers["X-Cloud-Agents-Reauthentication"] = reauthProof
+	encoded, err := EncodeEnablePasswordRequestJSON(body)
+	if err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/me/password", Headers: headers, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityEnablePassword", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) ListProviderClients(ctx context.Context, sessionHandle, requestID string) (ProviderClientPage, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return ProviderClientPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/identity/providers", Headers: headers})
+	if err != nil {
+		return ProviderClientPage{}, err
+	}
+	if response.Status != 200 {
+		return ProviderClientPage{}, identityProblemError("identityListProviderClients", response)
+	}
+	return DecodeProviderClientPageJSON(response.Body)
+}
+func (client *IdentityServiceClient) UpdateProviderClient(ctx context.Context, sessionHandle, providerID string, application IdentityApplication, requestID, csrfProof string, body ProviderClientUpdate) (ProviderClient, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return ProviderClient{}, err
+	}
+	if common.ValidateIdentifier(providerID, "/providerId") != nil || (application != IdentityApplicationAdmin && application != IdentityApplicationUser) || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return ProviderClient{}, common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	encoded, err := EncodeProviderClientUpdateJSON(body)
+	if err != nil {
+		return ProviderClient{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "PUT", Path: "/v1/identity/providers/" + url.PathEscape(providerID) + "/applications/" + string(application), Headers: headers, Body: encoded})
+	if err != nil {
+		return ProviderClient{}, err
+	}
+	if response.Status != 200 {
+		return ProviderClient{}, identityProblemError("identityUpdateProviderClient", response)
+	}
+	var value ProviderClient
+	if json.Unmarshal(response.Body, &value) != nil || !validProviderClient(value) {
+		return ProviderClient{}, common.ContractError("INVALID_PROVIDER_CLIENT", "")
+	}
+	if value.ProviderID != providerID || value.Application != application {
+		return ProviderClient{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "")
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) IssueTenantToken(ctx context.Context, sessionHandle, requestID string, body TenantTokenIssueRequest) (TenantToken, error) {
+	if !validIdentityOpaqueToken(sessionHandle, 16, 2048) {
+		return TenantToken{}, common.ContractError("INVALID_SESSION_HANDLE", "/X-Cloud-Agents-Session")
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return TenantToken{}, err
+	}
+	encoded, err := encodeTenantTokenIssueRequest(body)
+	if err != nil {
+		return TenantToken{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/tenant-token", Headers: map[string]string{HeaderRequestID: requestID, "X-Cloud-Agents-Session": sessionHandle}, Body: encoded})
+	if err != nil {
+		return TenantToken{}, err
+	}
+	if response.Status != 200 {
+		return TenantToken{}, identityProblemError("identityIssueTenantToken", response)
+	}
+	value, err := DecodeTenantTokenJSON(response.Body)
+	if err != nil {
+		return TenantToken{}, &ClientError{Operation: "identityIssueTenantToken", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+func (client *IdentityServiceClient) CheckTokenStatus(ctx context.Context, requestID string, body TokenStatusRequest) (TokenStatus, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return TokenStatus{}, err
+	}
+	encoded, err := encodeTokenStatusRequest(body)
+	if err != nil {
+		return TokenStatus{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/token-status", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return TokenStatus{}, err
+	}
+	if response.Status != 200 {
+		return TokenStatus{}, identityProblemError("identityCheckTokenStatus", response)
+	}
+	value, err := DecodeTokenStatusJSON(response.Body)
+	if err != nil {
+		return TokenStatus{}, &ClientError{Operation: "identityCheckTokenStatus", Status: response.Status, Cause: err}
+	}
+	return value, nil
+}
+
+func (client *BrowserIdentityClient) GetCLIAuthorizationRequest(ctx context.Context, requestID string) (CLIAuthorizationRequest, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return CLIAuthorizationRequest{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: "/v1/auth/cli/request", Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return CLIAuthorizationRequest{}, err
+	}
+	if response.Status != 200 {
+		return CLIAuthorizationRequest{}, identityProblemError("getCLIAuthorizationRequest", response)
+	}
+	return DecodeCLIAuthorizationRequestJSON(response.Body)
+}
+
+func (client *IdentityServiceClient) StartCLIAuthorization(ctx context.Context, requestID, clientIP string, body CLIAuthorizationStartRequest) (CLIAuthorization, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityClientIP(clientIP) {
+		return CLIAuthorization{}, common.ContractError("INVALID_CLI_AUTHORIZATION", "")
+	}
+	encoded, err := EncodeCLIAuthorizationStartRequestJSON(body)
+	if err != nil {
+		return CLIAuthorization{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/cli/authorizations", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdentityClientIP: clientIP}, Body: encoded})
+	if err != nil {
+		return CLIAuthorization{}, err
+	}
+	if response.Status != 200 {
+		return CLIAuthorization{}, identityProblemError("identityStartCLIAuthorization", response)
+	}
+	return DecodeCLIAuthorizationJSON(response.Body)
+}
+func (client *IdentityServiceClient) ApproveCLIAuthorization(ctx context.Context, sessionHandle, authorizationID, requestID, csrfProof string, body CLIAuthorizationApproveRequest) (CLIAuthorizationApproved, error) {
+	headers, err := identitySessionHeaders(sessionHandle, requestID)
+	if err != nil {
+		return CLIAuthorizationApproved{}, err
+	}
+	if common.ValidateIdentifier(authorizationID, "/cliAuthorizationId") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return CLIAuthorizationApproved{}, common.ContractError("INVALID_CLI_AUTHORIZATION", "")
+	}
+	headers["X-CSRF-Token"] = csrfProof
+	encoded, err := EncodeCLIAuthorizationApproveRequestJSON(body)
+	if err != nil {
+		return CLIAuthorizationApproved{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/cli/authorizations/" + url.PathEscape(authorizationID) + "/approve", Headers: headers, Body: encoded})
+	if err != nil {
+		return CLIAuthorizationApproved{}, err
+	}
+	if response.Status != 200 {
+		return CLIAuthorizationApproved{}, identityProblemError("identityApproveCLIAuthorization", response)
+	}
+	return DecodeCLIAuthorizationApprovedJSON(response.Body)
+}
+func (client *IdentityServiceClient) ExchangeCLIGrant(ctx context.Context, requestID, clientIP string, body CLIGrantExchangeRequest) (CLIGrant, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityClientIP(clientIP) {
+		return CLIGrant{}, common.ContractError("INVALID_CLI_GRANT_EXCHANGE", "")
+	}
+	encoded, err := EncodeCLIGrantExchangeRequestJSON(body)
+	if err != nil {
+		return CLIGrant{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/cli/grants/exchange", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdentityClientIP: clientIP}, Body: encoded})
+	if err != nil {
+		return CLIGrant{}, err
+	}
+	if response.Status != 200 {
+		return CLIGrant{}, identityProblemError("identityExchangeCLIGrant", response)
+	}
+	return DecodeCLIGrantJSON(response.Body)
+}
+func (client *IdentityServiceClient) ListCLITenants(ctx context.Context, requestID, grant string, pageSize int, pageToken string) (BrowserTenantPage, error) {
+	if !validCLIProof(grant) {
+		return BrowserTenantPage{}, common.ContractError("INVALID_CLI_GRANT", "/X-Cloud-Agents-CLI-Grant")
+	}
+	p, err := identitySecurityPagePath("/v1/identity/cli/tenants", pageSize, pageToken)
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if err = common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return BrowserTenantPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID, "X-Cloud-Agents-CLI-Grant": grant}})
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if response.Status != 200 {
+		return BrowserTenantPage{}, identityProblemError("identityListCLITenants", response)
+	}
+	return DecodeBrowserTenantPageJSON(response.Body)
+}
+func (client *IdentityServiceClient) IssueCLITenantToken(ctx context.Context, requestID, grant string, body TenantTokenIssueRequest) (TenantToken, error) {
+	return client.issuePrincipalTenantToken(ctx, "identityIssueCLITenantToken", "/v1/identity/cli/tenant-token", "X-Cloud-Agents-CLI-Grant", requestID, grant, body)
+}
+func (client *IdentityServiceClient) RevokeCLIGrant(ctx context.Context, requestID, grant string) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validCLIProof(grant) {
+		return common.ContractError("INVALID_CLI_GRANT", "")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/identity/cli/grant", Headers: map[string]string{HeaderRequestID: requestID, "X-Cloud-Agents-CLI-Grant": grant}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityRevokeCLIGrant", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) IssueAutomationTenantToken(ctx context.Context, requestID, credential string, body TenantTokenIssueRequest) (TenantToken, error) {
+	return client.issuePrincipalTenantToken(ctx, "identityIssueAutomationTenantToken", "/v1/identity/automation/tenant-token", "X-Cloud-Agents-Automation-Credential", requestID, credential, body)
+}
+func (client *IdentityServiceClient) issuePrincipalTenantToken(ctx context.Context, operation, requestPath, headerName, requestID, credential string, body TenantTokenIssueRequest) (TenantToken, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validCLIProof(credential) {
+		return TenantToken{}, common.ContractError("INVALID_PRINCIPAL_CREDENTIAL", "")
+	}
+	encoded, err := encodeTenantTokenIssueRequest(body)
+	if err != nil {
+		return TenantToken{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: requestPath, Headers: map[string]string{HeaderRequestID: requestID, headerName: credential}, Body: encoded})
+	if err != nil {
+		return TenantToken{}, err
+	}
+	if response.Status != 200 {
+		return TenantToken{}, identityProblemError(operation, response)
+	}
+	return DecodeTenantTokenJSON(response.Body)
+}
+
+// CLIIdentityClient targets only the public Web BFF CLI facade. Its transport
+// sends no Authorization header for start/exchange and an explicit CLI grant
+// only on the three grant-authenticated operations.
+type CLIIdentityClient struct{ transport Transport }
+
+func NewCLIIdentityClient(transport Transport) (*CLIIdentityClient, error) {
+	if transport == nil {
+		return nil, errors.New("fixture transport is required")
+	}
+	return &CLIIdentityClient{transport: transport}, nil
+}
+func (client *CLIIdentityClient) StartLogin(ctx context.Context, requestID string, body CLIAuthorizationStartRequest) (CLILogin, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return CLILogin{}, err
+	}
+	encoded, err := EncodeCLIAuthorizationStartRequestJSON(body)
+	if err != nil {
+		return CLILogin{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/auth/cli/start", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return CLILogin{}, err
+	}
+	if response.Status != 200 {
+		return CLILogin{}, identityProblemError("startCLILogin", response)
+	}
+	return DecodeCLILoginJSON(response.Body)
+}
+func (client *CLIIdentityClient) ExchangeGrant(ctx context.Context, requestID string, body CLIGrantExchangeRequest) (CLIGrant, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return CLIGrant{}, err
+	}
+	encoded, err := EncodeCLIGrantExchangeRequestJSON(body)
+	if err != nil {
+		return CLIGrant{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/auth/cli/exchange", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return CLIGrant{}, err
+	}
+	if response.Status != 200 {
+		return CLIGrant{}, identityProblemError("exchangeCLIGrant", response)
+	}
+	return DecodeCLIGrantJSON(response.Body)
+}
+func (client *CLIIdentityClient) ListTenants(ctx context.Context, requestID, grant string, pageSize int, pageToken string) (BrowserTenantPage, error) {
+	if !validCLIProof(grant) {
+		return BrowserTenantPage{}, common.ContractError("INVALID_CLI_GRANT", "/Authorization")
+	}
+	p, err := identitySecurityPagePath("/v1/auth/cli/tenants", pageSize, pageToken)
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if err = common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return BrowserTenantPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID, "Authorization": "Bearer " + grant}})
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	if response.Status != 200 {
+		return BrowserTenantPage{}, identityProblemError("listCLITenants", response)
+	}
+	return DecodeBrowserTenantPageJSON(response.Body)
+}
+func (client *CLIIdentityClient) IssueTenantToken(ctx context.Context, requestID, grant string, body TenantTokenIssueRequest) (TenantToken, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validCLIProof(grant) {
+		return TenantToken{}, common.ContractError("INVALID_CLI_GRANT", "")
+	}
+	encoded, err := encodeTenantTokenIssueRequest(body)
+	if err != nil {
+		return TenantToken{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/auth/cli/tenant-token", Headers: map[string]string{HeaderRequestID: requestID, "Authorization": "Bearer " + grant}, Body: encoded})
+	if err != nil {
+		return TenantToken{}, err
+	}
+	if response.Status != 200 {
+		return TenantToken{}, identityProblemError("issueCLITenantToken", response)
+	}
+	return DecodeTenantTokenJSON(response.Body)
+}
+func (client *CLIIdentityClient) IssueAutomationTenantToken(ctx context.Context, requestID, credential string, body TenantTokenIssueRequest) (TenantToken, error) {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validCLIProof(credential) {
+		return TenantToken{}, common.ContractError("INVALID_AUTOMATION_CREDENTIAL", "")
+	}
+	encoded, err := encodeTenantTokenIssueRequest(body)
+	if err != nil {
+		return TenantToken{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/auth/automation/tenant-token", Headers: map[string]string{HeaderRequestID: requestID, "Authorization": "Bearer " + credential}, Body: encoded})
+	if err != nil {
+		return TenantToken{}, err
+	}
+	if response.Status != 200 {
+		return TenantToken{}, identityProblemError("issueAutomationTenantToken", response)
+	}
+	return DecodeTenantTokenJSON(response.Body)
+}
+func (client *CLIIdentityClient) RevokeGrant(ctx context.Context, requestID, grant string) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validCLIProof(grant) {
+		return common.ContractError("INVALID_CLI_GRANT", "")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: "/v1/auth/cli/grant", Headers: map[string]string{HeaderRequestID: requestID, "Authorization": "Bearer " + grant}})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("revokeCLIGrant", response)
+	}
+	return nil
+}
+
+// IdentityAuthorizationClient contains only the Identity Service to Control
+// Plane authorization operation. Its transport owns the dedicated service credential.
+type IdentityAuthorizationClient struct{ transport Transport }
+
+func NewIdentityAuthorizationClient(transport Transport) (*IdentityAuthorizationClient, error) {
+	if transport == nil {
+		return nil, errors.New("fixture transport is required")
+	}
+	return &IdentityAuthorizationClient{transport: transport}, nil
+}
+func (client *IdentityAuthorizationClient) AuthorizeTenantToken(ctx context.Context, requestID string, body TenantTokenAuthorizationRequest) (TenantTokenAuthorization, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	encoded, err := encodeTenantTokenAuthorizationRequest(body)
+	if err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/authorize-tenant-token", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	if response.Status != 200 {
+		return TenantTokenAuthorization{}, identityProblemError("identityAuthorizeTenantToken", response)
+	}
+	value, err := DecodeTenantTokenAuthorizationJSON(response.Body)
+	if err != nil {
+		return TenantTokenAuthorization{}, &ClientError{Operation: "identityAuthorizeTenantToken", Status: response.Status, Cause: err}
+	}
+	if value.Application != body.Application || value.TenantID != body.TenantID || value.ProjectID != body.ProjectID {
+		return TenantTokenAuthorization{}, common.ContractError("IDENTITY_AUTHORIZATION_MISMATCH", "")
+	}
+	return value, nil
+}
+func (client *IdentityAuthorizationClient) AuthorizePrincipalToken(ctx context.Context, requestID string, body PrincipalTokenAuthorizationRequest) (PrincipalTokenAuthorization, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return PrincipalTokenAuthorization{}, err
+	}
+	encoded, err := EncodePrincipalTokenAuthorizationRequestJSON(body)
+	if err != nil {
+		return PrincipalTokenAuthorization{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/authorize-principal-token", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return PrincipalTokenAuthorization{}, err
+	}
+	if response.Status != 200 {
+		return PrincipalTokenAuthorization{}, identityProblemError("identityAuthorizePrincipalToken", response)
+	}
+	value, err := DecodePrincipalTokenAuthorizationJSON(response.Body)
+	if err != nil {
+		return PrincipalTokenAuthorization{}, err
+	}
+	if value.Application != body.Application || value.TenantID != body.TenantID || value.ProjectID != body.ProjectID {
+		return PrincipalTokenAuthorization{}, common.ContractError("IDENTITY_AUTHORIZATION_MISMATCH", "")
+	}
+	return value, nil
 }
 
 type TenantResult = common.ResponseEnvelope[platform.PlatformTenant]
@@ -455,252 +2843,77 @@ type ManagedAgentEventPage struct {
 func (client *Client) GetPlatformTenant(ctx context.Context, tenantID, requestID string) (TenantResult, error) {
 	return doGet(ctx, client, "managedAgentGetPlatformTenant", "/v1/tenants/"+tenantID, tenantID, tenantID, requestID, platform.DecodePlatformTenantResponseJSON)
 }
+func (client *Client) GetAdminPlatformTenant(ctx context.Context, tenantID, requestID string) (TenantResult, error) {
+	return doGet(ctx, client, "adminGetPlatformTenant", "/v1/admin/tenants/"+tenantID, tenantID, tenantID, requestID, platform.DecodePlatformTenantResponseJSON)
+}
 func (client *Client) GetOrganization(ctx context.Context, tenantID, organizationID, requestID string) (OrganizationResult, error) {
 	return doGet(ctx, client, "managedAgentGetOrganization", "/v1/tenants/"+tenantID+"/organizations/"+organizationID, tenantID, organizationID, requestID, platform.DecodeOrganizationResponseJSON)
 }
+func (client *Client) GetAdminOrganization(ctx context.Context, tenantID, organizationID, requestID string) (OrganizationResult, error) {
+	return doGet(ctx, client, "adminGetOrganization", "/v1/admin/tenants/"+tenantID+"/organizations/"+organizationID, tenantID, organizationID, requestID, platform.DecodeOrganizationResponseJSON)
+}
 func (client *Client) ListOrganizations(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (OrganizationPageResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return OrganizationPageResult{}, err
-	}
-	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
-		return OrganizationPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
-	}
-	if pageToken != "" {
-		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
-			return OrganizationPageResult{}, err
-		}
-	}
-	query := url.Values{}
-	if pageSize != 0 {
-		query.Set("pageSize", strconv.Itoa(pageSize))
-	}
-	if pageToken != "" {
-		query.Set("pageToken", pageToken)
-	}
-	path := "/v1/tenants/" + tenantID + "/organizations"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
-	if err != nil {
-		return OrganizationPageResult{}, err
-	}
-	if response.Status != 200 {
-		return OrganizationPageResult{}, client.problemError("managedAgentListOrganizations", response)
-	}
-	value, err := platform.DecodeOrganizationPageResponseJSON(response.Body)
-	if err != nil {
-		return OrganizationPageResult{}, &ClientError{Operation: "managedAgentListOrganizations", Status: response.Status, Cause: err}
-	}
-	for _, organization := range value.Value.Organizations {
-		if organization.Metadata.TenantRef.ID != tenantID {
-			return OrganizationPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/organizations")
-		}
-	}
-	return value, nil
+	return listOrganizations(ctx, client, "managedAgentListOrganizations", "/v1/tenants/"+tenantID+"/organizations", tenantID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListAdminOrganizations(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (OrganizationPageResult, error) {
+	return listOrganizations(ctx, client, "adminListOrganizations", "/v1/admin/tenants/"+tenantID+"/organizations", tenantID, requestID, pageSize, pageToken)
 }
 func (client *Client) CreateOrganization(ctx context.Context, tenantID, requestID string, body platform.OrganizationCreateRequest) (OrganizationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return OrganizationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeOrganizationCreateRequestJSON(body)
-	if err != nil {
-		return OrganizationResult{}, err
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/organizations", Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
-	if err != nil {
-		return OrganizationResult{}, err
-	}
-	if response.Status != 201 {
-		return OrganizationResult{}, client.problemError("managedAgentCreateOrganization", response)
-	}
-	value, err := platform.DecodeOrganizationResponseJSON(response.Body)
-	if err != nil {
-		return OrganizationResult{}, &ClientError{Operation: "managedAgentCreateOrganization", Status: response.Status, Cause: err}
-	}
-	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
-		return OrganizationResult{}, err
-	}
-	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.OrganizationID || value.Value.Metadata.Name != body.Name {
-		return OrganizationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
-	}
-	return value, nil
+	return createOrganization(ctx, client, "managedAgentCreateOrganization", "/v1/tenants/"+tenantID+"/organizations", tenantID, requestID, body)
+}
+func (client *Client) CreateAdminOrganization(ctx context.Context, tenantID, requestID string, body platform.OrganizationCreateRequest) (OrganizationResult, error) {
+	return createOrganization(ctx, client, "adminCreateOrganization", "/v1/admin/tenants/"+tenantID+"/organizations", tenantID, requestID, body)
 }
 func (client *Client) GetProject(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
 	return doGet(ctx, client, "managedAgentGetProject", "/v1/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
 }
+func (client *Client) GetAdminProject(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
+	return doGet(ctx, client, "adminGetProject", "/v1/admin/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
+}
 func (client *Client) ListProjects(ctx context.Context, tenantID, organizationID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return ProjectPageResult{}, err
-	}
-	if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil {
-		return ProjectPageResult{}, err
-	}
-	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
-		return ProjectPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
-	}
-	if pageToken != "" {
-		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
-			return ProjectPageResult{}, err
-		}
-	}
-	query := url.Values{"organizationId": []string{organizationID}}
-	if pageSize != 0 {
-		query.Set("pageSize", strconv.Itoa(pageSize))
-	}
-	if pageToken != "" {
-		query.Set("pageToken", pageToken)
-	}
-	path := "/v1/tenants/" + tenantID + "/projects?" + query.Encode()
-	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
-	if err != nil {
-		return ProjectPageResult{}, err
-	}
-	if response.Status != 200 {
-		return ProjectPageResult{}, client.problemError("managedAgentListProjects", response)
-	}
-	value, err := platform.DecodeProjectPageResponseJSON(response.Body)
-	if err != nil {
-		return ProjectPageResult{}, &ClientError{Operation: "managedAgentListProjects", Status: response.Status, Cause: err}
-	}
-	for _, project := range value.Value.Projects {
-		if project.Metadata.TenantRef.ID != tenantID || project.Spec.OrganizationRef.ID != organizationID {
-			return ProjectPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/projects")
-		}
-	}
-	return value, nil
+	return listProjects(ctx, client, "managedAgentListProjects", "/v1/tenants/"+tenantID+"/projects", tenantID, organizationID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListMyProjects(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
+	return listMyProjects(ctx, client, "/v1/tenants/"+tenantID+"/my-projects", tenantID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListAdminProjects(ctx context.Context, tenantID, organizationID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
+	return listProjects(ctx, client, "adminListProjects", "/v1/admin/tenants/"+tenantID+"/projects", tenantID, organizationID, requestID, pageSize, pageToken)
 }
 func (client *Client) GetMembership(ctx context.Context, tenantID, membershipID, requestID string) (MembershipResult, error) {
 	return doGet(ctx, client, "managedAgentGetMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID, tenantID, membershipID, requestID, platform.DecodeMembershipResponseJSON)
 }
+func (client *Client) GetAdminMembership(ctx context.Context, tenantID, membershipID, requestID string) (MembershipResult, error) {
+	return doGet(ctx, client, "adminGetMembership", "/v1/admin/tenants/"+tenantID+"/memberships/"+membershipID, tenantID, membershipID, requestID, platform.DecodeMembershipResponseJSON)
+}
 func (client *Client) ListMemberships(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (MembershipPageResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return MembershipPageResult{}, err
-	}
-	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
-		return MembershipPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
-	}
-	if pageToken != "" {
-		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
-			return MembershipPageResult{}, err
-		}
-	}
-	query := url.Values{}
-	if pageSize != 0 {
-		query.Set("pageSize", strconv.Itoa(pageSize))
-	}
-	if pageToken != "" {
-		query.Set("pageToken", pageToken)
-	}
-	path := "/v1/tenants/" + tenantID + "/memberships"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
-	if err != nil {
-		return MembershipPageResult{}, err
-	}
-	if response.Status != 200 {
-		return MembershipPageResult{}, client.problemError("managedAgentListMemberships", response)
-	}
-	value, err := platform.DecodeMembershipPageResponseJSON(response.Body)
-	if err != nil {
-		return MembershipPageResult{}, &ClientError{Operation: "managedAgentListMemberships", Status: response.Status, Cause: err}
-	}
-	for _, membership := range value.Value.Memberships {
-		if membership.Metadata.TenantRef.ID != tenantID {
-			return MembershipPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/memberships")
-		}
-	}
-	return value, nil
+	return listMemberships(ctx, client, "managedAgentListMemberships", "/v1/tenants/"+tenantID+"/memberships", tenantID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListAdminMemberships(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (MembershipPageResult, error) {
+	return listMemberships(ctx, client, "adminListMemberships", "/v1/admin/tenants/"+tenantID+"/memberships", tenantID, requestID, pageSize, pageToken)
 }
 func (client *Client) GetRole(ctx context.Context, tenantID, roleID, requestID string) (RoleResult, error) {
 	return doGet(ctx, client, "managedAgentGetRole", "/v1/tenants/"+tenantID+"/roles/"+roleID, tenantID, roleID, requestID, platform.DecodeRoleResponseJSON)
 }
+func (client *Client) GetAdminRole(ctx context.Context, tenantID, roleID, requestID string) (RoleResult, error) {
+	return doGet(ctx, client, "adminGetRole", "/v1/admin/tenants/"+tenantID+"/roles/"+roleID, tenantID, roleID, requestID, platform.DecodeRoleResponseJSON)
+}
 func (client *Client) ListRoles(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (RolePageResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RolePageResult{}, err
-	}
-	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
-		return RolePageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
-	}
-	if pageToken != "" {
-		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
-			return RolePageResult{}, err
-		}
-	}
-	query := url.Values{}
-	if pageSize != 0 {
-		query.Set("pageSize", strconv.Itoa(pageSize))
-	}
-	if pageToken != "" {
-		query.Set("pageToken", pageToken)
-	}
-	path := "/v1/tenants/" + tenantID + "/roles"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
-	if err != nil {
-		return RolePageResult{}, err
-	}
-	if response.Status != 200 {
-		return RolePageResult{}, client.problemError("managedAgentListRoles", response)
-	}
-	value, err := platform.DecodeRolePageResponseJSON(response.Body)
-	if err != nil {
-		return RolePageResult{}, &ClientError{Operation: "managedAgentListRoles", Status: response.Status, Cause: err}
-	}
-	for _, role := range value.Value.Roles {
-		if role.Metadata.TenantRef.ID != tenantID {
-			return RolePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/roles")
-		}
-	}
-	return value, nil
+	return listRoles(ctx, client, "managedAgentListRoles", "/v1/tenants/"+tenantID+"/roles", tenantID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListAdminRoles(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (RolePageResult, error) {
+	return listRoles(ctx, client, "adminListRoles", "/v1/admin/tenants/"+tenantID+"/roles", tenantID, requestID, pageSize, pageToken)
 }
 func (client *Client) GetRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string) (RoleBindingResult, error) {
 	return doGet(ctx, client, "managedAgentGetRoleBinding", "/v1/tenants/"+tenantID+"/role-bindings/"+roleBindingID, tenantID, roleBindingID, requestID, platform.DecodeRoleBindingResponseJSON)
 }
+func (client *Client) GetAdminRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string) (RoleBindingResult, error) {
+	return doGet(ctx, client, "adminGetRoleBinding", "/v1/admin/tenants/"+tenantID+"/role-bindings/"+roleBindingID, tenantID, roleBindingID, requestID, platform.DecodeRoleBindingResponseJSON)
+}
 func (client *Client) ListRoleBindings(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (RoleBindingPageResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RoleBindingPageResult{}, err
-	}
-	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
-		return RoleBindingPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
-	}
-	if pageToken != "" {
-		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
-			return RoleBindingPageResult{}, err
-		}
-	}
-	query := url.Values{}
-	if pageSize != 0 {
-		query.Set("pageSize", strconv.Itoa(pageSize))
-	}
-	if pageToken != "" {
-		query.Set("pageToken", pageToken)
-	}
-	path := "/v1/tenants/" + tenantID + "/role-bindings"
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
-	if err != nil {
-		return RoleBindingPageResult{}, err
-	}
-	if response.Status != 200 {
-		return RoleBindingPageResult{}, client.problemError("managedAgentListRoleBindings", response)
-	}
-	value, err := platform.DecodeRoleBindingPageResponseJSON(response.Body)
-	if err != nil {
-		return RoleBindingPageResult{}, &ClientError{Operation: "managedAgentListRoleBindings", Status: response.Status, Cause: err}
-	}
-	for _, roleBinding := range value.Value.RoleBindings {
-		if roleBinding.Metadata.TenantRef.ID != tenantID {
-			return RoleBindingPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/roleBindings")
-		}
-	}
-	return value, nil
+	return listRoleBindings(ctx, client, "managedAgentListRoleBindings", "/v1/tenants/"+tenantID+"/role-bindings", tenantID, requestID, pageSize, pageToken)
+}
+func (client *Client) ListAdminRoleBindings(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (RoleBindingPageResult, error) {
+	return listRoleBindings(ctx, client, "adminListRoleBindings", "/v1/admin/tenants/"+tenantID+"/role-bindings", tenantID, requestID, pageSize, pageToken)
 }
 func (client *Client) GetProjectContext(ctx context.Context, tenantID, projectID, requestID string) (ProjectResult, error) {
 	return doGet(ctx, client, "managedHostGetProjectContext", "/v1/managed-host/tenants/"+tenantID+"/projects/"+projectID, tenantID, projectID, requestID, platform.DecodeProjectResponseJSON)
@@ -3288,106 +5501,153 @@ func (client *Client) ProbeAdminDeploymentTarget(ctx context.Context, tenantID, 
 	return value, nil
 }
 func (client *Client) CreateMembership(ctx context.Context, tenantID, requestID string, body platform.MembershipCreateRequest) (RBACMutationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeMembershipCreateRequestJSON(body)
-	if err != nil {
-		return RBACMutationResult{}, err
-	}
-	return doMutation(ctx, client, "managedAgentCreateMembership", "/v1/tenants/"+tenantID+"/memberships", tenantID, "", requestID, bodyBytes, 201)
+	return createMembership(ctx, client, "managedAgentCreateMembership", "/v1/tenants/"+tenantID+"/memberships", tenantID, requestID, body)
 }
-func (client *Client) ResumeMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
-	}
-	if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body)
-	if err != nil {
-		return RBACMutationResult{}, err
-	}
-	return doMutation(ctx, client, "managedAgentResumeMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":resume", tenantID, membershipID, requestID, bodyBytes, 200)
+func (client *Client) CreateAdminMembership(ctx context.Context, tenantID, requestID string, body platform.MembershipCreateRequest) (RBACMutationResult, error) {
+	return createMembership(ctx, client, "adminCreateMembership", "/v1/admin/tenants/"+tenantID+"/memberships", tenantID, requestID, body)
 }
-func (client *Client) SuspendMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+func (client *Client) CreateAdminServiceAccount(ctx context.Context, tenantID, requestID string, body ServiceAccountCreateRequest) (ServiceAccountCreated, error) {
 	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
+		return ServiceAccountCreated{}, err
 	}
-	if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body)
+	encoded, err := EncodeServiceAccountCreateRequestJSON(body)
 	if err != nil {
-		return RBACMutationResult{}, err
+		return ServiceAccountCreated{}, err
 	}
-	return doMutation(ctx, client, "managedAgentSuspendMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":suspend", tenantID, membershipID, requestID, bodyBytes, 200)
-}
-func (client *Client) RevokeMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
+	if body.ScopeLevel == "tenant" && body.ScopeID != tenantID {
+		return ServiceAccountCreated{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId")
 	}
-	if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body)
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/service-accounts", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
 	if err != nil {
-		return RBACMutationResult{}, err
-	}
-	return doMutation(ctx, client, "managedAgentRevokeMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":revoke", tenantID, membershipID, requestID, bodyBytes, 200)
-}
-func (client *Client) BindRole(ctx context.Context, tenantID, requestID string, body platform.RoleBindingCreateRequest) (RBACMutationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeRoleBindingCreateRequestJSON(body)
-	if err != nil {
-		return RBACMutationResult{}, err
-	}
-	return doMutation(ctx, client, "managedAgentBindRole", "/v1/tenants/"+tenantID+"/role-bindings", tenantID, "", requestID, bodyBytes, 201)
-}
-func (client *Client) RevokeRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string, body platform.RoleBindingRevokeRequest) (RBACMutationResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return RBACMutationResult{}, err
-	}
-	if err := common.ValidateIdentifier(roleBindingID, "/roleBindingId"); err != nil {
-		return RBACMutationResult{}, err
-	}
-	bodyBytes, err := platform.EncodeRoleBindingRevokeRequestJSON(body)
-	if err != nil {
-		return RBACMutationResult{}, err
-	}
-	return doMutation(ctx, client, "managedAgentRevokeRoleBinding", "/v1/tenants/"+tenantID+"/role-bindings/"+roleBindingID+":revoke", tenantID, roleBindingID, requestID, bodyBytes, 200)
-}
-func (client *Client) CreateProject(ctx context.Context, tenantID, requestID, idempotencyKey string, body platform.ProjectCreateRequest) (ProjectResult, error) {
-	if err := validatePath(tenantID, requestID); err != nil {
-		return ProjectResult{}, err
-	}
-	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
-		return ProjectResult{}, err
-	}
-	bodyBytes, err := platform.EncodeProjectCreateRequestJSON(body)
-	if err != nil {
-		return ProjectResult{}, err
-	}
-	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/tenants/" + tenantID + "/projects", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
-	if err != nil {
-		return ProjectResult{}, err
+		return ServiceAccountCreated{}, err
 	}
 	if response.Status != 201 {
-		return ProjectResult{}, client.problemError("managedAgentCreateProject", response)
+		return ServiceAccountCreated{}, client.problemError("adminCreateServiceAccount", response)
 	}
-	value, err := platform.DecodeProjectResponseJSON(response.Body)
+	value, err := DecodeServiceAccountCreatedJSON(response.Body)
 	if err != nil {
-		return ProjectResult{}, &ClientError{Operation: "managedAgentCreateProject", Status: response.Status, Cause: err}
+		return ServiceAccountCreated{}, err
 	}
-	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
-		return ProjectResult{}, err
+	if value.ServiceAccount.TenantID != tenantID {
+		return ServiceAccountCreated{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
 	}
-	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.Name != body.Name {
-		return ProjectResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	if err = requireResourceVersion(response, value.ServiceAccount.ResourceVersion); err != nil {
+		return ServiceAccountCreated{}, err
 	}
 	return value, nil
+}
+func (client *Client) ListAdminServiceAccounts(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (ServiceAccountPage, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ServiceAccountPage{}, err
+	}
+	p, err := identitySecurityPagePath("/v1/admin/tenants/"+tenantID+"/service-accounts", pageSize, pageToken)
+	if err != nil {
+		return ServiceAccountPage{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ServiceAccountPage{}, err
+	}
+	if response.Status != 200 {
+		return ServiceAccountPage{}, client.problemError("adminListServiceAccounts", response)
+	}
+	value, err := DecodeServiceAccountPageJSON(response.Body)
+	if err != nil {
+		return ServiceAccountPage{}, err
+	}
+	for _, account := range value.ServiceAccounts {
+		if account.TenantID != tenantID {
+			return ServiceAccountPage{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/serviceAccounts")
+		}
+	}
+	return value, nil
+}
+func (client *Client) RotateAdminServiceAccountCredential(ctx context.Context, tenantID, serviceAccountID, requestID string, body ServiceAccountRotateRequest) (ServiceAccountRotated, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	if err := common.ValidateIdentifier(serviceAccountID, "/serviceAccountId"); err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	encoded, err := EncodeServiceAccountRotateRequestJSON(body)
+	if err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/service-accounts/" + serviceAccountID + ":rotate-credential", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	if response.Status != 200 {
+		return ServiceAccountRotated{}, client.problemError("adminRotateServiceAccountCredential", response)
+	}
+	value, err := DecodeServiceAccountRotatedJSON(response.Body)
+	if err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	if err = requireResourceVersion(response, value.ResourceVersion); err != nil {
+		return ServiceAccountRotated{}, err
+	}
+	return value, nil
+}
+func (client *Client) DisableAdminServiceAccount(ctx context.Context, tenantID, serviceAccountID, requestID string, body ServiceAccountDisableRequest) (string, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return "", err
+	}
+	if err := common.ValidateIdentifier(serviceAccountID, "/serviceAccountId"); err != nil {
+		return "", err
+	}
+	encoded, err := EncodeServiceAccountDisableRequestJSON(body)
+	if err != nil {
+		return "", err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: "/v1/admin/tenants/" + tenantID + "/service-accounts/" + serviceAccountID + ":disable", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return "", err
+	}
+	if response.Status != 204 {
+		return "", client.problemError("adminDisableServiceAccount", response)
+	}
+	version := response.Headers[HeaderResourceVersion]
+	if err := common.ValidateResourceVersion(version, "/"+HeaderResourceVersion); err != nil {
+		return "", err
+	}
+	return version, nil
+}
+func (client *Client) ResumeMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "managedAgentResumeMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":resume", tenantID, membershipID, requestID, body)
+}
+func (client *Client) ResumeAdminMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "adminResumeMembership", "/v1/admin/tenants/"+tenantID+"/memberships/"+membershipID+":resume", tenantID, membershipID, requestID, body)
+}
+func (client *Client) SuspendMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "managedAgentSuspendMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":suspend", tenantID, membershipID, requestID, body)
+}
+func (client *Client) SuspendAdminMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "adminSuspendMembership", "/v1/admin/tenants/"+tenantID+"/memberships/"+membershipID+":suspend", tenantID, membershipID, requestID, body)
+}
+func (client *Client) RevokeMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "managedAgentRevokeMembership", "/v1/tenants/"+tenantID+"/memberships/"+membershipID+":revoke", tenantID, membershipID, requestID, body)
+}
+func (client *Client) RevokeAdminMembership(ctx context.Context, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	return transitionMembership(ctx, client, "adminRevokeMembership", "/v1/admin/tenants/"+tenantID+"/memberships/"+membershipID+":revoke", tenantID, membershipID, requestID, body)
+}
+func (client *Client) BindRole(ctx context.Context, tenantID, requestID string, body platform.RoleBindingCreateRequest) (RBACMutationResult, error) {
+	return bindRole(ctx, client, "managedAgentBindRole", "/v1/tenants/"+tenantID+"/role-bindings", tenantID, requestID, body)
+}
+func (client *Client) BindAdminRole(ctx context.Context, tenantID, requestID string, body platform.RoleBindingCreateRequest) (RBACMutationResult, error) {
+	return bindRole(ctx, client, "adminBindRole", "/v1/admin/tenants/"+tenantID+"/role-bindings", tenantID, requestID, body)
+}
+func (client *Client) RevokeRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string, body platform.RoleBindingRevokeRequest) (RBACMutationResult, error) {
+	return revokeRoleBinding(ctx, client, "managedAgentRevokeRoleBinding", "/v1/tenants/"+tenantID+"/role-bindings/"+roleBindingID+":revoke", tenantID, roleBindingID, requestID, body)
+}
+func (client *Client) RevokeAdminRoleBinding(ctx context.Context, tenantID, roleBindingID, requestID string, body platform.RoleBindingRevokeRequest) (RBACMutationResult, error) {
+	return revokeRoleBinding(ctx, client, "adminRevokeRoleBinding", "/v1/admin/tenants/"+tenantID+"/role-bindings/"+roleBindingID+":revoke", tenantID, roleBindingID, requestID, body)
+}
+func (client *Client) CreateProject(ctx context.Context, tenantID, requestID, idempotencyKey string, body platform.ProjectCreateRequest) (ProjectResult, error) {
+	return createProject(ctx, client, "managedAgentCreateProject", "/v1/tenants/"+tenantID+"/projects", tenantID, requestID, idempotencyKey, body)
+}
+func (client *Client) CreateAdminProject(ctx context.Context, tenantID, requestID, idempotencyKey string, body platform.ProjectCreateRequest) (ProjectResult, error) {
+	return createProject(ctx, client, "adminCreateProject", "/v1/admin/tenants/"+tenantID+"/projects", tenantID, requestID, idempotencyKey, body)
 }
 
 func (client *Client) CreateManagedAgentSession(ctx context.Context, tenantID, projectID, requestID, idempotencyKey string, body ManagedAgentSessionCreateRequest) (ManagedAgentSessionResult, error) {
@@ -4393,6 +6653,646 @@ func encodeManagedAgentUserInputResolutionRequest(value ManagedAgentUserInputRes
 	}
 	return json.Marshal(value)
 }
+
+func validIdentityEmail(value string) bool {
+	return len(value) >= 3 && len(value) <= 320 && strings.Count(value, "@") == 1 && !strings.ContainsAny(value, " \t\r\n") && !strings.HasPrefix(value, "@") && !strings.HasSuffix(value, "@")
+}
+func validIdentityOpaqueToken(value string, minimum, maximum int) bool {
+	if len(value) < minimum || len(value) > maximum {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+func validIdentityApplication(value IdentityApplication) bool {
+	return value == IdentityApplicationAdmin || value == IdentityApplicationUser
+}
+func validIdentityClientIP(value string) bool {
+	address, err := netip.ParseAddr(value)
+	return err == nil && address.Zone() == "" && address.String() == value
+}
+func validIdentityRoles(values []string, allowed string, maximum int) bool {
+	if values == nil || len(values) > maximum {
+		return false
+	}
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		if value != allowed {
+			return false
+		}
+		if _, exists := seen[value]; exists {
+			return false
+		}
+		seen[value] = struct{}{}
+	}
+	return true
+}
+func validIdentityJWT(value string) bool {
+	if len(value) < 64 || len(value) > 8192 {
+		return false
+	}
+	parts := strings.Split(value, ".")
+	return len(parts) == 3 && validIdentityOpaqueToken(parts[0], 1, 4096) && validIdentityOpaqueToken(parts[1], 1, 4096) && validIdentityOpaqueToken(parts[2], 1, 4096)
+}
+func validIdentityRevision(value string) bool {
+	if len(value) < 1 || len(value) > 19 || value[0] == '0' {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+func validPositiveVersion(value string) bool { return validIdentityRevision(value) }
+func validIdentityKID(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	alphanumeric := func(character byte) bool {
+		return character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
+	}
+	if !alphanumeric(value[0]) || !alphanumeric(value[len(value)-1]) {
+		return false
+	}
+	for index := 1; index+1 < len(value); index++ {
+		character := value[index]
+		if !alphanumeric(character) && character != '.' && character != '_' && character != '~' && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+func validIdentityIssuer(value string) bool {
+	if len(value) < 1 || len(value) > 512 || strings.ContainsAny(value, "\x00\r\n\t") {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && parsed.IsAbs()
+}
+func validIdentityScope(value string) bool {
+	if len(value) < 5 || len(value) > 128 || strings.Count(value, ".") != 1 {
+		return false
+	}
+	resource, action, _ := strings.Cut(value, ".")
+	if len(resource) == 0 || resource[0] < 'a' || resource[0] > 'z' {
+		return false
+	}
+	for _, character := range resource[1:] {
+		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '-' {
+			continue
+		}
+		return false
+	}
+	switch action {
+	case "create", "get", "list", "watch", "update", "delete", "act", "bind":
+		return true
+	}
+	return false
+}
+func validIdentityScopes(values []string) bool {
+	if len(values) < 1 || len(values) > 64 {
+		return false
+	}
+	for index, value := range values {
+		if !validIdentityScope(value) || index > 0 && values[index-1] >= value {
+			return false
+		}
+	}
+	return true
+}
+func validIdentityAuthorizationScopes(values []string) bool { return validIdentityScopes(values) }
+func validIdentityModulus(value string) bool {
+	if len(value) < 342 || len(value) > 683 || strings.Contains(value, "=") {
+		return false
+	}
+	modulus, err := base64.RawURLEncoding.Strict().DecodeString(value)
+	if err != nil || base64.RawURLEncoding.EncodeToString(modulus) != value || len(modulus) < 256 || len(modulus) > 512 || len(modulus) == 0 || modulus[0] == 0 || modulus[len(modulus)-1]&1 == 0 {
+		return false
+	}
+	bits := new(big.Int).SetBytes(modulus).BitLen()
+	return bits >= 2048 && bits <= 4096
+}
+func validIdentityNumericDate(value int64) bool { return value >= 0 && value <= 253402300799 }
+func validIdentityPassword(value string, minimum, maximum int) bool {
+	return common.ValidateString(value, minimum, maximum, "/password") == nil && !strings.ContainsRune(value, '\x00')
+}
+func validIdentityAuditID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' && character < 'a' || character > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+type ListBrowserTenantsServerInput struct {
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListBrowserTenantsServerRequest(pageSize int, pageToken string) (ListBrowserTenantsServerInput, error) {
+	if pageSize < 1 || pageSize > 200 {
+		return ListBrowserTenantsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListBrowserTenantsServerInput{}, err
+		}
+	}
+	return ListBrowserTenantsServerInput{PageSize: pageSize, PageToken: pageToken}, nil
+}
+func identityTenantListPath(pageSize int, pageToken string) (string, error) {
+	input, err := ValidateListBrowserTenantsServerRequest(pageSize, pageToken)
+	if err != nil {
+		return "", err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(input.PageSize))
+	if input.PageToken != "" {
+		query.Set("pageToken", input.PageToken)
+	}
+	return "/v1/identity/me/tenants?" + query.Encode(), nil
+}
+func identityEmailPolicyPath(tenantID string) (string, error) {
+	if err := common.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
+		return "", err
+	}
+	return "/v1/identity/tenants/" + tenantID + "/email-policy", nil
+}
+func identityRoundTrip(ctx context.Context, transport Transport, request Request) (Response, error) {
+	if ctx == nil {
+		return Response{}, context.Canceled
+	}
+	select {
+	case <-ctx.Done():
+		return Response{}, ctx.Err()
+	default:
+	}
+	response, err := transport.RoundTrip(ctx, request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return Response{}, ctx.Err()
+		}
+		return Response{}, err
+	}
+	if ctx.Err() != nil {
+		return Response{}, ctx.Err()
+	}
+	return response, nil
+}
+func identityProblemError(operation string, response Response) error {
+	problem, err := common.DecodeProblemJSON(response.Body)
+	if err != nil {
+		return &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	if problem.Status != response.Status {
+		return &ClientError{Operation: operation, Status: response.Status, Cause: common.ContractError("PROBLEM_STATUS_MISMATCH", "/status")}
+	}
+	return &ClientError{Operation: operation, Status: response.Status, Problem: &problem}
+}
+func identitySessionHeaders(sessionHandle, requestID string) (map[string]string, error) {
+	if !validIdentityOpaqueToken(sessionHandle, 16, 2048) {
+		return nil, common.ContractError("INVALID_SESSION_HANDLE", "/X-Cloud-Agents-Session")
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return nil, err
+	}
+	return map[string]string{HeaderRequestID: requestID, "X-Cloud-Agents-Session": sessionHandle}, nil
+}
+func identitySessionHandle(response Response) (string, error) {
+	for name, value := range response.Headers {
+		if strings.EqualFold(name, "X-Cloud-Agents-Session") {
+			if !validIdentityOpaqueToken(value, 16, 2048) {
+				return "", common.ContractError("INVALID_SESSION_HANDLE", "/X-Cloud-Agents-Session")
+			}
+			return value, nil
+		}
+	}
+	return "", common.ContractError("SESSION_HANDLE_MISSING", "/X-Cloud-Agents-Session")
+}
+func identityPrivateProofHeader(response Response, name string) (string, error) {
+	for header, value := range response.Headers {
+		if strings.EqualFold(header, name) {
+			if !validIdentityOpaqueToken(value, 43, 43) {
+				return "", common.ContractError("INVALID_PRIVATE_PROOF", "/"+name)
+			}
+			return value, nil
+		}
+	}
+	return "", common.ContractError("PRIVATE_PROOF_MISSING", "/"+name)
+}
+func validIdentityProviderKind(value string) bool {
+	switch value {
+	case "oidc", "github", "gitlab", "feishu", "dingtalk", "wecom":
+		return true
+	}
+	return false
+}
+func validIdentityHTTPSURL(value string, maximum int) bool {
+	if len(value) < 1 || len(value) > maximum || strings.TrimSpace(value) != value {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil && parsed.Fragment == ""
+}
+func validProviderStringList(values []string, maximum, maximumLength int) bool {
+	if values == nil || len(values) > maximum {
+		return false
+	}
+	seen := map[string]struct{}{}
+	previous := ""
+	for index, value := range values {
+		if common.ValidateString(value, 1, maximumLength, "/value") != nil || (index > 0 && value <= previous) {
+			return false
+		}
+		if _, ok := seen[value]; ok {
+			return false
+		}
+		seen[value] = struct{}{}
+		previous = value
+	}
+	return true
+}
+func encodePasswordLoginRequest(value PasswordLoginRequest) ([]byte, error) {
+	if !validIdentityEmail(value.Email) {
+		return nil, common.ContractError("INVALID_EMAIL", "/email")
+	}
+	if err := common.ValidateString(value.Password, 1, 1024, "/password"); err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+func encodeEmailSuffixPolicyUpdate(value EmailSuffixPolicyUpdate) ([]byte, error) {
+	if err := common.ValidateResourceVersion(value.ExpectedResourceVersion, "/expectedResourceVersion"); err != nil {
+		return nil, err
+	}
+	if !validIdentityEmailPolicyDomains(value.AllowedDomains) {
+		return nil, common.ContractError("INVALID_EMAIL_POLICY_DOMAINS", "/allowedDomains")
+	}
+	return json.Marshal(value)
+}
+func encodeTenantTokenIssueRequest(value TenantTokenIssueRequest) ([]byte, error) {
+	if err := common.ValidateIdentifier(value.TenantID, "/tenantId"); err != nil {
+		return nil, err
+	}
+	if value.ProjectID != "" {
+		if err := common.ValidateIdentifier(value.ProjectID, "/projectId"); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(value)
+}
+func encodeTokenStatusRequest(value TokenStatusRequest) ([]byte, error) {
+	if !validCapabilityDigest(value.TokenSHA256) {
+		return nil, common.ContractError("INVALID_TOKEN_DIGEST", "/tokenSha256")
+	}
+	if value.ExpectedClientID != "cloud-agents-admin-web" && value.ExpectedClientID != "cloud-agents-user-web" && value.ExpectedClientID != "cloud-agents-cli" && value.ExpectedClientID != "cloud-agents-automation" {
+		return nil, common.ContractError("INVALID_CLIENT_ID", "/expectedClientId")
+	}
+	if !validIdentityApplication(value.ExpectedApplication) {
+		return nil, common.ContractError("INVALID_APPLICATION", "/expectedApplication")
+	}
+	if err := common.ValidateIdentifier(value.ExpectedTenantID, "/expectedTenantId"); err != nil {
+		return nil, err
+	}
+	if value.ExpectedProjectID != "" {
+		if err := common.ValidateIdentifier(value.ExpectedProjectID, "/expectedProjectId"); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(value)
+}
+func encodeTenantTokenAuthorizationRequest(value TenantTokenAuthorizationRequest) ([]byte, error) {
+	if !validIdentityApplication(value.Application) {
+		return nil, common.ContractError("INVALID_APPLICATION", "/application")
+	}
+	if !validCapabilityDigest(value.SessionSHA256) {
+		return nil, common.ContractError("INVALID_SESSION_DIGEST", "/sessionSha256")
+	}
+	if err := common.ValidateIdentifier(value.TenantID, "/tenantId"); err != nil {
+		return nil, err
+	}
+	if value.ProjectID != "" {
+		if err := common.ValidateIdentifier(value.ProjectID, "/projectId"); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(value)
+}
+
+func DecodeCurrentUserJSON(data []byte) (CurrentUser, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"id", "email", "displayName", "displayRoles"}, []string{"id", "email", "displayName", "displayRoles"})
+	if err != nil {
+		return CurrentUser{}, err
+	}
+	var value CurrentUser
+	if err := json.Unmarshal(data, &value); err != nil {
+		return CurrentUser{}, common.ContractError("INVALID_JSON", "")
+	}
+	if err := common.ValidateIdentifier(value.ID, "/id"); err != nil {
+		return CurrentUser{}, err
+	}
+	if !validIdentityEmail(value.Email) {
+		return CurrentUser{}, common.ContractError("INVALID_EMAIL", "/email")
+	}
+	if err := common.ValidateString(value.DisplayName, 0, 200, "/displayName"); err != nil {
+		return CurrentUser{}, err
+	}
+	if _, exists := fields["displayRoles"]; !exists || !validIdentityRoles(value.DisplayRoles, "platform.admin", 8) {
+		return CurrentUser{}, common.ContractError("INVALID_DISPLAY_ROLES", "/displayRoles")
+	}
+	return value, nil
+}
+func decodeBrowserTenantJSON(data []byte, base string) (BrowserTenant, error) {
+	_, err := common.DecodeStrictObject(data, []string{"id", "name", "displayRoles"}, []string{"id", "name", "displayRoles"})
+	if err != nil {
+		return BrowserTenant{}, err
+	}
+	var value BrowserTenant
+	if err := json.Unmarshal(data, &value); err != nil {
+		return BrowserTenant{}, common.ContractError("INVALID_JSON", base)
+	}
+	if err := common.ValidateIdentifier(value.ID, base+"/id"); err != nil {
+		return BrowserTenant{}, err
+	}
+	if err := common.ValidateString(value.Name, 1, 200, base+"/name"); err != nil {
+		return BrowserTenant{}, err
+	}
+	if !validIdentityRoles(value.DisplayRoles, "tenant.admin", 8) {
+		return BrowserTenant{}, common.ContractError("INVALID_TENANT_PROJECTION", base)
+	}
+	return value, nil
+}
+func decodeBrowserTenantsJSON(data []byte, base string) ([]BrowserTenant, error) {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil || raw == nil || len(raw) > 200 {
+		return nil, common.ContractError("INVALID_FIELD_TYPE", base)
+	}
+	values := make([]BrowserTenant, len(raw))
+	seen := map[string]struct{}{}
+	for index, item := range raw {
+		tenant, err := decodeBrowserTenantJSON(item, fmt.Sprintf("%s/%d", base, index))
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := seen[tenant.ID]; exists {
+			return nil, common.ContractError("DUPLICATE_TENANT", base)
+		}
+		seen[tenant.ID] = struct{}{}
+		values[index] = tenant
+	}
+	return values, nil
+}
+func DecodeBrowserTenantPageJSON(data []byte) (BrowserTenantPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"tenants", "nextPageToken"}, []string{"tenants"})
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	tenants, err := decodeBrowserTenantsJSON(fields["tenants"], "/tenants")
+	if err != nil {
+		return BrowserTenantPage{}, err
+	}
+	value := BrowserTenantPage{Tenants: tenants}
+	if _, exists := fields["nextPageToken"]; exists {
+		if err := json.Unmarshal(fields["nextPageToken"], &value.NextPageToken); err != nil {
+			return BrowserTenantPage{}, common.ContractError("INVALID_FIELD_TYPE", "/nextPageToken")
+		}
+		if err := common.ValidatePageToken(value.NextPageToken, "/nextPageToken"); err != nil {
+			return BrowserTenantPage{}, err
+		}
+	}
+	return value, nil
+}
+func DecodeBrowserSessionJSON(data []byte) (BrowserSession, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"application", "user", "tenants", "nextPageToken", "csrfToken"}, []string{"application", "user", "tenants", "csrfToken"})
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	var value BrowserSession
+	if err := json.Unmarshal(data, &value); err != nil {
+		return BrowserSession{}, common.ContractError("INVALID_JSON", "")
+	}
+	if !validIdentityApplication(value.Application) {
+		return BrowserSession{}, common.ContractError("INVALID_APPLICATION", "/application")
+	}
+	user, err := DecodeCurrentUserJSON(fields["user"])
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	tenants, err := decodeBrowserTenantsJSON(fields["tenants"], "/tenants")
+	if err != nil {
+		return BrowserSession{}, err
+	}
+	if _, exists := fields["nextPageToken"]; exists {
+		if err := common.ValidatePageToken(value.NextPageToken, "/nextPageToken"); err != nil {
+			return BrowserSession{}, err
+		}
+	}
+	if !validIdentityOpaqueToken(value.CSRFToken, 43, 43) {
+		return BrowserSession{}, common.ContractError("INVALID_CSRF_TOKEN", "/csrfToken")
+	}
+	value.User, value.Tenants = user, tenants
+	return value, nil
+}
+func DecodeEmailSuffixPolicyJSON(data []byte) (EmailSuffixPolicy, error) {
+	_, err := common.DecodeStrictObject(data, []string{"tenantId", "resourceVersion", "allowedDomains"}, []string{"tenantId", "resourceVersion", "allowedDomains"})
+	if err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	var value EmailSuffixPolicy
+	if json.Unmarshal(data, &value) != nil {
+		return EmailSuffixPolicy{}, common.ContractError("INVALID_JSON", "")
+	}
+	if err := common.ValidateIdentifier(value.TenantID, "/tenantId"); err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if err := common.ValidateResourceVersion(value.ResourceVersion, "/resourceVersion"); err != nil {
+		return EmailSuffixPolicy{}, err
+	}
+	if !validIdentityEmailPolicyDomains(value.AllowedDomains) {
+		return EmailSuffixPolicy{}, common.ContractError("INVALID_EMAIL_POLICY_DOMAINS", "/allowedDomains")
+	}
+	return value, nil
+}
+func validIdentityEmailPolicyDomains(values []string) bool {
+	if values == nil || len(values) > 64 {
+		return false
+	}
+	for index, value := range values {
+		if len(value) < 1 || len(value) > 253 || index > 0 && values[index-1] >= value {
+			return false
+		}
+		labels := strings.Split(value, ".")
+		for _, label := range labels {
+			if len(label) < 1 || len(label) > 63 || !identityEmailPolicyAlphaNumeric(label[0]) || !identityEmailPolicyAlphaNumeric(label[len(label)-1]) {
+				return false
+			}
+			for offset := 1; offset+1 < len(label); offset++ {
+				character := label[offset]
+				if !identityEmailPolicyAlphaNumeric(character) && character != '-' {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+func identityEmailPolicyAlphaNumeric(character byte) bool {
+	return character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
+}
+func DecodeTenantTokenJSON(data []byte) (TenantToken, error) {
+	_, err := common.DecodeStrictObject(data, []string{"accessToken", "tokenType", "expiresAt"}, []string{"accessToken", "tokenType", "expiresAt"})
+	if err != nil {
+		return TenantToken{}, err
+	}
+	var value TenantToken
+	if err := json.Unmarshal(data, &value); err != nil {
+		return TenantToken{}, common.ContractError("INVALID_JSON", "")
+	}
+	if !validIdentityJWT(value.AccessToken) {
+		return TenantToken{}, common.ContractError("INVALID_ACCESS_TOKEN", "/accessToken")
+	}
+	if value.TokenType != "Bearer" {
+		return TenantToken{}, common.ContractError("INVALID_TOKEN_TYPE", "/tokenType")
+	}
+	if err := common.ValidateDateTime(value.ExpiresAt, "/expiresAt"); err != nil {
+		return TenantToken{}, err
+	}
+	return value, nil
+}
+func DecodeTokenStatusJSON(data []byte) (TokenStatus, error) {
+	_, err := common.DecodeStrictObject(data, []string{"status"}, []string{"status"})
+	if err != nil {
+		return TokenStatus{}, err
+	}
+	var value TokenStatus
+	if err := json.Unmarshal(data, &value); err != nil {
+		return TokenStatus{}, common.ContractError("INVALID_JSON", "")
+	}
+	if value.Status != "active" && value.Status != "inactive" {
+		return TokenStatus{}, common.ContractError("INVALID_TOKEN_STATUS", "/status")
+	}
+	return value, nil
+}
+func DecodeTenantTokenAuthorizationJSON(data []byte) (TenantTokenAuthorization, error) {
+	_, err := common.DecodeStrictObject(data, []string{"userId", "issuer", "tenantId", "projectId", "application", "scopes"}, []string{"userId", "issuer", "tenantId", "application", "scopes"})
+	if err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	var value TenantTokenAuthorization
+	if err := json.Unmarshal(data, &value); err != nil {
+		return TenantTokenAuthorization{}, common.ContractError("INVALID_JSON", "")
+	}
+	if err := common.ValidateIdentifier(value.UserID, "/userId"); err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	if !validIdentityIssuer(value.Issuer) {
+		return TenantTokenAuthorization{}, common.ContractError("INVALID_ISSUER", "/issuer")
+	}
+	if err := common.ValidateIdentifier(value.TenantID, "/tenantId"); err != nil {
+		return TenantTokenAuthorization{}, err
+	}
+	if value.ProjectID != "" {
+		if err := common.ValidateIdentifier(value.ProjectID, "/projectId"); err != nil {
+			return TenantTokenAuthorization{}, err
+		}
+	}
+	if !validIdentityApplication(value.Application) {
+		return TenantTokenAuthorization{}, common.ContractError("INVALID_APPLICATION", "/application")
+	}
+	if !validIdentityScopes(value.Scopes) {
+		return TenantTokenAuthorization{}, common.ContractError("INVALID_AUTHORIZATION_SCOPES", "/scopes")
+	}
+	return value, nil
+}
+func decodeIdentityJWKJSON(data []byte, base string) (IdentityJWK, error) {
+	_, err := common.DecodeStrictObject(data, []string{"alg", "e", "key_ops", "kid", "kty", "n", "use"}, []string{"alg", "e", "key_ops", "kid", "kty", "n", "use"})
+	if err != nil {
+		return IdentityJWK{}, err
+	}
+	var value IdentityJWK
+	if err := json.Unmarshal(data, &value); err != nil {
+		return IdentityJWK{}, common.ContractError("INVALID_JSON", base)
+	}
+	if value.Alg != "RS256" || value.E != "AQAB" || value.Kty != "RSA" || value.Use != "sig" || len(value.KeyOps) != 1 || value.KeyOps[0] != "verify" || !validIdentityKID(value.Kid) || !validIdentityModulus(value.N) {
+		return IdentityJWK{}, common.ContractError("INVALID_IDENTITY_JWK", base)
+	}
+	return value, nil
+}
+func DecodeIdentityJWKSJSON(data []byte) (IdentityJWKS, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"keys", "cloudAgentsAuthority"}, []string{"keys", "cloudAgentsAuthority"})
+	if err != nil {
+		return IdentityJWKS{}, err
+	}
+	var rawKeys []json.RawMessage
+	if err := json.Unmarshal(fields["keys"], &rawKeys); err != nil || rawKeys == nil || len(rawKeys) > 32 {
+		return IdentityJWKS{}, common.ContractError("INVALID_IDENTITY_JWKS", "/keys")
+	}
+	keys := make([]IdentityJWK, len(rawKeys))
+	active := map[string]struct{}{}
+	for index, raw := range rawKeys {
+		key, err := decodeIdentityJWKJSON(raw, fmt.Sprintf("/keys/%d", index))
+		if err != nil {
+			return IdentityJWKS{}, err
+		}
+		if _, exists := active[key.Kid]; exists {
+			return IdentityJWKS{}, common.ContractError("DUPLICATE_IDENTITY_KEY", "/keys")
+		}
+		active[key.Kid] = struct{}{}
+		keys[index] = key
+	}
+	authorityFields, err := common.DecodeStrictObject(fields["cloudAgentsAuthority"], []string{"issuer", "revision", "securityEpoch", "notBefore", "expiresAt", "lineage"}, []string{"issuer", "revision", "securityEpoch", "notBefore", "expiresAt", "lineage"})
+	if err != nil {
+		return IdentityJWKS{}, err
+	}
+	var authority IdentityJWKSAuthority
+	if err := json.Unmarshal(fields["cloudAgentsAuthority"], &authority); err != nil {
+		return IdentityJWKS{}, common.ContractError("INVALID_JSON", "/cloudAgentsAuthority")
+	}
+	if !validIdentityIssuer(authority.Issuer) || !validIdentityRevision(authority.Revision) || !validIdentityRevision(authority.SecurityEpoch) || !validIdentityNumericDate(authority.NotBefore) || !validIdentityNumericDate(authority.ExpiresAt) || authority.ExpiresAt <= authority.NotBefore || authority.ExpiresAt-authority.NotBefore > 86400 {
+		return IdentityJWKS{}, common.ContractError("INVALID_IDENTITY_JWKS_AUTHORITY", "/cloudAgentsAuthority")
+	}
+	var rawLineage []json.RawMessage
+	if err := json.Unmarshal(authorityFields["lineage"], &rawLineage); err != nil || len(rawLineage) < 1 || len(rawLineage) > 32 {
+		return IdentityJWKS{}, common.ContractError("INVALID_IDENTITY_JWKS_LINEAGE", "/cloudAgentsAuthority/lineage")
+	}
+	lineage := make([]IdentityJWKSLineageKey, len(rawLineage))
+	history := map[string]struct{}{}
+	for index, raw := range rawLineage {
+		lineageFields, err := common.DecodeStrictObject(raw, []string{"jwk", "enabled", "notBefore", "notAfter"}, []string{"jwk", "enabled", "notBefore", "notAfter"})
+		if err != nil {
+			return IdentityJWKS{}, err
+		}
+		var record IdentityJWKSLineageKey
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return IdentityJWKS{}, common.ContractError("INVALID_JSON", fmt.Sprintf("/cloudAgentsAuthority/lineage/%d", index))
+		}
+		record.JWK, err = decodeIdentityJWKJSON(lineageFields["jwk"], fmt.Sprintf("/cloudAgentsAuthority/lineage/%d/jwk", index))
+		if err != nil {
+			return IdentityJWKS{}, err
+		}
+		if !validIdentityNumericDate(record.NotBefore) || !validIdentityNumericDate(record.NotAfter) || record.NotAfter <= record.NotBefore {
+			return IdentityJWKS{}, common.ContractError("INVALID_IDENTITY_JWKS_LINEAGE", fmt.Sprintf("/cloudAgentsAuthority/lineage/%d", index))
+		}
+		if _, exists := history[record.JWK.Kid]; exists {
+			return IdentityJWKS{}, common.ContractError("DUPLICATE_IDENTITY_KEY", "/cloudAgentsAuthority/lineage")
+		}
+		history[record.JWK.Kid] = struct{}{}
+		lineage[index] = record
+	}
+	authority.Lineage = lineage
+	return IdentityJWKS{Keys: keys, CloudAgentsAuthority: authority}, nil
+}
 func validateManagedAgentInteractionRequestID(value, path string) error {
 	if err := common.ValidateString(value, 1, 200, path); err != nil {
 		return err
@@ -4654,6 +7554,301 @@ func requireResourceVersion(response Response, version string) error {
 		return common.ContractError("RESOURCE_VERSION_MISMATCH", "/"+HeaderResourceVersion)
 	}
 	return nil
+}
+
+func managementPagePath(basePath string, pageSize int, pageToken string) (string, error) {
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return "", common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return "", err
+		}
+	}
+	query := url.Values{}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return basePath + "?" + encoded, nil
+	}
+	return basePath, nil
+}
+func listOrganizations(ctx context.Context, client *Client, operation, basePath, tenantID, requestID string, pageSize int, pageToken string) (OrganizationPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return OrganizationPageResult{}, err
+	}
+	path, err := managementPagePath(basePath, pageSize, pageToken)
+	if err != nil {
+		return OrganizationPageResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return OrganizationPageResult{}, err
+	}
+	if response.Status != 200 {
+		return OrganizationPageResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeOrganizationPageResponseJSON(response.Body)
+	if err != nil {
+		return OrganizationPageResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	for _, organization := range value.Value.Organizations {
+		if organization.Metadata.TenantRef.ID != tenantID {
+			return OrganizationPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/organizations")
+		}
+	}
+	return value, nil
+}
+func listProjects(ctx context.Context, client *Client, operation, basePath, tenantID, organizationID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ProjectPageResult{}, err
+	}
+	if err := common.ValidateIdentifier(organizationID, "/organizationId"); err != nil {
+		return ProjectPageResult{}, err
+	}
+	if pageSize != 0 && (pageSize < 1 || pageSize > 200) {
+		return ProjectPageResult{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ProjectPageResult{}, err
+		}
+	}
+	query := url.Values{"organizationId": []string{organizationID}}
+	if pageSize != 0 {
+		query.Set("pageSize", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		query.Set("pageToken", pageToken)
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: basePath + "?" + query.Encode(), Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ProjectPageResult{}, err
+	}
+	if response.Status != 200 {
+		return ProjectPageResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeProjectPageResponseJSON(response.Body)
+	if err != nil {
+		return ProjectPageResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	for _, project := range value.Value.Projects {
+		if project.Metadata.TenantRef.ID != tenantID || project.Spec.OrganizationRef.ID != organizationID {
+			return ProjectPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/projects")
+		}
+	}
+	return value, nil
+}
+func listMyProjects(ctx context.Context, client *Client, basePath, tenantID, requestID string, pageSize int, pageToken string) (ProjectPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ProjectPageResult{}, err
+	}
+	path, err := managementPagePath(basePath, pageSize, pageToken)
+	if err != nil {
+		return ProjectPageResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ProjectPageResult{}, err
+	}
+	if response.Status != 200 {
+		return ProjectPageResult{}, client.problemError("managedAgentListMyProjects", response)
+	}
+	value, err := platform.DecodeProjectPageResponseJSON(response.Body)
+	if err != nil {
+		return ProjectPageResult{}, &ClientError{Operation: "managedAgentListMyProjects", Status: response.Status, Cause: err}
+	}
+	for _, project := range value.Value.Projects {
+		if project.Metadata.TenantRef.ID != tenantID {
+			return ProjectPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/projects")
+		}
+	}
+	return value, nil
+}
+func listMemberships(ctx context.Context, client *Client, operation, basePath, tenantID, requestID string, pageSize int, pageToken string) (MembershipPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return MembershipPageResult{}, err
+	}
+	path, err := managementPagePath(basePath, pageSize, pageToken)
+	if err != nil {
+		return MembershipPageResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return MembershipPageResult{}, err
+	}
+	if response.Status != 200 {
+		return MembershipPageResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeMembershipPageResponseJSON(response.Body)
+	if err != nil {
+		return MembershipPageResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	for _, membership := range value.Value.Memberships {
+		if membership.Metadata.TenantRef.ID != tenantID {
+			return MembershipPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/memberships")
+		}
+	}
+	return value, nil
+}
+func listRoles(ctx context.Context, client *Client, operation, basePath, tenantID, requestID string, pageSize int, pageToken string) (RolePageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RolePageResult{}, err
+	}
+	path, err := managementPagePath(basePath, pageSize, pageToken)
+	if err != nil {
+		return RolePageResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return RolePageResult{}, err
+	}
+	if response.Status != 200 {
+		return RolePageResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeRolePageResponseJSON(response.Body)
+	if err != nil {
+		return RolePageResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	for _, role := range value.Value.Roles {
+		if role.Metadata.TenantRef.ID != tenantID {
+			return RolePageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/roles")
+		}
+	}
+	return value, nil
+}
+func listRoleBindings(ctx context.Context, client *Client, operation, basePath, tenantID, requestID string, pageSize int, pageToken string) (RoleBindingPageResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RoleBindingPageResult{}, err
+	}
+	path, err := managementPagePath(basePath, pageSize, pageToken)
+	if err != nil {
+		return RoleBindingPageResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "GET", Path: path, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return RoleBindingPageResult{}, err
+	}
+	if response.Status != 200 {
+		return RoleBindingPageResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeRoleBindingPageResponseJSON(response.Body)
+	if err != nil {
+		return RoleBindingPageResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	for _, roleBinding := range value.Value.RoleBindings {
+		if roleBinding.Metadata.TenantRef.ID != tenantID {
+			return RoleBindingPageResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/roleBindings")
+		}
+	}
+	return value, nil
+}
+func createOrganization(ctx context.Context, client *Client, operation, path, tenantID, requestID string, body platform.OrganizationCreateRequest) (OrganizationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return OrganizationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeOrganizationCreateRequestJSON(body)
+	if err != nil {
+		return OrganizationResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: path, Headers: map[string]string{HeaderRequestID: requestID}, Body: bodyBytes})
+	if err != nil {
+		return OrganizationResult{}, err
+	}
+	if response.Status != 201 {
+		return OrganizationResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeOrganizationResponseJSON(response.Body)
+	if err != nil {
+		return OrganizationResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return OrganizationResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.UID != body.OrganizationID || value.Value.Metadata.Name != body.Name {
+		return OrganizationResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func createProject(ctx context.Context, client *Client, operation, path, tenantID, requestID, idempotencyKey string, body platform.ProjectCreateRequest) (ProjectResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ProjectResult{}, err
+	}
+	if err := common.ValidateIdempotencyKey(idempotencyKey, "/Idempotency-Key"); err != nil {
+		return ProjectResult{}, err
+	}
+	bodyBytes, err := platform.EncodeProjectCreateRequestJSON(body)
+	if err != nil {
+		return ProjectResult{}, err
+	}
+	response, err := client.roundTrip(ctx, Request{Method: "POST", Path: path, Headers: map[string]string{HeaderRequestID: requestID, HeaderIdempotencyKey: idempotencyKey}, Body: bodyBytes})
+	if err != nil {
+		return ProjectResult{}, err
+	}
+	if response.Status != 201 {
+		return ProjectResult{}, client.problemError(operation, response)
+	}
+	value, err := platform.DecodeProjectResponseJSON(response.Body)
+	if err != nil {
+		return ProjectResult{}, &ClientError{Operation: operation, Status: response.Status, Cause: err}
+	}
+	if err := requireResourceVersion(response, value.Value.Metadata.ResourceVersion); err != nil {
+		return ProjectResult{}, err
+	}
+	if value.Value.Metadata.TenantRef.ID != tenantID || value.Value.Metadata.Name != body.Name {
+		return ProjectResult{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/metadata")
+	}
+	return value, nil
+}
+func createMembership(ctx context.Context, client *Client, operation, path, tenantID, requestID string, body platform.MembershipCreateRequest) (RBACMutationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RBACMutationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeMembershipCreateRequestJSON(body)
+	if err != nil {
+		return RBACMutationResult{}, err
+	}
+	return doMutation(ctx, client, operation, path, tenantID, "", requestID, bodyBytes, 201)
+}
+func transitionMembership(ctx context.Context, client *Client, operation, path, tenantID, membershipID, requestID string, body platform.MembershipTransitionRequest) (RBACMutationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RBACMutationResult{}, err
+	}
+	if err := common.ValidateIdentifier(membershipID, "/membershipId"); err != nil {
+		return RBACMutationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeMembershipTransitionRequestJSON(body)
+	if err != nil {
+		return RBACMutationResult{}, err
+	}
+	return doMutation(ctx, client, operation, path, tenantID, membershipID, requestID, bodyBytes, 200)
+}
+func bindRole(ctx context.Context, client *Client, operation, path, tenantID, requestID string, body platform.RoleBindingCreateRequest) (RBACMutationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RBACMutationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRoleBindingCreateRequestJSON(body)
+	if err != nil {
+		return RBACMutationResult{}, err
+	}
+	return doMutation(ctx, client, operation, path, tenantID, "", requestID, bodyBytes, 201)
+}
+func revokeRoleBinding(ctx context.Context, client *Client, operation, path, tenantID, roleBindingID, requestID string, body platform.RoleBindingRevokeRequest) (RBACMutationResult, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return RBACMutationResult{}, err
+	}
+	if err := common.ValidateIdentifier(roleBindingID, "/roleBindingId"); err != nil {
+		return RBACMutationResult{}, err
+	}
+	bodyBytes, err := platform.EncodeRoleBindingRevokeRequestJSON(body)
+	if err != nil {
+		return RBACMutationResult{}, err
+	}
+	return doMutation(ctx, client, operation, path, tenantID, roleBindingID, requestID, bodyBytes, 200)
 }
 
 func doGet[T any](ctx context.Context, client *Client, operation, path, tenantID, resourceID, requestID string, decode func([]byte) (common.ResponseEnvelope[T], error)) (common.ResponseEnvelope[T], error) {
@@ -4927,6 +8122,28 @@ func ValidateListProjectsServerRequest(tenantID, organizationID, requestID strin
 		}
 	}
 	return ListProjectsServerInput{TenantID: tenantID, OrganizationID: organizationID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
+}
+
+type ListMyProjectsServerInput struct {
+	TenantID  string
+	RequestID string
+	PageSize  int
+	PageToken string
+}
+
+func ValidateListMyProjectsServerRequest(tenantID, requestID string, pageSize int, pageToken string) (ListMyProjectsServerInput, error) {
+	if err := validatePath(tenantID, requestID); err != nil {
+		return ListMyProjectsServerInput{}, err
+	}
+	if pageSize < 1 || pageSize > 200 {
+		return ListMyProjectsServerInput{}, common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	if pageToken != "" {
+		if err := common.ValidatePageToken(pageToken, "/pageToken"); err != nil {
+			return ListMyProjectsServerInput{}, err
+		}
+	}
+	return ListMyProjectsServerInput{TenantID: tenantID, RequestID: requestID, PageSize: pageSize, PageToken: pageToken}, nil
 }
 
 type ListManagedAgentSessionsServerInput struct {
@@ -6962,4 +10179,647 @@ func capabilityPagePath(base string, pageSize int, pageToken string) string {
 		return base + "?" + encoded
 	}
 	return base
+}
+
+type Invitation struct {
+	ID           string `json:"id"`
+	TenantID     string `json:"tenantId"`
+	Email        string `json:"email"`
+	RoleName     string `json:"roleName"`
+	ScopeLevel   string `json:"scopeLevel"`
+	ScopeID      string `json:"scopeId"`
+	Verification string `json:"verification"`
+	State        string `json:"state"`
+	CreatedAt    string `json:"createdAt"`
+	ExpiresAt    string `json:"expiresAt"`
+}
+type InvitationCreateRequest struct {
+	Email        string `json:"email"`
+	RoleName     string `json:"roleName"`
+	ScopeLevel   string `json:"scopeLevel"`
+	ScopeID      string `json:"scopeId"`
+	Verification string `json:"verification"`
+}
+type InvitationCreated struct {
+	Invitation     Invitation `json:"invitation"`
+	InvitationCode string     `json:"invitationCode"`
+}
+type InvitationPage struct {
+	Invitations   []Invitation `json:"invitations"`
+	NextPageToken string       `json:"nextPageToken,omitempty"`
+}
+type InvitationAcceptRequest struct {
+	InvitationCode string `json:"invitationCode"`
+	Password       string `json:"password,omitempty"`
+	DisplayName    string `json:"displayName,omitempty"`
+}
+
+func validateInvitationFields(value InvitationCreateRequest) error {
+	if !validIdentityEmail(value.Email) || len(value.Email) > 254 {
+		return common.ContractError("INVALID_EMAIL", "/email")
+	}
+	if len(value.RoleName) < 1 || len(value.RoleName) > 128 || value.RoleName[0] < 'a' || value.RoleName[0] > 'z' {
+		return common.ContractError("INVALID_ROLE", "/roleName")
+	}
+	for _, ch := range value.RoleName {
+		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '.' || ch == '-') {
+			return common.ContractError("INVALID_ROLE", "/roleName")
+		}
+	}
+	if value.ScopeLevel != "tenant" && value.ScopeLevel != "organization" && value.ScopeLevel != "project" {
+		return common.ContractError("INVALID_SCOPE", "/scopeLevel")
+	}
+	if err := common.ValidateIdentifier(value.ScopeID, "/scopeId"); err != nil {
+		return err
+	}
+	if value.Verification != "admin-attested" && value.Verification != "provider-required" {
+		return common.ContractError("INVALID_EMAIL_VERIFICATION", "/verification")
+	}
+	return nil
+}
+func DecodeInvitationCreateRequestJSON(data []byte) (InvitationCreateRequest, error) {
+	_, err := common.DecodeStrictObject(data, []string{"email", "roleName", "scopeLevel", "scopeId", "verification"}, []string{"email", "roleName", "scopeLevel", "scopeId", "verification"})
+	if err != nil {
+		return InvitationCreateRequest{}, err
+	}
+	var value InvitationCreateRequest
+	if json.Unmarshal(data, &value) != nil {
+		return value, common.ContractError("INVALID_JSON", "")
+	}
+	return value, validateInvitationFields(value)
+}
+func EncodeInvitationCreateRequestJSON(value InvitationCreateRequest) ([]byte, error) {
+	if err := validateInvitationFields(value); err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+func DecodeInvitationJSON(data []byte) (Invitation, error) {
+	_, err := common.DecodeStrictObject(data, []string{"id", "tenantId", "email", "roleName", "scopeLevel", "scopeId", "verification", "state", "createdAt", "expiresAt"}, []string{"id", "tenantId", "email", "roleName", "scopeLevel", "scopeId", "verification", "state", "createdAt", "expiresAt"})
+	if err != nil {
+		return Invitation{}, err
+	}
+	var value Invitation
+	if json.Unmarshal(data, &value) != nil {
+		return value, common.ContractError("INVALID_JSON", "")
+	}
+	for _, field := range []struct{ value, path string }{{value.ID, "/id"}, {value.TenantID, "/tenantId"}} {
+		if err := common.ValidateIdentifier(field.value, field.path); err != nil {
+			return Invitation{}, err
+		}
+	}
+	if err := validateInvitationFields(InvitationCreateRequest{value.Email, value.RoleName, value.ScopeLevel, value.ScopeID, value.Verification}); err != nil {
+		return Invitation{}, err
+	}
+	if value.ScopeLevel == "tenant" && value.ScopeID != value.TenantID {
+		return Invitation{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId")
+	}
+	if value.State != "pending" && value.State != "accepted" && value.State != "revoked" && value.State != "expired" {
+		return Invitation{}, common.ContractError("INVALID_STATE", "/state")
+	}
+	for _, field := range []struct{ value, path string }{{value.CreatedAt, "/createdAt"}, {value.ExpiresAt, "/expiresAt"}} {
+		if err := common.ValidateDateTime(field.value, field.path); err != nil {
+			return Invitation{}, err
+		}
+	}
+	return value, nil
+}
+func DecodeInvitationCreatedJSON(data []byte) (InvitationCreated, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"invitation", "invitationCode"}, []string{"invitation", "invitationCode"})
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	invitation, err := DecodeInvitationJSON(fields["invitation"])
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	var code string
+	if json.Unmarshal(fields["invitationCode"], &code) != nil || !validIdentityOpaqueToken(code, 43, 43) {
+		return InvitationCreated{}, common.ContractError("INVALID_INVITATION_CODE", "/invitationCode")
+	}
+	return InvitationCreated{Invitation: invitation, InvitationCode: code}, nil
+}
+func EncodeInvitationCreatedJSON(value InvitationCreated) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeInvitationCreatedJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeInvitationPageJSON(data []byte) (InvitationPage, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"invitations", "nextPageToken"}, []string{"invitations"})
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	var raw []json.RawMessage
+	if json.Unmarshal(fields["invitations"], &raw) != nil || raw == nil || len(raw) > 200 {
+		return InvitationPage{}, common.ContractError("INVALID_FIELD_TYPE", "/invitations")
+	}
+	value := InvitationPage{Invitations: make([]Invitation, 0, len(raw))}
+	seen := map[string]bool{}
+	for _, item := range raw {
+		invitation, err := DecodeInvitationJSON(item)
+		if err != nil {
+			return InvitationPage{}, err
+		}
+		if seen[invitation.ID] {
+			return InvitationPage{}, common.ContractError("DUPLICATE_INVITATION", "/invitations")
+		}
+		seen[invitation.ID] = true
+		value.Invitations = append(value.Invitations, invitation)
+	}
+	if token, exists := fields["nextPageToken"]; exists {
+		if json.Unmarshal(token, &value.NextPageToken) != nil {
+			return InvitationPage{}, common.ContractError("INVALID_PAGE_TOKEN", "/nextPageToken")
+		}
+		if err := common.ValidatePageToken(value.NextPageToken, "/nextPageToken"); err != nil {
+			return InvitationPage{}, err
+		}
+	}
+	return value, nil
+}
+func EncodeInvitationPageJSON(value InvitationPage) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeInvitationPageJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func DecodeInvitationAcceptRequestJSON(data []byte) (InvitationAcceptRequest, error) {
+	fields, err := common.DecodeStrictObject(data, []string{"invitationCode", "password", "displayName"}, []string{"invitationCode"})
+	if err != nil {
+		return InvitationAcceptRequest{}, err
+	}
+	var value InvitationAcceptRequest
+	if json.Unmarshal(data, &value) != nil {
+		return value, common.ContractError("INVALID_JSON", "")
+	}
+	if !validIdentityOpaqueToken(value.InvitationCode, 43, 43) {
+		return value, common.ContractError("INVALID_INVITATION_CODE", "/invitationCode")
+	}
+	if _, exists := fields["password"]; exists {
+		if err := common.ValidateString(value.Password, 15, 128, "/password"); err != nil {
+			return InvitationAcceptRequest{}, err
+		}
+	}
+	if _, exists := fields["displayName"]; exists {
+		if err := common.ValidateString(value.DisplayName, 1, 160, "/displayName"); err != nil {
+			return InvitationAcceptRequest{}, err
+		}
+	}
+	return value, nil
+}
+func EncodeInvitationAcceptRequestJSON(value InvitationAcceptRequest) ([]byte, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := DecodeInvitationAcceptRequestJSON(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+func identityInvitationPath(tenantID, invitationID string) (string, error) {
+	if err := common.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
+		return "", err
+	}
+	path := "/v1/identity/tenants/" + tenantID + "/invitations"
+	if invitationID != "" {
+		if err := common.ValidateIdentifier(invitationID, "/invitationId"); err != nil {
+			return "", err
+		}
+		path += "/" + invitationID
+	}
+	return path, nil
+}
+func identityInvitationHeaders(requestID, csrfProof string, requireCSRF bool) (map[string]string, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return nil, err
+	}
+	headers := map[string]string{HeaderRequestID: requestID}
+	if requireCSRF || csrfProof != "" {
+		if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+			return nil, common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+		}
+		headers["X-CSRF-Token"] = csrfProof
+	}
+	return headers, nil
+}
+func (client *BrowserIdentityClient) CreateInvitation(ctx context.Context, tenantID, requestID, csrfProof string, body InvitationCreateRequest) (InvitationCreated, error) {
+	path, err := identityInvitationPath(tenantID, "")
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	headers, err := identityInvitationHeaders(requestID, csrfProof, true)
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	encoded, err := EncodeInvitationCreateRequestJSON(body)
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	if body.ScopeLevel == "tenant" && body.ScopeID != tenantID {
+		return InvitationCreated{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/scopeId")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: path, Headers: headers, Body: encoded})
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	if response.Status != 201 {
+		return InvitationCreated{}, identityProblemError("identityCreateInvitation", response)
+	}
+	value, err := DecodeInvitationCreatedJSON(response.Body)
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	if value.Invitation.TenantID != tenantID {
+		return InvitationCreated{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) ListInvitations(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (InvitationPage, error) {
+	path, err := identityInvitationPath(tenantID, "")
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	headers, err := identityInvitationHeaders(requestID, "", false)
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	page, err := ValidateListBrowserTenantsServerRequest(pageSize, pageToken)
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	query := url.Values{}
+	query.Set("pageSize", strconv.Itoa(page.PageSize))
+	if page.PageToken != "" {
+		query.Set("pageToken", page.PageToken)
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: path + "?" + query.Encode(), Headers: headers})
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	if response.Status != 200 {
+		return InvitationPage{}, identityProblemError("identityListInvitations", response)
+	}
+	value, err := DecodeInvitationPageJSON(response.Body)
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	for _, invitation := range value.Invitations {
+		if invitation.TenantID != tenantID {
+			return InvitationPage{}, common.ContractError("PATH_BODY_AUTHORITY_MISMATCH", "/tenantId")
+		}
+	}
+	return value, nil
+}
+func (client *BrowserIdentityClient) RevokeInvitation(ctx context.Context, tenantID, invitationID, requestID, csrfProof string) error {
+	if err := common.ValidateIdentifier(invitationID, "/invitationId"); err != nil {
+		return err
+	}
+	path, err := identityInvitationPath(tenantID, invitationID)
+	if err != nil {
+		return err
+	}
+	headers, err := identityInvitationHeaders(requestID, csrfProof, true)
+	if err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "DELETE", Path: path, Headers: headers})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityRevokeInvitation", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) AcceptInvitation(ctx context.Context, requestID, csrfProof string, body InvitationAcceptRequest) error {
+	headers, err := identityInvitationHeaders(requestID, csrfProof, false)
+	if err != nil {
+		return err
+	}
+	encoded, err := EncodeInvitationAcceptRequestJSON(body)
+	if err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/invitations/accept", Headers: headers, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityAcceptInvitation", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) browserSessionClient(sessionHandle string) (*BrowserIdentityClient, error) {
+	if !validIdentityOpaqueToken(sessionHandle, 43, 43) {
+		return nil, common.ContractError("INVALID_SESSION_HANDLE", "/X-Cloud-Agents-Session")
+	}
+	return &BrowserIdentityClient{transport: TransportFunc(func(ctx context.Context, request Request) (Response, error) {
+		request.Headers["X-Cloud-Agents-Session"] = sessionHandle
+		return client.transport.RoundTrip(ctx, request)
+	})}, nil
+}
+func (client *IdentityServiceClient) CreateInvitation(ctx context.Context, sessionHandle, tenantID, requestID, csrfProof string, body InvitationCreateRequest) (InvitationCreated, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return InvitationCreated{}, err
+	}
+	return browser.CreateInvitation(ctx, tenantID, requestID, csrfProof, body)
+}
+func (client *IdentityServiceClient) ListInvitations(ctx context.Context, sessionHandle, tenantID, requestID string, pageSize int, pageToken string) (InvitationPage, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return InvitationPage{}, err
+	}
+	return browser.ListInvitations(ctx, tenantID, requestID, pageSize, pageToken)
+}
+func (client *IdentityServiceClient) RevokeInvitation(ctx context.Context, sessionHandle, tenantID, invitationID, requestID, csrfProof string) error {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return err
+	}
+	return browser.RevokeInvitation(ctx, tenantID, invitationID, requestID, csrfProof)
+}
+func (client *IdentityServiceClient) AcceptInvitation(ctx context.Context, sessionHandle, requestID, clientIP, csrfProof string, body InvitationAcceptRequest) error {
+	if !validIdentityClientIP(clientIP) {
+		return common.ContractError("INVALID_CLIENT_IP", "/X-Cloud-Agents-Client-IP")
+	}
+	headers, err := identityInvitationHeaders(requestID, csrfProof, false)
+	if err != nil {
+		return err
+	}
+	headers[HeaderIdentityClientIP] = clientIP
+	if sessionHandle != "" {
+		if !validIdentityOpaqueToken(sessionHandle, 43, 43) {
+			return common.ContractError("INVALID_SESSION_HANDLE", "/X-Cloud-Agents-Session")
+		}
+		if !validIdentityOpaqueToken(csrfProof, 43, 43) {
+			return common.ContractError("INVALID_CSRF_TOKEN", "/X-CSRF-Token")
+		}
+		headers["X-Cloud-Agents-Session"] = sessionHandle
+	}
+	encoded, err := EncodeInvitationAcceptRequestJSON(body)
+	if err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/invitations/accept", Headers: headers, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityAcceptInvitation", response)
+	}
+	return nil
+}
+
+func identitySecurityPagePath(base string, pageSize int, pageToken string) (string, error) {
+	if pageSize < 1 || pageSize > 200 {
+		return "", common.ContractError("INVALID_PAGE_SIZE", "/pageSize")
+	}
+	query := url.Values{"pageSize": {strconv.Itoa(pageSize)}}
+	if pageToken != "" {
+		if !validIdentityOpaqueToken(pageToken, 1, 2048) {
+			return "", common.ContractError("INVALID_PAGE_TOKEN", "/pageToken")
+		}
+		query.Set("pageToken", pageToken)
+	}
+	return base + "?" + query.Encode(), nil
+}
+func identityAccountPath(userID, suffix string) (string, error) {
+	if err := common.ValidateIdentifier(userID, "/userId"); err != nil {
+		return "", err
+	}
+	return "/v1/identity/accounts/" + url.PathEscape(userID) + suffix, nil
+}
+func (client *BrowserIdentityClient) ListIdentityAccounts(ctx context.Context, requestID string, pageSize int, pageToken string) (IdentityAccountPage, error) {
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return IdentityAccountPage{}, err
+	}
+	p, err := identitySecurityPagePath("/v1/identity/accounts", pageSize, pageToken)
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	if response.Status != 200 {
+		return IdentityAccountPage{}, identityProblemError("identityListAccounts", response)
+	}
+	return DecodeIdentityAccountPageJSON(response.Body)
+}
+func (client *BrowserIdentityClient) ListTenantIdentityAccounts(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (IdentityAccountPage, error) {
+	if err := common.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
+		return IdentityAccountPage{}, err
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return IdentityAccountPage{}, err
+	}
+	p, err := identitySecurityPagePath("/v1/identity/tenants/"+url.PathEscape(tenantID)+"/accounts", pageSize, pageToken)
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	if response.Status != 200 {
+		return IdentityAccountPage{}, identityProblemError("identityListTenantAccounts", response)
+	}
+	return DecodeIdentityAccountPageJSON(response.Body)
+}
+func (client *BrowserIdentityClient) DisableIdentityAccount(ctx context.Context, userID, requestID, csrfProof string) error {
+	p, err := identityAccountPath(userID, "/disable")
+	if err != nil {
+		return err
+	}
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: p, Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: []byte("{}")})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityDisableAccount", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) IssuePasswordReset(ctx context.Context, userID, requestID, csrfProof string) (PasswordResetCreated, error) {
+	p, err := identityAccountPath(userID, "/password-reset")
+	if err != nil {
+		return PasswordResetCreated{}, err
+	}
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return PasswordResetCreated{}, common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: p, Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: []byte("{}")})
+	if err != nil {
+		return PasswordResetCreated{}, err
+	}
+	if response.Status != 201 {
+		return PasswordResetCreated{}, identityProblemError("identityIssuePasswordReset", response)
+	}
+	return DecodePasswordResetCreatedJSON(response.Body)
+}
+func (client *BrowserIdentityClient) ChangePassword(ctx context.Context, requestID, csrfProof string, body PasswordChangeRequest) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityOpaqueToken(csrfProof, 43, 43) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	if _, err = DecodePasswordChangeRequestJSON(encoded); err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "PUT", Path: "/v1/identity/me/password", Headers: map[string]string{HeaderRequestID: requestID, "X-CSRF-Token": csrfProof}, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityChangePassword", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) AcceptPasswordReset(ctx context.Context, requestID string, body PasswordResetAcceptRequest) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	if _, err = DecodePasswordResetAcceptRequestJSON(encoded); err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/password-resets/accept", Headers: map[string]string{HeaderRequestID: requestID}, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityAcceptPasswordReset", response)
+	}
+	return nil
+}
+func (client *BrowserIdentityClient) ListIdentityAuditEvents(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (IdentityAuditPage, error) {
+	base := "/v1/identity/audit-events"
+	if tenantID != "" {
+		if err := common.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
+			return IdentityAuditPage{}, err
+		}
+		base = "/v1/identity/tenants/" + url.PathEscape(tenantID) + "/audit-events"
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return IdentityAuditPage{}, err
+	}
+	p, err := identitySecurityPagePath(base, pageSize, pageToken)
+	if err != nil {
+		return IdentityAuditPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return IdentityAuditPage{}, err
+	}
+	if response.Status != 200 {
+		return IdentityAuditPage{}, identityProblemError("identityListAuditEvents", response)
+	}
+	return DecodeIdentityAuditPageJSON(response.Body)
+}
+func (client *BrowserIdentityClient) ListControlPlaneAuditEvents(ctx context.Context, tenantID, requestID string, pageSize int, pageToken string) (ControlPlaneAuditPage, error) {
+	if err := common.ValidateIdentifier(tenantID, "/tenantId"); err != nil {
+		return ControlPlaneAuditPage{}, err
+	}
+	if err := common.ValidateIdentifier(requestID, "/X-Request-ID"); err != nil {
+		return ControlPlaneAuditPage{}, err
+	}
+	p, err := identitySecurityPagePath("/v1/identity/tenants/"+url.PathEscape(tenantID)+"/control-plane-audit-events", pageSize, pageToken)
+	if err != nil {
+		return ControlPlaneAuditPage{}, err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "GET", Path: p, Headers: map[string]string{HeaderRequestID: requestID}})
+	if err != nil {
+		return ControlPlaneAuditPage{}, err
+	}
+	if response.Status != 200 {
+		return ControlPlaneAuditPage{}, identityProblemError("identityListControlPlaneAuditEvents", response)
+	}
+	return DecodeControlPlaneAuditPageJSON(response.Body)
+}
+func (client *IdentityServiceClient) ListIdentityAccounts(ctx context.Context, sessionHandle, requestID string, pageSize int, pageToken string) (IdentityAccountPage, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	return browser.ListIdentityAccounts(ctx, requestID, pageSize, pageToken)
+}
+func (client *IdentityServiceClient) ListTenantIdentityAccounts(ctx context.Context, sessionHandle, tenantID, requestID string, pageSize int, pageToken string) (IdentityAccountPage, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return IdentityAccountPage{}, err
+	}
+	return browser.ListTenantIdentityAccounts(ctx, tenantID, requestID, pageSize, pageToken)
+}
+func (client *IdentityServiceClient) DisableIdentityAccount(ctx context.Context, sessionHandle, userID, requestID, csrfProof string) error {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return err
+	}
+	return browser.DisableIdentityAccount(ctx, userID, requestID, csrfProof)
+}
+func (client *IdentityServiceClient) IssuePasswordReset(ctx context.Context, sessionHandle, userID, requestID, csrfProof string) (PasswordResetCreated, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return PasswordResetCreated{}, err
+	}
+	return browser.IssuePasswordReset(ctx, userID, requestID, csrfProof)
+}
+func (client *IdentityServiceClient) ChangePassword(ctx context.Context, sessionHandle, requestID, csrfProof string, body PasswordChangeRequest) error {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return err
+	}
+	return browser.ChangePassword(ctx, requestID, csrfProof, body)
+}
+func (client *IdentityServiceClient) AcceptPasswordReset(ctx context.Context, requestID, clientIP string, body PasswordResetAcceptRequest) error {
+	if common.ValidateIdentifier(requestID, "/X-Request-ID") != nil || !validIdentityClientIP(clientIP) {
+		return common.ContractError("INVALID_IDENTITY_REQUEST", "")
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	if _, err = DecodePasswordResetAcceptRequestJSON(encoded); err != nil {
+		return err
+	}
+	response, err := identityRoundTrip(ctx, client.transport, Request{Method: "POST", Path: "/v1/identity/password-resets/accept", Headers: map[string]string{HeaderRequestID: requestID, HeaderIdentityClientIP: clientIP}, Body: encoded})
+	if err != nil {
+		return err
+	}
+	if response.Status != 204 {
+		return identityProblemError("identityAcceptPasswordReset", response)
+	}
+	return nil
+}
+func (client *IdentityServiceClient) ListIdentityAuditEvents(ctx context.Context, sessionHandle, tenantID, requestID string, pageSize int, pageToken string) (IdentityAuditPage, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return IdentityAuditPage{}, err
+	}
+	return browser.ListIdentityAuditEvents(ctx, tenantID, requestID, pageSize, pageToken)
+}
+func (client *IdentityServiceClient) ListControlPlaneAuditEvents(ctx context.Context, sessionHandle, tenantID, requestID string, pageSize int, pageToken string) (ControlPlaneAuditPage, error) {
+	browser, err := client.browserSessionClient(sessionHandle)
+	if err != nil {
+		return ControlPlaneAuditPage{}, err
+	}
+	return browser.ListControlPlaneAuditEvents(ctx, tenantID, requestID, pageSize, pageToken)
 }

@@ -1,0 +1,691 @@
+--- services/control-plane/migrations/product/000113/catalog/schema-000112.json
++++ services/control-plane/migrations/product/000114/catalog/schema-000113.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000113",
++  "schema_head": "000114",
+@@ -31470,0 +31471,412 @@
++    },
++    {
++      "migration_id": "000114",
++      "sql_sha256": "sha256:191d0db216a7e389f6ae7bc5a1922c6f6845a795226f2ebd158a76c24d74851d",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 97,
++          "sha256": "sha256:b8d19d4e262cdff5557c6492e03137d0b9094d1dac9f560188fd4f499de9b21c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:audit_events",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 97,
++          "end": 415,
++          "sha256": "sha256:06917ba572111c5b1890657e81e5576a24f962a61378a1aac18916064d219669",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:audit_events",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 415,
++          "end": 514,
++          "sha256": "sha256:5c12a9b9b4e1aa83988080bc3eb6b1c36774416c4a64668ac7c84d63b307a566",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:audit_events",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 514,
++          "end": 814,
++          "sha256": "sha256:acdcbdcda31ffb2a91ece5ff0a49595801a6df104c0f2a33a71301cd331549a7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:audit_events",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 814,
++          "end": 3623,
++          "sha256": "sha256:3fe515556926c5ff07817e9b050499c987df38095e9fdfe4ae9307566bbc5573",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:invitations",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 3623,
++          "end": 3722,
++          "sha256": "sha256:ad80253bf49a16abf0da34bdab75b5da96797b7748151c6bc62e94c99f62ee9c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents_identity/unquoted:invitations/unquoted:invitations_tenant_page_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 3722,
++          "end": 3825,
++          "sha256": "sha256:f9b554b470977e394ce00a098d0a122dce87654683d8e15c9104872ad2f86c3d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents_identity/unquoted:invitations/unquoted:invitations_pending_expiry_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 3825,
++          "end": 3910,
++          "sha256": "sha256:4f26e56bceeb813f2a717b4aa2a4a7284bc83f39f96220baed73db308d54f36b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:invitations",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 3910,
++          "end": 3977,
++          "sha256": "sha256:b5bac0d9e653e60684f4cbe5db7c343048d5ff3b8a40de66e90af3fed9f4e831",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:invitations",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 3977,
++          "end": 4067,
++          "sha256": "sha256:34f0fee059b68d549522dcd681846b30bf284073b15c5a0ab315076146a5a516",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:invitations",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 10,
++          "start": 4067,
++          "end": 5190,
++          "sha256": "sha256:ef9fd737e19579a91b7a477c7676d78c77262ee5025109bcb8e3e3a95a2e17a1",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:invitation_domain_allowed(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 11,
++          "start": 5190,
++          "end": 5292,
++          "sha256": "sha256:b158966f0cb76ce1e3fc210d63ed63ee50ee1bc645d4d5e1b80cf0dc5b2ca8a7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:invitation_domain_allowed(unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 12,
++          "start": 5292,
++          "end": 10448,
++          "sha256": "sha256:c608d9761148bbe0e9dc0bbf9941ba1d917abb2976b99f8b37acb18637984a4c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:create_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 13,
++          "start": 10448,
++          "end": 25425,
++          "sha256": "sha256:b031793fd1f22d971b53e91c31b798d6cc0371c78f4a6af83972d998e93c752b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_identity_invitation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 14,
++          "start": 25425,
++          "end": 28234,
++          "sha256": "sha256:6b0c5b88c0d646a8b87134b73235f2dec29f20523ef4de2cb2774173fe3562d3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:prepare_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 15,
++          "start": 28234,
++          "end": 33491,
++          "sha256": "sha256:4877d538586ce9366f32edce76ae00d40d953777ce396f010eae444a73d0be66",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:finish_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 16,
++          "start": 33491,
++          "end": 34855,
++          "sha256": "sha256:9ed97d422c49f82356f3c6033298bc0daca1164009005d6dca9149b8b81f5f67",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_invitations(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 17,
++          "start": 34855,
++          "end": 36973,
++          "sha256": "sha256:7b23da34161281bbc1c9ddcb928eb11935df715a3136a917801f1a0ce38ea695",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:revoke_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 18,
++          "start": 36973,
++          "end": 37089,
++          "sha256": "sha256:49794dc1c2d2903c4561b9d8fa9c0c59c23a0fb8119254a84ee4c5f2d6b33f97",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents/unquoted:accept_identity_invitation_v1(unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 19,
++          "start": 37089,
++          "end": 37239,
++          "sha256": "sha256:6ef1708aa3eb5e1b945d2c92d6045bf51e60d84d75a4ca7c86f264ef8c3fb23a",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:create_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 20,
++          "start": 37239,
++          "end": 37342,
++          "sha256": "sha256:fe10511ed01a342cf721016371c2e1899fd5ee500477206573c60418f3d89d7b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_invitations(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 21,
++          "start": 37342,
++          "end": 37449,
++          "sha256": "sha256:3a3cdec809cf815ad98a5d714a70a5f24a85ec6d04c89e536376bff25ddd8c99",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:revoke_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 22,
++          "start": 37449,
++          "end": 37553,
++          "sha256": "sha256:2e26f5a18b4946c1bf37238416e9f27c8f381c24be3d576d3c2d00099cd3601f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:prepare_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 23,
++          "start": 37553,
++          "end": 37710,
++          "sha256": "sha256:871e8c498b536809637c117d2c1c8bbd2f564c908a63715ca3700e115d0ef7ea",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:finish_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 24,
++          "start": 37710,
++          "end": 37884,
++          "sha256": "sha256:8af31e239433bd840da463a4c7122304e43f54108f854ece82aaccfc313f8fd7",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:create_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 25,
++          "start": 37884,
++          "end": 38011,
++          "sha256": "sha256:fd08154ffe6af7e74d29fe7374560368f67a4bfa5d28e58bed58057c8954d36f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_invitations(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 26,
++          "start": 38011,
++          "end": 38142,
++          "sha256": "sha256:69e9a558b1ba610dcca32df6d945e211f9de8acc340a17ed70eca7b49b5314d9",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:revoke_invitation(unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 27,
++          "start": 38142,
++          "end": 38270,
++          "sha256": "sha256:85de088e3b2dac1ce02d0b72fbc1e295e79322f6027029bf1d3d2daddd7519b3",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:prepare_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 28,
++          "start": 38270,
++          "end": 38451,
++          "sha256": "sha256:646f700b81ad1dd2e3a601f9087b68f2939b033b06e050ca890b0a008dd2b787",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:finish_invitation_accept(unquoted:bytea,unquoted:text,unquoted:bytea,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text,unquoted:text)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        }
++      ]
+@@ -47566,0 +47979,272 @@
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "invitations"
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "invitations_tenant_page_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents_identity",
++        "name": "invitations"
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "invitations_pending_expiry_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents_identity",
++        "name": "invitations"
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "invitation_domain_allowed",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "create_invitation",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "accept_identity_invitation_v1",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "prepare_invitation_accept",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "finish_invitation_accept",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "list_invitations",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "revoke_invitation",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"

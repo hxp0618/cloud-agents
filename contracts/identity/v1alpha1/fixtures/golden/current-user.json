@@ -1,0 +1,6 @@
+{
+  "id": "user-alpha",
+  "email": "admin@example.com",
+  "displayName": "Admin Alpha",
+  "displayRoles": ["platform.admin"]
+}

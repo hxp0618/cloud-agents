@@ -8,11 +8,10 @@ import {
 } from "../../src/app/policies";
 
 describe("worker release form mapping", () => {
-  it("trims release metadata and preserves selected architectures", () => {
+  it("derives the release ID from the name and preserves selected architectures", () => {
     expect(
       workerReleaseRegisterRequestFrom({
         ...workerReleaseForm(),
-        releaseId: " worker-v1 ",
         releaseName: " Worker v1 ",
         imageRepository: " registry.example/worker ",
         releaseDigest: ` ${"sha256:"}${"a".repeat(64)} `,
@@ -48,7 +47,6 @@ describe("policy form defaults", () => {
       maxLeaseTtlSeconds: "3600",
     });
     expect(storagePolicyFormFrom()).toEqual({
-      policyId: "",
       policyName: "",
       userSummary: "",
       workspaceCapacityGiB: "20",

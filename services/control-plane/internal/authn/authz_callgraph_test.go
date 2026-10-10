@@ -52,9 +52,12 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/capability_catalog.go:DurableCoordinationService.ListSkillBundles:package.WithVerifiedOperation",
 		"internal/authz/rbac.go:<package>:package.VerifiedOperation",
 		"internal/authz/rbac.go:<package>:package.VerifiedOperationBinder",
+		"internal/authz/rbac.go:EvaluateTokenScopes:package.Snapshot",
 		"internal/authz/rbac.go:VerifiedOperation.Actor:package.VerifiedOperation",
 		"internal/authz/rbac.go:VerifiedOperation.Execute:package.Snapshot",
 		"internal/authz/rbac.go:VerifiedOperation.Execute:package.VerifiedOperation",
+		"internal/authz/rbac.go:VerifiedOperation.ExecuteProjectSelector:package.Snapshot",
+		"internal/authz/rbac.go:VerifiedOperation.ExecuteProjectSelector:package.VerifiedOperation",
 		"internal/authz/rbac.go:VerifiedOperation.selfBound:package.VerifiedOperation",
 		"internal/authz/rbac.go:VerifiedOperationBinder.Bind:package.VerifiedOperation",
 		"internal/authz/rbac.go:VerifiedOperationBinder.Bind:package.VerifiedOperation",
@@ -62,6 +65,7 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/authz/rbac.go:WithVerifiedOperation:package.VerifiedOperationBinder",
 		"internal/authz/rbac.go:WithVerifiedOperation:package.VerifiedOperationBinder",
 		"internal/authz/rbac.go:evaluate:package.Snapshot",
+		"internal/authz/rbac.go:evaluateTokenPermission:package.Snapshot",
 		"internal/store/postgres/deployment_target.go:DurableCoordinationService.BeginDeploymentTargetCleanup:bridge.executeVerifiedRBACOperation",
 		"internal/store/postgres/deployment_target.go:DurableCoordinationService.BeginDeploymentTargetCleanup:method.Actor",
 		"internal/store/postgres/deployment_target.go:DurableCoordinationService.BeginDeploymentTargetCleanup:method.Bind",
@@ -134,6 +138,12 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/durable_project_create.go:DurableCoordinationService.CreateProjectDurable:method.Bind",
 		"internal/store/postgres/durable_project_create.go:DurableCoordinationService.CreateProjectDurable:package.VerifiedOperationBinder",
 		"internal/store/postgres/durable_project_create.go:DurableCoordinationService.CreateProjectDurable:package.WithVerifiedOperation",
+		"internal/store/postgres/list_my_projects.go:DurableCoordinationService.ListMyProjects:method.Actor",
+		"internal/store/postgres/list_my_projects.go:DurableCoordinationService.ListMyProjects:method.Bind",
+		"internal/store/postgres/list_my_projects.go:DurableCoordinationService.ListMyProjects:package.VerifiedOperationBinder",
+		"internal/store/postgres/list_my_projects.go:DurableCoordinationService.ListMyProjects:package.WithVerifiedOperation",
+		"internal/store/postgres/list_my_projects.go:executeMyProjectsSelection:method.ExecuteProjectSelector",
+		"internal/store/postgres/list_my_projects.go:executeMyProjectsSelection:package.VerifiedOperation",
 		"internal/store/postgres/environment_profile.go:DurableCoordinationService.CreateEnvironmentProfile:bridge.executeVerifiedRBACOperation",
 		"internal/store/postgres/environment_profile.go:DurableCoordinationService.CreateEnvironmentProfile:method.Actor",
 		"internal/store/postgres/environment_profile.go:DurableCoordinationService.CreateEnvironmentProfile:method.Bind",
@@ -166,6 +176,7 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/foundation_runtime_profile.go:DurableCoordinationService.withFoundationOperation:method.Bind",
 		"internal/store/postgres/foundation_runtime_profile.go:DurableCoordinationService.withFoundationOperation:package.VerifiedOperationBinder",
 		"internal/store/postgres/foundation_runtime_profile.go:DurableCoordinationService.withFoundationOperation:package.WithVerifiedOperation",
+		"internal/store/postgres/identity_token_authorization.go:TokenAuthorizationService.AuthorizeTenantToken:package.EvaluateTokenScopes",
 		"internal/store/postgres/managed_agent_execution.go:DurableCoordinationService.GetManagedAgentExecution:bridge.executeVerifiedRBACOperation",
 		"internal/store/postgres/managed_agent_execution.go:DurableCoordinationService.GetManagedAgentExecution:method.Bind",
 		"internal/store/postgres/managed_agent_execution.go:DurableCoordinationService.GetManagedAgentExecution:package.VerifiedOperationBinder",
@@ -368,8 +379,15 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/tenant_read.go:DurableCoordinationService.GetPlatformTenant:package.WithVerifiedOperation",
 		"internal/store/postgres/rbac.go:executeVerifiedRBACOperation:method.Actor",
 		"internal/store/postgres/rbac.go:executeVerifiedRBACOperation:method.Execute",
-		"internal/store/postgres/rbac.go:executeVerifiedRBACOperation:package.Snapshot",
 		"internal/store/postgres/rbac.go:executeVerifiedRBACOperation:package.VerifiedOperation",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
+		"internal/store/postgres/rbac.go:tenantReadHandle.authorizationSnapshot:package.Snapshot",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.BindRole:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.BindRole:package.WithVerifiedOperation",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.BindRole:bridge.withKnownScopeMutation",
@@ -386,11 +404,42 @@ func TestProductionAuthzAuthorityCallGraphClosure(t *testing.T) {
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.transitionMembership:package.WithVerifiedOperation",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.transitionMembership:bridge.withStoredScopeMutation",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withKnownScopeMutation:method.Bind",
+		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withKnownScopeMutation:method.Actor",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withKnownScopeMutation:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withKnownScopeMutation:bridge.executeVerifiedRBACOperation",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:method.Bind",
+		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:method.Actor",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:package.VerifiedOperationBinder",
 		"internal/store/postgres/rbac_mutation.go:RBACMutationService.withStoredScopeMutation:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:bridge.executeServiceAccountCreate",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:method.Actor",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:method.Bind",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:method.Bind",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:package.VerifiedOperationBinder",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:package.VerifiedOperationBinder",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:package.WithVerifiedOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Create:package.WithVerifiedOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Disable:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Disable:method.Actor",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Disable:method.Bind",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Disable:package.VerifiedOperationBinder",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Disable:package.WithVerifiedOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.List:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.List:method.Bind",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.List:package.VerifiedOperationBinder",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.List:package.WithVerifiedOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Rotate:bridge.executeVerifiedRBACOperation",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Rotate:method.Actor",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Rotate:method.Bind",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Rotate:package.VerifiedOperationBinder",
+		"internal/store/postgres/service_account.go:ServiceAccountStore.Rotate:package.WithVerifiedOperation",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:method.Actor",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:method.Actor",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:method.Execute",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:method.Execute",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:package.VerifiedOperation",
+		"internal/store/postgres/service_account_authorization.go:executeServiceAccountCreate:package.VerifiedOperation",
+		"internal/store/postgres/service_account_token_authorization.go:TokenAuthorizationService.AuthorizePrincipalToken:package.EvaluateTokenScopes",
 		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:bridge.executeVerifiedRBACOperation",
 		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:method.Bind",
 		"internal/store/postgres/worker_release.go:DurableCoordinationService.ListWorkerReleases:package.VerifiedOperationBinder",
@@ -432,6 +481,16 @@ func unreviewedIndirect(operation *az.VerifiedOperation) {
 	_ = execute
 }`)
 		assertAuthorityFixtureAdds(t, root, baseline, "internal/store/postgres/indirect.go:unreviewedIndirect:method.Execute")
+	})
+
+	t.Run("token scope evaluator", func(t *testing.T) {
+		root, baseline := newAuthorityScannerFixture(t)
+		writeAuthorityScannerFixture(t, root, "internal/store/postgres/token_bypass.go", `package postgres
+import az "github.com/hxp0618/cloud-agents/services/control-plane/internal/authz"
+func unreviewedTokenScopes(snapshot az.Snapshot) {
+	_, _ = az.EvaluateTokenScopes(snapshot, nil, nil)
+}`)
+		assertAuthorityFixtureAdds(t, root, baseline, "internal/store/postgres/token_bypass.go:unreviewedTokenScopes:package.EvaluateTokenScopes")
 	})
 
 	t.Run("cross-file dynamic dispatch", func(t *testing.T) {
@@ -501,6 +560,12 @@ internal/authz/rbac.go:<package>:surface.const.ScopeTenant
 internal/authz/rbac.go:<package>:surface.field.Candidate.Binding
 internal/authz/rbac.go:<package>:surface.field.Candidate.Membership
 internal/authz/rbac.go:<package>:surface.field.Catalog.Roles
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.RoleName
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.RoleVersion
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.State
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.Subject
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.SubjectHash
+internal/authz/rbac.go:<package>:surface.field.GlobalRoleBindingFact.UserID
 internal/authz/rbac.go:<package>:surface.field.MembershipFact.ExpiresAt
 internal/authz/rbac.go:<package>:surface.field.MembershipFact.Scope
 internal/authz/rbac.go:<package>:surface.field.MembershipFact.State
@@ -528,14 +593,17 @@ internal/authz/rbac.go:<package>:surface.field.ScopePath.ProjectID
 internal/authz/rbac.go:<package>:surface.field.ScopePath.TenantID
 internal/authz/rbac.go:<package>:surface.field.ScopeRef.ID
 internal/authz/rbac.go:<package>:surface.field.ScopeRef.Level
+internal/authz/rbac.go:<package>:surface.field.Snapshot.Application
 internal/authz/rbac.go:<package>:surface.field.Snapshot.Candidates
 internal/authz/rbac.go:<package>:surface.field.Snapshot.Catalog
+internal/authz/rbac.go:<package>:surface.field.Snapshot.GlobalBinding
 internal/authz/rbac.go:<package>:surface.field.Snapshot.Scope
 internal/authz/rbac.go:<package>:surface.field.Snapshot.ScopeResolved
 internal/authz/rbac.go:<package>:surface.field.Snapshot.TenantID
 internal/authz/rbac.go:<package>:surface.field.SubjectRef.Issuer
 internal/authz/rbac.go:<package>:surface.field.SubjectRef.Kind
 internal/authz/rbac.go:<package>:surface.field.SubjectRef.Subject
+internal/authz/rbac.go:<package>:surface.func.EvaluateTokenScopes
 internal/authz/rbac.go:<package>:surface.func.WithVerifiedOperation
 internal/authz/rbac.go:<package>:surface.method.Catalog.Role
 internal/authz/rbac.go:<package>:surface.method.Catalog.Validate
@@ -547,9 +615,11 @@ internal/authz/rbac.go:<package>:surface.method.SubjectRef.Digest
 internal/authz/rbac.go:<package>:surface.method.SubjectRef.Validate
 internal/authz/rbac.go:<package>:surface.method.VerifiedOperation.Actor
 internal/authz/rbac.go:<package>:surface.method.VerifiedOperation.Execute
+internal/authz/rbac.go:<package>:surface.method.VerifiedOperation.ExecuteProjectSelector
 internal/authz/rbac.go:<package>:surface.method.VerifiedOperationBinder.Bind
 internal/authz/rbac.go:<package>:surface.type.Candidate
 internal/authz/rbac.go:<package>:surface.type.Catalog
+internal/authz/rbac.go:<package>:surface.type.GlobalRoleBindingFact
 internal/authz/rbac.go:<package>:surface.type.MembershipFact
 internal/authz/rbac.go:<package>:surface.type.Role
 internal/authz/rbac.go:<package>:surface.type.RoleBindingFact
@@ -775,14 +845,14 @@ func authoritySymbol(object types.Object) string {
 				return "package." + object.Name()
 			}
 		case *types.Func:
-			if object.Name() == "WithVerifiedOperation" {
+			if object.Name() == "WithVerifiedOperation" || object.Name() == "EvaluateTokenScopes" {
 				return "package." + object.Name()
 			}
 			if signature, ok := object.Type().(*types.Signature); ok && signature.Recv() != nil {
 				switch object.Name() {
-				case "Bind", "Actor", "Execute":
+				case "Bind", "Actor", "Execute", "ExecuteProjectSelector":
 					if receiverNamedTypeName(signature.Recv().Type()) == map[string]string{
-						"Bind": "VerifiedOperationBinder", "Actor": "VerifiedOperation", "Execute": "VerifiedOperation",
+						"Bind": "VerifiedOperationBinder", "Actor": "VerifiedOperation", "Execute": "VerifiedOperation", "ExecuteProjectSelector": "VerifiedOperation",
 					}[object.Name()] {
 						return "method." + object.Name()
 					}
@@ -793,7 +863,7 @@ func authoritySymbol(object types.Object) string {
 	if packagePath == controlPlaneImportPath+"/internal/store/postgres" {
 		if function, ok := object.(*types.Func); ok {
 			switch function.Name() {
-			case "executeVerifiedRBACOperation", "transitionMembership", "withKnownScopeMutation", "withStoredScopeMutation":
+			case "executeServiceAccountCreate", "executeVerifiedRBACOperation", "transitionMembership", "withKnownScopeMutation", "withStoredScopeMutation":
 				return "bridge." + function.Name()
 			}
 		}
@@ -926,6 +996,7 @@ type Snapshot struct{}
 type VerifiedOperationBinder struct{}
 type VerifiedOperation struct{}
 func WithVerifiedOperation(principal any, callback func(*VerifiedOperationBinder) error) error { return nil }
+func EvaluateTokenScopes(Snapshot, any, any) ([]string, error) { return nil, nil }
 func (*VerifiedOperationBinder) Bind(string, ScopeRef, string) (*VerifiedOperation, error) { return nil, nil }
 func (*VerifiedOperation) Actor() (any, bool) { return nil, false }
 func (*VerifiedOperation) Execute(Snapshot, any, func() error) error { return nil }

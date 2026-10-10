@@ -101,11 +101,11 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) ServeHTTP(writer http.Respo
 	if request.Method != http.MethodGet {
 		projectPermission = "projects.act"
 	}
-	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission}); err != nil {
+	if _, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: projectPermission}); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
+	if _, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission}); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -151,7 +151,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) listWorkers(writer http.Res
 			return
 		}
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -194,7 +194,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) previewAdminUpgrade(writer 
 			return
 		}
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -224,12 +224,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) adminUpgrade(writer http.Re
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	readPrincipal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	readPrincipal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	actPrincipal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	actPrincipal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -281,7 +281,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) adminUpgrade(writer http.Re
 	}
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
-	actPrincipal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	actPrincipal, err = verifyHTTPRequestAccessToken(completionContext, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -315,7 +315,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -335,7 +335,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 		writeManagedHostEnvironmentLease(writer, http.StatusOK, requestID, started.Snapshot)
 		return
 	}
-	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err = verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -349,7 +349,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) upgrade(writer http.Respons
 	completion := server.completeEnvironmentDeployment(request.Context(), tenantID, projectID, started.Snapshot, target, true)
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), deploymentTargetCompletionTimeout)
 	defer cancel()
-	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err = verifyHTTPRequestAccessToken(completionContext, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -394,7 +394,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) list(writer http.ResponseWr
 			return
 		}
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -424,7 +424,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) create(writer http.Response
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -454,7 +454,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) deployEnvironment(ctx conte
 	if server.dockerCredentials == nil && server.kubernetesCredentials == nil && server.sshCredentials == nil || result.ObservedPhase != "provisioning" && result.ObservedPhase != "failed" {
 		return result, nil
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 	}
@@ -465,7 +465,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) deployEnvironment(ctx conte
 	completion := server.completeEnvironmentDeployment(ctx, tenantID, projectID, result, target, false)
 	completionContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), deploymentTargetCompletionTimeout)
 	defer cancel()
-	principal, err = server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err = verifyHTTPRequestAccessToken(completionContext, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 	}
@@ -477,7 +477,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) get(writer http.ResponseWri
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -526,7 +526,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminateEnvironment(ctx co
 	var result internalmanagedhost.Snapshot
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		principal, verifyErr := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+		principal, verifyErr := verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 		if verifyErr != nil {
 			return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 		}
@@ -544,7 +544,7 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminateEnvironment(ctx co
 		return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 	}
 	if result.TargetID != "" && result.ProviderCredentialRef != "" && (result.WorkerEndpoint != "" || server.dockerCredentials != nil || server.kubernetesCredentials != nil || server.sshCredentials != nil) {
-		readPrincipal, verifyErr := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+		readPrincipal, verifyErr := verifyHTTPRequestAccessToken(cleanupContext, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 		if verifyErr != nil {
 			return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 		}
@@ -566,7 +566,11 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminateEnvironment(ctx co
 			if server.kubernetesCredentials == nil {
 				return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 			}
-			cleanupErr = server.kubernetesCredentials.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, expectedGeneration))
+			kubernetes, bindErr := server.kubernetesCredentials.ForTarget(cleanupContext, tenantID, projectID, target.TargetID)
+			cleanupErr = bindErr
+			if bindErr == nil {
+				cleanupErr = kubernetes.CleanupWorker(cleanupContext, target.Endpoint, target.CredentialRef, kubernetesDeployRequest(tenantID, projectID, result, expectedGeneration))
+			}
 		case "ssh":
 			if server.sshCredentials == nil {
 				return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
@@ -584,12 +588,12 @@ func (server *ManagedHostEnvironmentLeaseHTTPServer) terminateEnvironment(ctx co
 	} else if result.WorkerEndpoint != "" {
 		return internalmanagedhost.Snapshot{}, errEnvironmentCleanupUnavailable
 	}
-	completionPrincipal, verifyErr := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), deploymentTargetCompletionTimeout)
+	defer cancelCompletion()
+	completionPrincipal, verifyErr := verifyHTTPRequestAccessToken(completionContext, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if verifyErr != nil {
 		return internalmanagedhost.Snapshot{}, errEnvironmentActuationAuthentication
 	}
-	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), deploymentTargetCompletionTimeout)
-	defer cancelCompletion()
 	return server.store.CompleteManagedHostEnvironmentLeaseTermination(completionContext, tenantID, completionPrincipal, internalmanagedhost.CompleteEnvironmentLeaseTerminationInput{Scope: result.Scope, LeaseID: result.LeaseID, ExpectedGeneration: result.Generation})
 }
 func managedHostEnvironmentLeaseErrorStatus(err error) (int, string) {

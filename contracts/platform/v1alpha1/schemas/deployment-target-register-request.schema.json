@@ -10,6 +10,31 @@
     "targetName": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
     "targetKind": { "enum": ["docker", "kubernetes", "ssh"] },
     "endpoint": { "type": "string", "format": "uri", "pattern": "^(?:https|ssh)://[^/?#[:space:]@]+/?$", "maxLength": 2048 },
-    "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
-  }
+    "credentialRef": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "kubernetesCredential": {
+      "description": "Write-only connection credential from one selected kubeconfig context. Fields carry the kubeconfig base64 data values; the endpoint is that context's cluster server.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["certificateAuthorityData"],
+      "properties": {
+        "certificateAuthorityData": { "$ref": "#/$defs/base64Data" },
+        "token": { "type": "string", "minLength": 1, "maxLength": 16384, "pattern": "^[\\x21-\\x7e]+$" },
+        "clientCertificateData": { "$ref": "#/$defs/base64Data" },
+        "clientKeyData": { "$ref": "#/$defs/base64Data" }
+      },
+      "oneOf": [
+        { "required": ["token"], "not": { "anyOf": [{ "required": ["clientCertificateData"] }, { "required": ["clientKeyData"] }] } },
+        { "required": ["clientCertificateData", "clientKeyData"], "not": { "required": ["token"] } }
+      ]
+    }
+  },
+  "if": { "required": ["kubernetesCredential"] },
+  "then": { "properties": { "targetKind": { "const": "kubernetes" }, "endpoint": { "pattern": "^https://[^/?#[:space:]@]+/?$" } } },
+  "$defs": {
+    "base64Data": { "type": "string", "minLength": 4, "maxLength": 65536, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$" }
+  },
+  "x-cloud-agents-semantic-constraints": [
+    "kubernetesCredential is accepted only on registration, is sealed by the Control Plane, and never appears in any response, audit event, log, or error",
+    "with kubernetesCredential the Control Plane does not read <credentialRef>.ca.crt or <credentialRef>.token; credentialRef still names the deployment-owned non-secret descriptors"
+  ]
 }

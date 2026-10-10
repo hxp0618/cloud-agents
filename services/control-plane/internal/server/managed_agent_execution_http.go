@@ -141,7 +141,7 @@ func (server *ManagedAgentExecutionHTTPServer) list(writer http.ResponseWriter, 
 			return
 		}
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -210,7 +210,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -222,7 +222,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 			principal = nil
 			return next, nil
 		}
-		next, verifyErr := server.verifier.Verify(bearer, verificationRequest)
+		next, verifyErr := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, verificationRequest)
 		if verifyErr != nil {
 			return nil, errManagedAgentExecutionAuthentication
 		}
@@ -243,7 +243,7 @@ func (server *ManagedAgentExecutionHTTPServer) execute(writer http.ResponseWrite
 }
 
 func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string) {
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -259,7 +259,7 @@ func (server *ManagedAgentExecutionHTTPServer) get(writer http.ResponseWriter, r
 }
 
 func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer string, messageIndex int) {
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -276,7 +276,7 @@ func (server *ManagedAgentExecutionHTTPServer) downloadArtifact(writer http.Resp
 		return
 	}
 	principalSource := internalmanagedagent.VerifiedPrincipalSource(func() (*authn.VerifiedPrincipal, error) {
-		return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+		return verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	})
 	artifact, err := server.runner.ReadArtifact(request.Context(), principalSource, internalmanagedagent.RuntimeArtifactReadInput{
 		RuntimeExecutionReference: runtimeExecutionReference(tenantID, projectID, sessionID, turnID, executionID, execution.Generation),
@@ -319,7 +319,7 @@ func (server *ManagedAgentExecutionHTTPServer) cancel(writer http.ResponseWriter
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -347,7 +347,7 @@ func (server *ManagedAgentExecutionHTTPServer) interrupt(writer http.ResponseWri
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -365,7 +365,7 @@ func (server *ManagedAgentExecutionHTTPServer) interrupt(writer http.ResponseWri
 }
 
 func (server *ManagedAgentExecutionHTTPServer) resolveInteraction(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, executionID, requestID, bearer, action string) {
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil || principal == nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -411,7 +411,7 @@ func (server *ManagedAgentExecutionHTTPServer) reconcileSideEffect(writer http.R
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil || principal == nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return

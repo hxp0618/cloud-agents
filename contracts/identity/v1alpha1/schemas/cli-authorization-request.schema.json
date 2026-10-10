@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/cli-authorization-request.schema.json",
+  "title": "CliAuthorizationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pending",
+    "application"
+  ],
+  "properties": {
+    "pending": {
+      "type": "boolean"
+    },
+    "application": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    }
+  }
+}

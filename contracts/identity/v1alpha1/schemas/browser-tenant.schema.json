@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/browser-tenant.schema.json",
+  "title": "BrowserTenant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "displayRoles"],
+  "properties": {
+    "id": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "displayRoles": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["tenant.admin"]
+      }
+    }
+  },
+  "description": "Authorized tenant selector projection; displayRoles are not authorization authority. Projects are listed through the selected tenant's Control Plane API."
+}

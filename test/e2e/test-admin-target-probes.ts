@@ -9,13 +9,27 @@ import {
   type DeploymentTargetRegisterRequest,
   type AdminDeniedWriteEvent,
 } from "../../sdk/typescript/src/platform";
+import { readPrivateAutomationToken } from "./private-automation-token";
 
 // Probe only: supply real target endpoints and server-mounted credential references, never secret bytes.
-const [endpoint, adminTokenFile, userTokenFile, tenant, project, targetsFile, output] =
+const [endpoint, adminTokenFile, deniedAdminTokenFile, tenant, project, targetsFile, output] =
   process.argv.slice(2);
 assert.ok(
-  endpoint && adminTokenFile && userTokenFile && tenant && project && targetsFile && output,
-  "usage: bun test/e2e/test-admin-target-probes.ts ENDPOINT ADMIN_TOKEN_FILE USER_TOKEN_FILE TENANT PROJECT TARGETS_JSON NEW_OUTPUT_DIR",
+  endpoint && adminTokenFile && deniedAdminTokenFile && tenant && project && targetsFile && output,
+  "usage: bun test/e2e/test-admin-target-probes.ts HTTPS_ENDPOINT ADMIN_AUTOMATION_TOKEN ADMIN_VIEWER_AUTOMATION_TOKEN TENANT PROJECT TARGETS_JSON NEW_OUTPUT_DIR",
+);
+const endpointURL = new URL(endpoint);
+assert.ok(
+  endpointURL.protocol === "https:" &&
+    (endpointURL.hostname === "127.0.0.1" ||
+      endpointURL.hostname === "localhost" ||
+      endpointURL.hostname.endsWith(".localhost")) &&
+    endpointURL.pathname === "/" &&
+    !endpointURL.search &&
+    !endpointURL.hash &&
+    !endpointURL.username &&
+    !endpointURL.password,
+  "Requires an owned HTTPS loopback dev stack",
 );
 const bodies: DeploymentTargetRegisterRequest[] = JSON.parse(readFileSync(targetsFile, "utf8"));
 assert.ok(Array.isArray(bodies));
@@ -23,8 +37,8 @@ assert.equal(bodies.length, 3);
 assert.deepEqual(bodies.map((body) => body.targetKind).sort(), ["docker", "kubernetes", "ssh"]);
 assert.equal(new Set(bodies.map((body) => body.targetId)).size, 3);
 for (const body of bodies) encodeDeploymentTargetRegisterRequest(body);
-const admin = createHTTPClient(endpoint, readFileSync(adminTokenFile, "utf8").trim());
-const user = createHTTPClient(endpoint, readFileSync(userTokenFile, "utf8").trim());
+const admin = createHTTPClient(endpoint, readPrivateAutomationToken(adminTokenFile));
+const deniedAdmin = createHTTPClient(endpoint, readPrivateAutomationToken(deniedAdminTokenFile));
 const requestId = () => `probe-check-${randomUUID()}`;
 const signal = () => AbortSignal.timeout(30_000);
 const results: object[] = [];
@@ -51,6 +65,7 @@ const save = (complete: boolean) =>
     ) + "\n",
   );
 save(false);
+await deniedAdmin.getAdminProject(tenant, project, requestId(), signal());
 
 // Existing resources are out of scope. Resolve every target before the first write.
 for (const body of bodies) {
@@ -98,7 +113,14 @@ for (const body of bodies) {
     }
   };
   await forbid("register", (correlation) =>
-    user.registerAdminDeploymentTarget(tenant, project, correlation, randomUUID(), body, signal()),
+    deniedAdmin.registerAdminDeploymentTarget(
+      tenant,
+      project,
+      correlation,
+      randomUUID(),
+      body,
+      signal(),
+    ),
   );
   const registrationKey = randomUUID();
   const registered = (
@@ -126,7 +148,7 @@ for (const body of bodies) {
     registered,
   );
   await forbid("probe", (correlation) =>
-    user.probeAdminDeploymentTarget(
+    deniedAdmin.probeAdminDeploymentTarget(
       tenant,
       project,
       id,
@@ -196,10 +218,10 @@ for (const body of bodies) {
     );
   }
   await forbid("get", () =>
-    user.getAdminDeploymentTarget(tenant, project, id, requestId(), signal()),
+    deniedAdmin.getAdminDeploymentTarget(tenant, project, id, requestId(), signal()),
   );
   await forbid("operations", () =>
-    user.listAdminDeploymentTargetOperations(
+    deniedAdmin.listAdminDeploymentTargetOperations(
       tenant,
       project,
       id,
@@ -210,7 +232,7 @@ for (const body of bodies) {
     ),
   );
   await forbid("audit", () =>
-    user.listAdminDeploymentTargetAuditEvents(
+    deniedAdmin.listAdminDeploymentTargetAuditEvents(
       tenant,
       project,
       id,
@@ -237,7 +259,7 @@ for (const body of bodies) {
   });
   save(false);
   process.stdout.write(
-    `${body.targetKind}: ready, replay verified, Operation/Audit persisted, user scope denied\n`,
+    `${body.targetKind}: ready, replay verified, Operation/Audit persisted, Admin viewer scope denied\n`,
   );
 }
 save(true);

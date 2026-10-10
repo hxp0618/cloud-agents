@@ -27,6 +27,11 @@ const artifact = (path: string, data = read(path)) => ({
   size_bytes: data.length,
   sha256: digest(data),
 });
+const catalogProfileV1 = "cloud-agents-platform-catalog/v1";
+const catalogProfileV2 = "cloud-agents-platform-catalog/v2";
+const authorityV2Path = "services/control-plane/migrations/catalog/authority-v2.json";
+const identityRoleBootstrapPath =
+  "services/control-plane/migrations/bootstrap/roles_identity_service.sql";
 const latest = readdirSync(resolve(root, "services/control-plane/migrations"))
   .map((name) => /^(?<version>[0-9]{6})_(?<name>.+)\.sql$/u.exec(name))
   .filter((match) => match?.groups && Number(match.groups.version) >= 15)
@@ -43,6 +48,12 @@ const priorCatalog = prior.schema_bundle.migrations.at(-1).catalog_contract;
 // Catalogs are stored as patches; --check also replays the committed head.
 const catalogs = readProductCatalogs(root, mode === "--check" ? [previous, current] : [previous]);
 const catalog = JSON.parse(catalogs.get(previous)!.toString());
+const existingTargets = new Set<string>(
+  catalog.source_descriptors
+    .flatMap((source: any) => source.statements)
+    .map((statement: any) => statement.classification)
+    .map((classification: any) => classification.target_identity),
+);
 const existingFunctionTargets = new Set<string>(
   catalog.source_descriptors
     .flatMap((source: any) => source.statements)
@@ -64,11 +75,47 @@ catalog.source_descriptors.push({
   sql_sha256: digest(sql),
   statements,
 });
-const additions = statements
-  .filter(({ classification }) =>
+const introducesIdentitySchema = statements.some(
+  ({ classification }) =>
     classification.command === "CREATE" &&
-    classification.object_kind === "FUNCTION" &&
-    !existingFunctionTargets.has(classification.target_identity))
+    classification.object_kind === "SCHEMA" &&
+    classification.target_identity === "schema:unquoted:cloud_agents_identity",
+);
+const usesIdentitySchema = statements.some(({ classification }) =>
+  classification.target_identity.includes("unquoted:cloud_agents_identity"),
+);
+assert.ok(
+  catalog.format_version === catalogProfileV1 || catalog.format_version === catalogProfileV2,
+  "unsupported predecessor catalog profile",
+);
+const predecessorUsesCatalogV2 = catalog.format_version === catalogProfileV2;
+const usesCatalogV2 = predecessorUsesCatalogV2 || introducesIdentitySchema;
+const introducesCatalogV2 = !predecessorUsesCatalogV2 && usesCatalogV2;
+assert.ok(!usesIdentitySchema || usesCatalogV2, "identity schema requires the catalog v2 boundary");
+if (usesCatalogV2) {
+  catalog.format_version = catalogProfileV2;
+  catalog.projection_model = {
+    ...catalog.projection_model,
+    projection_slice: "IDENTITY-V1_multi_schema_namespace",
+    body_fields: [
+      "schemas",
+      "default_acl",
+      "relations",
+      "functions",
+      "dependencies",
+      "object_count",
+      "declared_objects",
+      "denied_objects",
+    ],
+  };
+}
+const additions = statements
+  .filter(
+    ({ classification }) =>
+      classification.command === "CREATE" &&
+      new Set(["SCHEMA", "TABLE", "INDEX", "POLICY", "FUNCTION"]).has(classification.object_kind) &&
+      !existingTargets.has(classification.target_identity),
+  )
   .map(({ classification }) => migrationObjectIdentity(classification.target_identity));
 for (const item of additions) validateObjectIdentity(item);
 catalog.declared_object_identities.push(...additions);
@@ -100,8 +147,36 @@ const schemaArtifact = artifact(`${base}/schema-bundle.json`, schemaBytes);
 const manifest = structuredClone(prior);
 manifest.schema_bundle = schema;
 manifest.schema_bundle_digest = schemaDigest;
-manifest.runtime_artifacts.push(artifact(sqlPath), catalogArtifact, schemaArtifact);
+if (introducesCatalogV2) {
+  manifest.bootstrap_bundle = {
+    artifacts: [...prior.bootstrap_bundle.artifacts, artifact(identityRoleBootstrapPath)],
+  };
+  manifest.bootstrap_bundle_digest = migrationDigest({
+    domain: "cloud-agents-platform-bootstrap-bundle/v1",
+    bootstrap_bundle: manifest.bootstrap_bundle,
+  });
+}
+if (usesCatalogV2) {
+  manifest.execution_policy.catalog_profile = catalogProfileV2;
+  manifest.execution_policy.authority_contract = artifact(authorityV2Path);
+}
+manifest.runtime_artifacts.push(
+  artifact(sqlPath),
+  catalogArtifact,
+  schemaArtifact,
+  ...(introducesCatalogV2 ? [artifact(authorityV2Path)] : []),
+);
 manifest.runtime_artifacts.sort((a: any, b: any) => a.path.localeCompare(b.path, "en"));
+assert.equal(
+  new Set(manifest.bootstrap_bundle.artifacts.map((item: any) => item.path)).size,
+  manifest.bootstrap_bundle.artifacts.length,
+  "bootstrap artifact paths must be unique",
+);
+assert.equal(
+  new Set(manifest.runtime_artifacts.map((item: any) => item.path)).size,
+  manifest.runtime_artifacts.length,
+  "runtime artifact paths must be unique",
+);
 delete manifest.manifest_digest;
 manifest.manifest_digest = migrationDigest(manifest);
 const manifestBytes = bytes(manifest);

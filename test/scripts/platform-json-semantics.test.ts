@@ -123,6 +123,42 @@ describe("platform semantic constraints", () => {
     });
   });
 
+  it("inherits frozen roles and closes platform.admin version 2", () => {
+    const catalog = JSON.parse(
+      readFileSync(
+        "contracts/platform/v1alpha1/fixtures/golden/builtin-role-catalog-v2.json",
+        "utf8",
+      ),
+    ) as { roles: Array<Record<string, unknown>> };
+    expect(validatePlatformSemantics(catalog).valid).toBe(true);
+
+    const expanded = structuredClone(catalog);
+    const platformAdmin = expanded.roles.find((role) => role.name === "platform.admin");
+    (platformAdmin?.permissions as string[]).push("sessions.get");
+    expect(validatePlatformSemantics(expanded)).toEqual({
+      valid: false,
+      errors: [
+        {
+          code: "BUILTIN_ROLE_PERMISSION_SET_MISMATCH",
+          path: `/roles/${expanded.roles.indexOf(platformAdmin!)}/permissions`,
+        },
+      ],
+    });
+
+    const rewritten = structuredClone(catalog);
+    const tenantAdmin = rewritten.roles.find((role) => role.name === "tenant.admin");
+    if (tenantAdmin) tenantAdmin.version = 2;
+    expect(validatePlatformSemantics(rewritten)).toEqual({
+      valid: false,
+      errors: [
+        {
+          code: "BUILTIN_ROLE_VERSION_MISMATCH",
+          path: `/roles/${rewritten.roles.indexOf(tenantAdmin!)}/version`,
+        },
+      ],
+    });
+  });
+
   it("compares normalized NamespaceRef tuples by canonical digest", () => {
     const instance = {
       kind: "Project",

@@ -99,7 +99,7 @@ func (server *ManagedAgentTurnHTTPServer) list(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: validated.TenantID, ResourceLevel: "project", ResourceID: validated.ProjectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -134,7 +134,7 @@ func (server *ManagedAgentTurnHTTPServer) create(writer http.ResponseWriter, req
 		writeManagedAgentSessionError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.act"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -152,7 +152,7 @@ func (server *ManagedAgentTurnHTTPServer) create(writer http.ResponseWriter, req
 }
 
 func (server *ManagedAgentTurnHTTPServer) get(writer http.ResponseWriter, request *http.Request, tenantID, projectID, sessionID, turnID, requestID, bearer string) {
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: "projects.get"})
 	if err != nil {
 		writeManagedAgentSessionError(writer, http.StatusUnauthorized, "authentication_failed")
 		return

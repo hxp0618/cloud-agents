@@ -1,0 +1,105 @@
+--- services/control-plane/migrations/product/000106/catalog/schema-000105.json
++++ services/control-plane/migrations/product/000107/catalog/schema-000106.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000106",
++  "schema_head": "000107",
+@@ -30532,0 +30533,62 @@
++    },
++    {
++      "migration_id": "000107",
++      "sql_sha256": "sha256:abc68b218c2c980d02399dbe889d28c2ec25455e44c9f01ed1db4f5055a3a54d",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 151,
++          "sha256": "sha256:a76d5d5abbf162d86912a3fe93753728e4df5d02de93b8e43261f2c1d10a1c0c",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "INDEX",
++            "target_identity": "index:unquoted:cloud_agents/unquoted:memberships_identity_subject_idx",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 151,
++          "end": 3904,
++          "sha256": "sha256:25c3c0623c2455a87d4b7318d1e99215a395649969fc97fca06e5bb403e8b0a5",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_session_tenants(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 3904,
++          "end": 4012,
++          "sha256": "sha256:33ecb4751e64574c52042a261a23dced9f33d007c5335bc257653c7739448450",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_session_tenants(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 4012,
++          "end": 4143,
++          "sha256": "sha256:0da7504be9189a49db4be3364ab4a2b256361e44132e91cba18e208b32363f52",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:list_session_tenants(unquoted:bytea,unquoted:text,unquoted:text,unquoted:integer)",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        }
++      ]
+@@ -46259,0 +46322,36 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "index",
++      "identity": {
++        "schema": "cloud_agents",
++        "name": "memberships_identity_subject_idx"
++      },
++      "relation": {
++        "schema": "cloud_agents",
++        "name": "memberships"
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "list_session_tenants",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "integer"

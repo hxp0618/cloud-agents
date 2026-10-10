@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-callback.schema.json",
+  "title": "ProviderCallback",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "session"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "login",
+            "invitation"
+          ]
+        },
+        "session": {
+          "$ref": "browser-session.schema.json"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "expiresAt"
+      ],
+      "properties": {
+        "action": {
+          "const": "reauth"
+        },
+        "expiresAt": {
+          "$ref": "../../../common/v1alpha1/schemas/date-time.schema.json"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "loginMethod"
+      ],
+      "properties": {
+        "action": {
+          "const": "link"
+        },
+        "loginMethod": {
+          "$ref": "login-method.schema.json"
+        }
+      }
+    }
+  ]
+}

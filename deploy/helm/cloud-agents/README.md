@@ -1,18 +1,77 @@
 # Cloud Agents Helm deployment
 
-By default this chart installs the no-Agent foundation: Control Plane, Access
-Gateway, and independent User/Admin Web services against a deployment-owned
+By default this chart installs the no-Agent foundation: Identity, Control Plane,
+Access Gateway, and independent HTTPS User/Admin Web services against a deployment-owned
 PostgreSQL database. The legacy Coding Agent Worker is rendered only when
 `worker.enabled=true`; only that compatibility mode requires the Worker TLS,
 admission, Runtime environment and Provider credential Secrets. Build or load
 the enabled images from the same platform release, create only the Secrets used
 by that mode, then install with digest-pinned image values.
 
-The Access Gateway mounts only the runtime database URL, its TLS/SSH identity, and the configured Kubernetes target credential directory. User Web and Admin Web mount only the Control Plane CA; User Web proxies non-Admin `/v1` routes and Admin Web proxies only `/v1/admin` to the internal Control Plane Service. None of these Pods receives a Docker socket or Provider credentials, and all disable ServiceAccount token mounting.
+The Access Gateway mounts only the runtime database URL, its TLS/SSH identity,
+and the configured Kubernetes target credential directory. User Web and Admin
+Web receive separate TLS identities, separate Identity service proofs, and only
+the Identity and Control Plane CA bundles. User Web proxies non-Admin `/v1`
+routes and Admin Web proxies only `/v1/admin`. None of these Pods receives a
+Docker socket or Provider credentials, and all disable ServiceAccount token mounting.
+
+Create the database Secret with `runtime-url`, `migration-url`,
+`tenant-bootstrap-url`, `identity-service-url`, and `identity-bootstrap-url`.
+The last two authenticate distinct LOGIN roles: the long-running Identity
+service role and the offline bootstrap role. Also create the Secrets named by
+`identity.tls`, `identity.signing`, `identity.csrf`, `identity.providerFlow`, `identity.credentials`,
+`adminWeb.tlsSecretName`, and `userWeb.tlsSecretName`. The credentials Secret
+contains four distinct 43-character canonical base64url proofs: Admin Web, User
+Web, Control Plane-to-Identity, and Identity-to-Control-Plane. The chart never
+creates or prints these secret values.
+
+The CSRF and provider-flow keys are independent 32-byte random files. For external
+login, set `identity.providers.secretName` to an existing Secret and map
+`identity.providers.clientSecrets` and `identity.providers.rootCAs` from logical
+reference names to keys in that Secret. The init container copies only the mapped
+files to Identity's private memory volume. Configure those logical references in
+Admin Web; client-secret values never enter values files or the database. Leave
+both maps empty for password-only operation. An omitted root CA reference uses
+the system trust store. Restart Identity after changing provider material.
+Platform administrators configure client IDs, issuer, reference names and
+Admin/User callback URLs in Admin Web's Login Providers system settings. Identity
+persists these application settings in its database and reads them for each login;
+they are not chart values or product environment variables, and changes do not
+require a restart. Each provider application must register the exact HTTPS
+`/auth/provider/callback` URL displayed for its Admin/User configuration.
+
+The Identity and Control Plane certificates must include the chart-generated
+`<release>-cloud-agents-identity` and `<release>-cloud-agents-control-plane`
+Service DNS names. The Admin/User certificates must match the distinct hostnames
+in `identity.adminAudience` and `identity.userAudience`.
+
+Keep `identityBootstrap.enabled=false` for upgrades and existing databases. For
+a fresh install, pre-hash the initial password with
+`cloud-agents-identity hash-password`, create the bootstrap Secret with the
+setup proof and password hash, set a bounded signing-key interval, and enable
+the one-time pre-install Job. The Job creates the first platform administrator
+through the bootstrap-only database function and has no default password.
+Enable `tenantBootstrap` in the same fresh-install values to create the initial
+tenant binding for that stable user ID. Disable both bootstrap Jobs after the
+successful install; existing users, bindings and signing lineage are never
+rewritten.
 
 When `worker.enabled=true`, the chart mounts a persistent snapshot archive at `/snapshots` in the Control Plane and sets `CLOUD_AGENTS_PLATFORM_SNAPSHOT_DIRECTORY`; use `runtime.snapshot.existingClaim` for an existing claim or let the chart create its single-writer `ReadWriteOnce` claim. The Kubernetes Target credential must permit the namespaced helper Pod lifecycle and `get/create` on `pods/exec` for portable Workspace snapshot export/import.
 
-The access-grant and SSH host private keys are copied by non-root init containers into memory-backed volumes with mode `0400`; projected Secret files are not exposed to the serving containers. Keep the User/Admin Web and Gateway Services private unless deployment-owned TLS/OIDC ingress is configured. A successful `helm lint` or Pod rollout does not replace the real Target, Sandbox, backup/restore, upgrade, and identity-rotation acceptance requirements.
+To register Kubernetes Targets from a kubeconfig in Admin Web, set
+`deploymentTargets.credentialKeySecretName` to a Secret whose
+`target-credential.key` holds exactly 32 random bytes. The Control Plane uses
+it to seal the selected context's credential in PostgreSQL. Keep the key stable
+and backed up; without it those Targets fail closed. It requires
+`deploymentTargets.kubernetesCredentialSecretName` for the deployment
+descriptors.
+
+Private access-grant, target-credential, Identity, Web TLS and SSH-host material is copied by
+non-root init containers into memory-backed volumes with mode `0400`; serving
+containers do not mount the projected source Secrets. Keep the Services private
+unless deployment-owned ingress is configured. A successful `helm lint` or Pod
+rollout does not replace the real login, Target, Sandbox, backup/restore,
+upgrade, and key/credential rotation acceptance requirements.
 
 Run the packaged smoke with both adjacent release directories to verify an N-1
 install, N upgrade, N-1 rollback, and final N re-upgrade against the same

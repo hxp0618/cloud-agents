@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-callback-request.schema.json",
+  "title": "ProviderCallbackRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state",
+    "code"
+  ],
+  "properties": {
+    "state": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "issuer": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 512
+    },
+    "sessionState": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  }
+}

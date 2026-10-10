@@ -93,6 +93,13 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSemanticValid: true,
     },
     {
+      name: "builtin-role-catalog-v2",
+      schema: "../schemas/builtin-role-catalog-v2.schema.json",
+      instance: "golden/builtin-role-catalog-v2.json",
+      expectedSchemaValid: true,
+      expectedSemanticValid: true,
+    },
+    {
       name: "project-create-request",
       schema: "../schemas/project-create-request.schema.json",
       instance: "golden/project-create-request.json",
@@ -367,6 +374,68 @@ const P1_REQUIRED_FIXTURE_INVENTORY: Readonly<Record<string, ReadonlyArray<JsonR
       expectedSchemaValid: true,
     },
   ],
+  "identity/v1alpha1/fixtures/manifest.json": [
+    {
+      name: "identity-password-login-client-purpose",
+      schema: "../schemas/password-login-request.schema.json",
+      instance: "negative/password-login-client-purpose.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "identity-browser-session",
+      schema: "../schemas/browser-session.schema.json",
+      instance: "golden/browser-session.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "identity-browser-session-boolean-authority",
+      schema: "../schemas/browser-session.schema.json",
+      instance: "negative/browser-session-boolean-authority.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "identity-tenant-token-scope-injection",
+      schema: "../schemas/tenant-token-issue-request.schema.json",
+      instance: "negative/tenant-token-scope-injection.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "identity-token-status-raw-token",
+      schema: "../schemas/token-status-request.schema.json",
+      instance: "negative/token-status-raw-token.json",
+      expectedSchemaValid: false,
+      expectedError: "INVALID_TOKEN_DIGEST",
+    },
+    {
+      name: "identity-jwks",
+      schema: "../schemas/identity-jwks.schema.json",
+      instance: "golden/identity-jwks.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "identity-jwks-private-key",
+      schema: "../schemas/identity-jwks.schema.json",
+      instance: "negative/identity-jwks-private-key.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+    {
+      name: "identity-provider-authorization-request",
+      schema: "../schemas/provider-authorization-request.schema.json",
+      instance: "golden/provider-authorization-request.json",
+      expectedSchemaValid: true,
+    },
+    {
+      name: "identity-provider-client-secret",
+      schema: "../schemas/provider-client-update.schema.json",
+      instance: "negative/provider-client-secret.json",
+      expectedSchemaValid: false,
+      expectedError: "UNKNOWN_FIELD",
+    },
+  ],
 };
 
 export type PlatformContractBootstrapSummary = {
@@ -434,13 +503,13 @@ export function validatePlatformContractTree(root: string): PlatformContractBoot
   const fixtureCases = validateJsonSchemaFixtures(schemaFiles, fixtureManifests, contractRoot);
   const closureProfile = assertContractClosureProfileV3Current(root).registry;
 
-  if (schemaFiles.length === 0 || openApiFiles.length !== 2 || protoFiles.length < 3) {
+  if (schemaFiles.length === 0 || openApiFiles.length !== 3 || protoFiles.length < 3) {
     throw new Error(
       `Contract roots incomplete: ${schemaFiles.length} schemas, ${openApiFiles.length} OpenAPI, ${protoFiles.length} Proto.`,
     );
   }
-  if (fixtureManifests.length !== 2) {
-    throw new Error(`Expected two JSON fixture manifests, found ${fixtureManifests.length}.`);
+  if (fixtureManifests.length !== 3) {
+    throw new Error(`Expected three JSON fixture manifests, found ${fixtureManifests.length}.`);
   }
 
   return {
@@ -542,7 +611,7 @@ function validateJsonSchemaFixtures(
     strict: true,
     validateFormats: true,
   });
-  addFormats(ajv, { formats: ["date-time", "uri"] });
+  addFormats(ajv, { formats: ["date-time", "email", "uri"] });
   for (const keyword of [
     "x-cloud-agents-canonicalization",
     "x-cloud-agents-normalization",
@@ -627,11 +696,19 @@ function validateJsonSchemaFixtures(
         const semanticResult =
           canonicalResults.find((result) => !result.valid) ??
           validatePlatformSemantics(instance, document);
-        assertExpectedSemanticResult(
-          semanticResult,
-          fixture.expectedSemanticValid as boolean,
-          fixture.expectedError,
-        );
+        try {
+          assertExpectedSemanticResult(
+            semanticResult,
+            fixture.expectedSemanticValid as boolean,
+            fixture.expectedError,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "semantic validation failed";
+          const semanticError = semanticResult.valid
+            ? ""
+            : ` (${semanticResult.errors[0]?.code ?? "NO_ERROR"}@${semanticResult.errors[0]?.path ?? "/"})`;
+          throw new Error(`${name}: ${message}${semanticError}`);
+        }
       }
     }
   }
@@ -656,6 +733,8 @@ function assertExpectedSchemaError(
           error.keyword === "pattern" &&
           (error.instancePath.endsWith("/kind") || error.instancePath.endsWith("/namespace"))
         );
+      case "INVALID_TOKEN_DIGEST":
+        return error.instancePath === "/tokenSha256" && error.keyword === "pattern";
       case "PROBLEM_SECRET_FIELD_FORBIDDEN":
         return (
           schemaId.endsWith("/problem.schema.json") && error.keyword === "additionalProperties"
@@ -673,6 +752,10 @@ function assertExpectedSchemaError(
         return error.instancePath === "/spec/roleName" && error.keyword === "enum";
       case "WILDCARD_PERMISSION_FORBIDDEN":
         return error.instancePath.startsWith("/spec/permissions/") && error.keyword === "pattern";
+      case "EMAIL_DOMAIN_PATTERN_MISMATCH":
+        return error.keyword === "pattern" && error.instancePath.startsWith("/allowedDomains/");
+      case "DUPLICATE_ITEM":
+        return error.keyword === "uniqueItems";
       default:
         return false;
     }
@@ -744,6 +827,8 @@ export function validateOpenApiDocument(
         operation.security,
         securitySchemes,
         `${file} ${operationId} security`,
+        false,
+        operationId === "identityGetJWKS" && method === "get" && path === "/.well-known/jwks.json",
       );
       const operationParameters = collectOpenApiParameters(
         operation.parameters,
@@ -896,13 +981,17 @@ function validateSecurityRequirements(
   securitySchemes: JsonRecord,
   label: string,
   required = false,
+  allowEmpty = false,
 ): void {
   if (value === undefined) {
     if (required) throw new Error(`${label} is required and must fail closed.`);
     return;
   }
   const requirements = requiredArray(value, label);
-  if (requirements.length === 0) throw new Error(`${label} must not allow anonymous access.`);
+  if (requirements.length === 0) {
+    if (allowEmpty) return;
+    throw new Error(`${label} must not allow anonymous access.`);
+  }
   for (const [index, entry] of requirements.entries()) {
     const requirement = requiredRecord(entry, `${label}/${index}`);
     if (Object.keys(requirement).length === 0) {

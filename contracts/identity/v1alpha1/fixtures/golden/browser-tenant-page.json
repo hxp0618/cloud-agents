@@ -1,0 +1,10 @@
+{
+  "tenants": [
+    {
+      "id": "tenant-alpha",
+      "name": "Tenant Alpha",
+      "displayRoles": ["tenant.admin"]
+    }
+  ],
+  "nextPageToken": "tenant-page-token-2"
+}

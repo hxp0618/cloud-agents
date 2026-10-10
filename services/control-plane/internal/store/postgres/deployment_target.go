@@ -106,6 +106,10 @@ const deploymentTargetOperationColumns = `operation_uid, idempotency_key, action
 var (
 	registerDeploymentTargetSQL = `SELECT target_uid
 FROM cloud_agents.register_deployment_target_v3($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	storeDeploymentTargetCredentialSQL = `SELECT cloud_agents.store_deployment_target_credential_v1($1, $2, $3, $4, $5, $6, $7)`
+	loadDeploymentTargetCredentialSQL  = `SELECT key_id, sealed_credential
+FROM cloud_agents.deployment_target_credentials
+WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
 	getDeploymentTargetSQL = `SELECT ` + deploymentTargetColumns + `
 FROM cloud_agents.deployment_target_admin_projection
 WHERE tenant_id = cloud_agents.require_tenant_id() AND project_uid = $1 AND target_uid = $2`
@@ -244,12 +248,56 @@ func (service *DurableCoordinationService) RegisterDeploymentTarget(
 				if targetID != input.TargetID {
 					return ErrCoordinationResultDrift
 				}
+				if credential := input.SealedCredential; credential != nil {
+					var stored bool
+					if err := handle.transaction.queryRow(ctx, storeDeploymentTargetCredentialSQL,
+						input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.Mutation.IdempotencyKey, digest,
+						credential.KeyID, credential.Sealed).Scan(&stored); err != nil {
+						return err
+					}
+					if !stored {
+						return ErrCoordinationResultDrift
+					}
+				}
 				return scanDeploymentTarget(handle.transaction.queryRow(ctx, getDeploymentTargetSQL,
 					input.Scope.ProjectID, input.TargetID), input.Scope, &result)
 			})
 		})
 	})
 	return result, mapDeploymentTargetError(err)
+}
+
+// LoadDeploymentTargetCredential returns the sealed connection credential for
+// actuators that already hold an authorized target claim. It has no principal
+// because controller claims run without one; tenant RLS still scopes the row.
+func (service *DurableCoordinationService) LoadDeploymentTargetCredential(
+	ctx context.Context, tenantID, projectID, targetID string,
+) (string, []byte, bool, error) {
+	if service == nil || service.runner == nil {
+		return "", nil, false, ErrNilCoordinationRunner
+	}
+	if ctx == nil || !validMutationIdentifier(tenantID) || !validMutationIdentifier(projectID) || !validMutationIdentifier(targetID) {
+		return "", nil, false, ErrCoordinationInvalidInput
+	}
+	var keyID string
+	var sealed []byte
+	found := true
+	err := service.runner.WithTenantRead(ctx, tenantID, func(readContext context.Context, capability TenantReadCapability) error {
+		handle, ok := capability.(*tenantReadHandle)
+		if !ok {
+			return ErrTenantCapabilityClosed
+		}
+		err := handle.transaction.queryRow(readContext, loadDeploymentTargetCredentialSQL, projectID, targetID).Scan(&keyID, &sealed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			found = false
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return "", nil, false, err
+	}
+	return keyID, sealed, found, nil
 }
 
 func (service *DurableCoordinationService) GetDeploymentTarget(

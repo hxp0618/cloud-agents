@@ -33,11 +33,9 @@ export function ClusterHostTable({
             <th>{t("table.name")}</th>
             <th>{t("table.kind")}</th>
             <th>{t("table.runtime")}</th>
-            <th>{t("table.platform")}</th>
             <th>{t("table.workers")}</th>
             <th>{t("table.lastHealth")}</th>
             <th>{t("table.status")}</th>
-            <th>{t("table.lastProbe")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
         </thead>
@@ -51,25 +49,25 @@ export function ClusterHostTable({
               <td>
                 <button type="button" onClick={() => onSelect(target.metadata.uid)}>
                   <strong>{target.metadata.name}</strong>
-                  <small>{target.metadata.uid}</small>
+                  {target.metadata.uid === target.metadata.name ? null : (
+                    <small>{target.metadata.uid}</small>
+                  )}
                 </button>
               </td>
               <td>
                 <span className="kind-badge">{targetKindLabel(target.spec.targetKind, t)}</span>
               </td>
               <td>
-                <strong>{target.spec.engineVersion || t("common.notObserved")}</strong>
-                <small className="table-subline">
-                  {target.spec.apiVersion
-                    ? t("cluster.apiVersion", {
-                        version: target.spec.apiVersion,
-                      })
-                    : t("common.notObserved")}
-                </small>
-              </td>
-              <td>
-                {[target.spec.os, target.spec.architecture].filter(Boolean).join(" / ") ||
-                  t("common.notObserved")}
+                {target.spec.engineVersion === "" ? (
+                  "—"
+                ) : (
+                  <>
+                    <strong>{target.spec.engineVersion}</strong>
+                    <small className="table-subline">
+                      {t("cluster.apiVersion", { version: target.spec.apiVersion })}
+                    </small>
+                  </>
+                )}
               </td>
               <td>
                 {workerCount === 0
@@ -84,11 +82,12 @@ export function ClusterHostTable({
                 <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
                   <i /> {phaseLabel(target.spec.observedPhase, t)}
                 </span>
-                <small className="table-subline">
-                  {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
-                </small>
+                {target.spec.schedulingState === "active" ? null : (
+                  <small className="table-subline">
+                    {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
+                  </small>
+                )}
               </td>
-              <td>{dateTime(target.spec.lastProbeAt)}</td>
               <td className="row-action-cell">
                 <button
                   className="row-action"
@@ -134,7 +133,6 @@ export function WorkerTable({
             <th>{t("table.target")}</th>
             <th>{t("table.lease")}</th>
             <th>{t("table.release")}</th>
-            <th>{t("table.generation")}</th>
             <th>{t("worker.periodicHealth")}</th>
             <th>{t("table.status")}</th>
             <th>{t("table.resourceLimits")}</th>
@@ -165,7 +163,6 @@ export function WorkerTable({
               <td className="mono" title={worker.spec.releaseDigest}>
                 {shortDigest(worker.spec.releaseDigest)}
               </td>
-              <td className="mono">g{number(worker.spec.generation)}</td>
               <td>
                 <WorkerHealthBadge worker={worker} />
                 {worker.spec.health !== undefined ? (

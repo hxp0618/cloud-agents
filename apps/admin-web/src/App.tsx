@@ -1,4 +1,11 @@
-import { LoginView } from "./app/connection";
+import { CLIAuthorization } from "../../user-web/src/CLIAuthorization";
+import {
+  LoginView,
+  listAllAdminProjects,
+  listAllBrowserTenants,
+  loginMessage,
+  sessionMessage,
+} from "./app/connection";
 import {
   PaginatedTargets,
   TargetTable,
@@ -6,9 +13,11 @@ import {
   TargetRegistrationForm,
   deploymentTargetRegisterRequestFrom,
   targetRegistrationForm,
+  withoutKubeconfig,
   SchedulingConfirmation,
   CleanupConfirmation,
 } from "./app/targets";
+import { kubernetesCredentialDigest } from "./app/kubeconfig";
 import { ClusterHostTable, WorkerTable, WorkerHealthCheck, WorkerDetail } from "./app/workers";
 import { LeaseTable, LeaseDetail, LeaseReleaseConfirmation } from "./app/leases";
 import {
@@ -35,6 +44,7 @@ import {
 } from "./app/sandboxes";
 import { MaintenanceOperationTable, MaintenanceOperationDetail } from "./app/operations";
 import { WorkspaceSnapshotCleanupConfirmation, WorkspaceSnapshotPanel } from "./app/workspaces";
+import { AdvancedFields, NameField, Suggestions } from "./app/form-fields";
 import {
   ReleaseRegistrationForm,
   StoragePolicyTable,
@@ -44,9 +54,15 @@ import {
   quotaFormFrom,
   storagePolicyFormFrom,
 } from "./app/policies";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { InvitationManagement } from "./InvitationManagement";
+import { ServiceAccountManagement } from "./ServiceAccountManagement";
+import { AccountManagement } from "./AccountManagement";
+import { ProviderManagement } from "./ProviderManagement";
+import { EmailPolicyForm } from "./EmailPolicyForm";
 import {
   ClientError,
+  createBrowserHTTPClient,
   createSessionHTTPClient,
   type AdminSandboxAccessGrant,
   type AdminSandboxSession,
@@ -54,6 +70,7 @@ import {
   type DeploymentTarget,
   type DeploymentTargetCleanupPreview,
   type DeploymentTargetSchedulingPreview,
+  type DeploymentTargetRegisterRequest,
   type EnvironmentLease,
   type EnvironmentLeaseUpgradePreview,
   type EnvironmentProfile,
@@ -77,10 +94,11 @@ import {
   type WorkspaceSnapshotCleanupRequest,
   type WorkspaceSnapshotCreateRequest,
   type WorkspaceSnapshotRestoreRequest,
-  type BrowserAuthConfig,
   type BrowserSession,
+  type BrowserSessionClient,
   type BrowserTenant,
   type Client,
+  type Project,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
 import { ResourceRefresh } from "./ResourceRefresh";
 import { SuccessToast } from "./SuccessToast";
@@ -99,9 +117,13 @@ import {
   listAdminProjectLeaseQuotaAuditEvents,
   listAdminStoragePolicyAuditEvents,
   capabilityBindingRelations,
+  identifierFromName,
+  identifierWithSuffix,
   listAdminSandboxAccessGrants,
   listAdminWorkers,
+  newIdentifierSuffix,
   newRequestId,
+  nextProfileVersion,
   pendingIdempotencyKey,
   replaceLease,
   replaceProfile,
@@ -109,10 +131,11 @@ import {
   replaceRelease,
   replaceStoragePolicy,
   replaceTarget,
+  readSavedAdminConnection,
   schedulingRequestFromPreview,
   selectAdminResourceId,
   workerRefreshKey,
-  type AdminClient,
+  writeSavedAdminConnection,
   type AdminManagedAgentRuntime,
   type SavedAdminConnection,
   type SandboxLifecycleAction,
@@ -152,7 +175,6 @@ import {
   type TargetKind,
 } from "./app/presentation";
 import { deriveAdminView } from "./app/derived";
-import { parseEmailDomains } from "./app/auth";
 
 type LeaseReleaseTransition = "upgrade" | "rollback";
 type LocalizedMessage = Readonly<{ key: MessageKey; values?: MessageValues }>;
@@ -167,26 +189,28 @@ function initialTheme(): Theme {
 }
 
 type DashboardProps = Readonly<{
-  authConfig: BrowserAuthConfig;
   client: Client;
   connection: SavedAdminConnection;
+  projects: readonly Project[];
   session: BrowserSession;
+  sessionClient: BrowserSessionClient;
   tenant: BrowserTenant;
-  project: BrowserTenant["projects"][number];
+  tenants: readonly BrowserTenant[];
+  project: Project;
   onScopeChange: (tenantId: string, projectId: string) => void;
-  onSessionChange: (session: BrowserSession) => void;
   onSessionExpired: () => void;
 }>;
 
 function Dashboard({
-  authConfig,
   client,
   connection,
+  projects,
   session,
+  sessionClient,
   tenant,
+  tenants,
   project,
   onScopeChange,
-  onSessionChange,
   onSessionExpired,
 }: DashboardProps) {
   const { locale, setLocale, t, number, dateTime } = useI18n();
@@ -298,20 +322,18 @@ function Dashboard({
   const [releaseForm, setReleaseForm] = useState(workerReleaseForm);
   const [quotaForm, setQuotaForm] = useState(quotaFormFrom);
   const [storagePolicyForm, setStoragePolicyForm] = useState(storagePolicyFormFrom);
-  const [emailDomains, setEmailDomains] = useState(() => tenant.emailDomains.join("\n"));
-  const [snapshotForm, setSnapshotForm] = useState({
-    snapshotId: "",
+  const [snapshotForm, setSnapshotForm] = useState(() => ({
     sourceSandboxId: "",
     retentionSeconds: "604800",
-  });
-  const [restoreForm, setRestoreForm] = useState({
+    token: newIdentifierSuffix(),
+  }));
+  const [restoreForm, setRestoreForm] = useState(() => ({
     snapshotId: "",
-    workspaceId: "",
     workspaceName: "",
-    sandboxId: "",
     runtimeProfileVersionId: "",
     ttlSeconds: "3600",
-  });
+    token: newIdentifierSuffix(),
+  }));
   const requestRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const pageLoadingRef = useRef(false);
@@ -322,6 +344,9 @@ function Dashboard({
 
   const connected = true;
   const interactionDisabled = busy !== null || pageLoading;
+  const tenantCanManage =
+    session.user.displayRoles.includes("platform.admin") ||
+    tenant.displayRoles.includes("tenant.admin");
   function adminFailure(cause: unknown) {
     if (cause instanceof ClientError && cause.status === 401) onSessionExpired();
     return adminFailureFrom(cause);
@@ -418,6 +443,14 @@ function Dashboard({
       failedOperationsOnly,
     },
   });
+
+  const storagePolicyNameTaken =
+    selectedStoragePolicy === undefined &&
+    storagePolicyForm.policyName.trim() !== "" &&
+    storagePolicies.some(
+      ({ metadata }) =>
+        metadata.uid === identifierFromName(storagePolicyForm.policyName.trim(), "storage-policy"),
+    );
 
   useEffect(() => {
     if (!connected || client === null) return;
@@ -672,7 +705,7 @@ function Dashboard({
     operationKey: string,
     message: LocalizedMessage,
     operation: (signal: AbortSignal) => Promise<void>,
-    accepted = false,
+    outcome: "completed" | "accepted" | "silent" = "completed",
   ) {
     if (busyRef.current || pageLoading || pageLoadingRef.current) return;
     operationTriggerRef.current =
@@ -686,7 +719,8 @@ function Dashboard({
     try {
       await operation(AbortSignal.any([controller.signal, AbortSignal.timeout(150_000)]));
       pendingKeysRef.current.delete(operationKey);
-      setNotice({ ...message, accepted });
+      // Read-only detail loads succeed silently; only state changes deserve a toast.
+      if (outcome !== "silent") setNotice({ ...message, accepted: outcome === "accepted" });
     } catch (cause) {
       setError(adminFailure(cause));
     } finally {
@@ -698,35 +732,8 @@ function Dashboard({
 
   function logout() {
     void runOperation("auth:logout", { key: "operation.logout" }, async (signal) => {
-      await client.logoutBrowserSession(signal);
+      await sessionClient.logoutBrowserSession(signal);
       onSessionExpired();
-    });
-  }
-
-  function linkIdentity(providerId: string) {
-    void runOperation(`auth:link:${providerId}`, { key: "operation.linkIdentity" }, async (signal) => {
-      const { authorizationUrl } = await client.linkBrowserOIDC(providerId, signal);
-      window.location.assign(authorizationUrl);
-    });
-  }
-
-  function saveEmailDomains(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsed = parseEmailDomains(emailDomains);
-    if (parsed === null) {
-      setError({ key: "auth.emailDomainsInvalid", code: null });
-      return;
-    }
-    void runOperation("auth:email-domains", { key: "operation.setEmailDomains" }, async (signal) => {
-      const updated = await client.setBrowserTenantEmailDomains(
-        tenant.id,
-        { emailDomains: parsed, expectedResourceVersion: tenant.resourceVersion },
-        signal,
-      );
-      setEmailDomains(
-        updated.tenants.find(({ id }) => id === tenant.id)?.emailDomains.join("\n") ?? "",
-      );
-      onSessionChange(updated);
     });
   }
 
@@ -897,21 +904,26 @@ function Dashboard({
     setTargetOperations(Object.freeze([]));
     setTargetAudit(Object.freeze([]));
     setSelectedTargetId(targetId);
-    void runOperation(`get:${targetId}`, { key: "operation.targetDetail" }, async (signal) => {
-      const [result, activity] = await Promise.all([
-        client.getAdminDeploymentTarget(
-          connection.tenantId,
-          connection.projectId,
-          targetId,
-          newRequestId(),
-          signal,
-        ),
-        loadTargetActivity(client, connection, targetId, signal),
-      ]);
-      setTargets((current) => replaceTarget(current, result.value));
-      setTargetOperations(activity.operations);
-      setTargetAudit(activity.audit);
-    });
+    void runOperation(
+      `get:${targetId}`,
+      { key: "operation.targetDetail" },
+      async (signal) => {
+        const [result, activity] = await Promise.all([
+          client.getAdminDeploymentTarget(
+            connection.tenantId,
+            connection.projectId,
+            targetId,
+            newRequestId(),
+            signal,
+          ),
+          loadTargetActivity(client, connection, targetId, signal),
+        ]);
+        setTargets((current) => replaceTarget(current, result.value));
+        setTargetOperations(activity.operations);
+        setTargetAudit(activity.audit);
+      },
+      "silent",
+    );
   }
 
   function selectLease(leaseId: string) {
@@ -923,16 +935,21 @@ function Dashboard({
       return;
     }
     setSelectedLeaseId(leaseId);
-    void runOperation(`get-lease:${leaseId}`, { key: "operation.leaseDetail" }, async (signal) => {
-      const result = await client.getAdminEnvironmentLease(
-        connection.tenantId,
-        connection.projectId,
-        leaseId,
-        newRequestId(),
-        signal,
-      );
-      setLeases((current) => replaceLease(current, result.value));
-    });
+    void runOperation(
+      `get-lease:${leaseId}`,
+      { key: "operation.leaseDetail" },
+      async (signal) => {
+        const result = await client.getAdminEnvironmentLease(
+          connection.tenantId,
+          connection.projectId,
+          leaseId,
+          newRequestId(),
+          signal,
+        );
+        setLeases((current) => replaceLease(current, result.value));
+      },
+      "silent",
+    );
   }
 
   function selectWorker(workerId: string) {
@@ -1060,6 +1077,7 @@ function Dashboard({
         setProfiles((current) => replaceProfile(current, result.value));
         setProfileAudit(audit);
       },
+      "silent",
     );
   }
 
@@ -1083,6 +1101,7 @@ function Dashboard({
         );
         setRuntimeProfiles((current) => replaceRuntimeProfile(current, result.value));
       },
+      "silent",
     );
   }
 
@@ -1129,6 +1148,7 @@ function Dashboard({
         setSandboxAccessGrants(grants);
         setManagedAgentRuntime(agentRuntime);
       },
+      "silent",
     );
   }
 
@@ -1194,7 +1214,7 @@ function Dashboard({
         );
         setManagedAgentRuntime(runtime);
       },
-      true,
+      "accepted",
     );
   }
 
@@ -1290,7 +1310,7 @@ function Dashboard({
         setMaintenanceOperations(loadedOperations);
         setSelectedMaintenanceOperationId(operation.value.operationId);
       },
-      true,
+      "accepted",
     );
   }
 
@@ -1327,14 +1347,18 @@ function Dashboard({
           ),
         );
       },
-      true,
+      "accepted",
     );
   }
 
   function createRuntimeProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (client === null) return;
-    const body = runtimeProfileCreateRequestFrom(runtimeProfileDraft);
+    const profileId = identifierFromName(runtimeProfileDraft.profileName.trim(), "runtime-profile");
+    const body = runtimeProfileCreateRequestFrom(
+      runtimeProfileDraft,
+      nextProfileVersion(runtimeProfiles, profileId),
+    );
     const key = adminMutationKey("create-runtime-profile", body);
     void runOperation(key, { key: "operation.createRuntimeProfile" }, async (signal) => {
       const result = await client.createAdminRuntimeProfile(
@@ -1440,7 +1464,10 @@ function Dashboard({
     )
       return;
     const body: WorkspaceSnapshotCreateRequest = {
-      snapshotId: snapshotForm.snapshotId.trim(),
+      snapshotId: identifierWithSuffix(
+        identifierFromName(source.spec.workspaceName, "snapshot"),
+        snapshotForm.token,
+      ),
       sourceSandboxId: source.metadata.uid,
       expectedSandboxGeneration: source.spec.generation,
       retentionSeconds: Number(snapshotForm.retentionSeconds),
@@ -1462,9 +1489,9 @@ function Dashboard({
         ]),
       );
       setSnapshotForm({
-        snapshotId: "",
         sourceSandboxId: "",
         retentionSeconds: "604800",
+        token: newIdentifierSuffix(),
       });
     });
   }
@@ -1500,7 +1527,7 @@ function Dashboard({
         );
         setSnapshotCleanup(null);
       },
-      true,
+      "accepted",
     );
   }
 
@@ -1511,11 +1538,13 @@ function Dashboard({
       ({ metadata }) => metadata.uid === restoreForm.runtimeProfileVersionId,
     );
     if (profile === undefined) return;
+    const workspaceName = restoreForm.workspaceName.trim();
+    const base = identifierFromName(workspaceName, "workspace");
     const body: WorkspaceSnapshotRestoreRequest = {
       expectedSnapshotResourceVersion: selectedRestoreSnapshot.metadata.resourceVersion,
-      workspaceId: restoreForm.workspaceId.trim(),
-      workspaceName: restoreForm.workspaceName.trim(),
-      sandboxId: restoreForm.sandboxId.trim(),
+      workspaceId: identifierWithSuffix(base, `${restoreForm.token}-w`),
+      workspaceName,
+      sandboxId: identifierWithSuffix(base, `${restoreForm.token}-s`),
       runtimeProfileId: profile.spec.profileId,
       runtimeProfileVersion: profile.spec.version,
       ttlSeconds: Number(restoreForm.ttlSeconds),
@@ -1553,14 +1582,13 @@ function Dashboard({
         setSelectedSandboxId(restored.value.metadata.uid);
         setRestoreForm({
           snapshotId: "",
-          workspaceId: "",
           workspaceName: "",
-          sandboxId: "",
           runtimeProfileVersionId: "",
           ttlSeconds: "3600",
+          token: newIdentifierSuffix(),
         });
       },
-      true,
+      "accepted",
     );
   }
 
@@ -1592,6 +1620,7 @@ function Dashboard({
         setStoragePolicyForm(storagePolicyFormFrom(result.value));
         setStoragePolicyAudit(audit);
       },
+      "silent",
     );
   }
 
@@ -1603,8 +1632,10 @@ function Dashboard({
 
   function saveStoragePolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (client === null || selectedStoragePolicyReferenced) return;
-    const policyId = storagePolicyForm.policyId.trim();
+    if (client === null || selectedStoragePolicyReferenced || storagePolicyNameTaken) return;
+    const policyId =
+      selectedStoragePolicy?.metadata.uid ??
+      identifierFromName(storagePolicyForm.policyName.trim(), "storage-policy");
     const existing = storagePolicies.find(({ metadata }) => metadata.uid === policyId);
     const body: StoragePolicySetRequest = {
       expectedResourceVersion: existing?.metadata.resourceVersion ?? "0",
@@ -1675,7 +1706,11 @@ function Dashboard({
   function createProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (client === null) return;
-    const body = environmentProfileCreateRequestFrom(profileForm);
+    const profileId = identifierFromName(profileForm.profileName.trim(), "profile");
+    const body = environmentProfileCreateRequestFrom(
+      profileForm,
+      nextProfileVersion(profiles, profileId),
+    );
     const key = adminMutationKey("create-profile", body);
     void runOperation(
       key,
@@ -1739,8 +1774,22 @@ function Dashboard({
     event.preventDefault();
     if (client === null) return;
     const body = deploymentTargetRegisterRequestFrom(targetForm);
-    const key = adminMutationKey("register-target", body);
-    void runOperation(
+    if (body === null) return;
+    void submitTargetRegistration(body);
+  }
+
+  async function submitTargetRegistration(body: DeploymentTargetRegisterRequest) {
+    if (client === null) return;
+    const { kubernetesCredential, ...visible } = body;
+    // Pending mutation keys outlive the form, so they hold only a digest of the credential.
+    const key = adminMutationKey("register-target", {
+      ...visible,
+      kubernetesCredential:
+        kubernetesCredential === undefined
+          ? undefined
+          : await kubernetesCredentialDigest(kubernetesCredential),
+    });
+    await runOperation(
       key,
       { key: "operation.registerTarget", values: { name: body.targetName } },
       async (signal) => {
@@ -1980,7 +2029,7 @@ function Dashboard({
             CA
           </span>
           <span>
-            <strong>Cloud Agents</strong>
+            <strong>{t("brand.cloudAgents")}</strong>
             <small>{t("brand.adminConsole")}</small>
           </span>
           <button
@@ -2020,10 +2069,6 @@ function Dashboard({
               : {}),
           }}
         />
-        <div className="sidebar-boundary">
-          <small>{t("boundary.title")}</small>
-          <p>{t("boundary.description")}</p>
-        </div>
       </AdminSidebar>
 
       <section className="app-main">
@@ -2045,12 +2090,10 @@ function Dashboard({
                 value={tenant.id}
                 disabled={interactionDisabled}
                 onChange={(event) => {
-                  const nextTenant = session.tenants.find(({ id }) => id === event.target.value);
-                  if (nextTenant?.projects[0] !== undefined)
-                    onScopeChange(nextTenant.id, nextTenant.projects[0].id);
+                  onScopeChange(event.target.value, "");
                 }}
               >
-                {session.tenants.map((item) => (
+                {tenants.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -2061,13 +2104,13 @@ function Dashboard({
               <span>{t("scope.project")}</span>
               <select
                 aria-label={t("scope.project")}
-                value={project.id}
+                value={project.metadata.uid}
                 disabled={interactionDisabled}
                 onChange={(event) => onScopeChange(tenant.id, event.target.value)}
               >
-                {tenant.projects.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
+                {projects.map((item) => (
+                  <option key={item.metadata.uid} value={item.metadata.uid}>
+                    {item.spec.displayName}
                   </option>
                 ))}
               </select>
@@ -2107,39 +2150,26 @@ function Dashboard({
               >
                 {t(theme === "dark" ? "action.lightMode" : "action.darkMode")}
               </button>
-              {authConfig.providers.map((provider) => {
-                const linked = session.identities.some(
-                  ({ providerId }) => providerId === provider.id,
-                );
-                return (
-                  <button
-                    key={provider.id}
-                    type="button"
-                    disabled={interactionDisabled || linked}
-                    onClick={() => linkIdentity(provider.id)}
-                  >
-                    {linked
-                      ? t("auth.identityLinked", { provider: provider.name })
-                      : t("auth.linkIdentity", { provider: provider.name })}
-                  </button>
-                );
-              })}
-              {tenant.canManage ? (
-                <form className="email-domain-form" onSubmit={saveEmailDomains}>
-                  <label>
-                    <span>{t("auth.emailDomains")}</span>
-                    <textarea
-                      value={emailDomains}
-                      disabled={interactionDisabled}
-                      placeholder={t("auth.emailDomainsPlaceholder")}
-                      onChange={(event) => setEmailDomains(event.target.value)}
-                    />
-                    <small>{t("auth.emailDomainsHelp")}</small>
-                  </label>
-                  <button type="submit" disabled={interactionDisabled}>
-                    {t("auth.saveEmailDomains")}
-                  </button>
-                </form>
+              {tenantCanManage ? (
+                <EmailPolicyForm client={sessionClient} tenantId={tenant.id} />
+              ) : null}
+              <AccountManagement
+                session={session}
+                sessionClient={sessionClient}
+                tenant={tenant}
+                onSessionEnded={onSessionExpired}
+              />
+              <ProviderManagement session={session} sessionClient={sessionClient} />
+              {tenantCanManage ? (
+                <ServiceAccountManagement client={client} tenant={tenant} projects={projects} />
+              ) : null}
+              {tenantCanManage ? (
+                <InvitationManagement
+                  client={client}
+                  sessionClient={sessionClient}
+                  tenant={tenant}
+                  projects={projects}
+                />
               ) : null}
               <button type="button" disabled={interactionDisabled} onClick={logout}>
                 {t("auth.logout")}
@@ -2280,7 +2310,10 @@ function Dashboard({
             const failure = adminFailure(cause);
             return (
               <p className="danger-text" role="alert" key={resource}>
-                {t("page.resourceFailed", { resource })} {t(failure.key)}
+                {t("page.resourceFailed", {
+                  resource: t(`resource.${resource as keyof AdminWorkspaceData}`),
+                })}{" "}
+                {t(failure.key)}
                 {failure.code ? ` · ${failure.code}` : ""}
               </p>
             );
@@ -2307,7 +2340,6 @@ function Dashboard({
                 >
                   <small>{t("overview.totalTargets")}</small>
                   <strong>{number(targets.length)}</strong>
-                  <span>{t("overview.targetKinds")}</span>
                 </button>
                 <button
                   type="button"
@@ -2405,7 +2437,6 @@ function Dashboard({
                 <div className="panel-heading">
                   <div>
                     <h2 id="recent-failed-operations-title">{t("overview.failedOperations")}</h2>
-                    <p>{t("overview.failedOperationsDescription")}</p>
                   </div>
                   <button
                     className="text-button"
@@ -2431,7 +2462,6 @@ function Dashboard({
                 <div className="panel-heading">
                   <div>
                     <h2>{t("overview.targetHealth")}</h2>
-                    <p>{t("overview.liveResources")}</p>
                   </div>
                   <button className="text-button" type="button" onClick={() => navigate("targets")}>
                     {t("overview.viewTargets")}
@@ -2450,7 +2480,6 @@ function Dashboard({
                 <div className="panel-heading">
                   <div>
                     <h2>{t("overview.leaseLifecycle")}</h2>
-                    <p>{t("overview.leaseLifecycleDescription")}</p>
                   </div>
                   <button className="text-button" type="button" onClick={() => navigate("leases")}>
                     {t("overview.viewLeases")}
@@ -2511,9 +2540,6 @@ function Dashboard({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">
-                  sandboxes.list · {number(visibleSandboxes.length)}
-                </span>
               </div>
               <div className="panel target-list-panel">
                 <SandboxTable
@@ -2522,7 +2548,6 @@ function Dashboard({
                   onSelect={selectSandbox}
                 />
               </div>
-              <p className="cluster-boundary">{t("sandbox.boundary")}</p>
             </section>
           ) : page === "targets" ? (
             <section className="resource-list">
@@ -2548,9 +2573,6 @@ function Dashboard({
                 >
                   {t("target.filter.clear")}
                 </button>
-                <span className="scope-chip" role="status">
-                  targets.list · {number(visibleTargets.length)}
-                </span>
               </div>
               <ResourceRefresh
                 loading={busy?.message.key === "operation.refresh"}
@@ -2561,8 +2583,6 @@ function Dashboard({
                     "table.kind",
                     "table.status",
                     "table.engineApi",
-                    "table.osArchitecture",
-                    "table.generation",
                     "table.lastProbe",
                     "table.actions",
                   ] as const
@@ -2632,16 +2652,11 @@ function Dashboard({
                     ),
                   )}
                 </select>
-                <span className="scope-chip">
-                  targets.list · {number(visibleClusterHosts.length)}
-                </span>
-                <span className="scope-chip">workers.list · {number(visibleWorkers.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <div className="panel-heading">
                   <div>
                     <h2>{t("cluster.overviewTitle")}</h2>
-                    <p>{t("cluster.overviewDescription")}</p>
                   </div>
                 </div>
                 <ClusterHostTable
@@ -2654,7 +2669,6 @@ function Dashboard({
                 <div className="panel-heading">
                   <div>
                     <h2>{t("cluster.workersTitle")}</h2>
-                    <p>{t("cluster.workersDescription")}</p>
                   </div>
                 </div>
                 <WorkerTable
@@ -2664,7 +2678,6 @@ function Dashboard({
                   onSelect={selectWorker}
                 />
               </div>
-              <p className="cluster-boundary">{t("cluster.authorityBoundary")}</p>
             </section>
           ) : page === "releases" ? (
             <section className="resource-list">
@@ -2676,7 +2689,6 @@ function Dashboard({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">releases.list · {number(visibleReleases.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <ReleaseTable releases={visibleReleases} />
@@ -2692,9 +2704,6 @@ function Dashboard({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">
-                  profiles.list · {number(visibleRuntimeProfiles.length)}
-                </span>
               </div>
               <div className="panel target-list-panel">
                 <RuntimeProfileTable
@@ -2703,7 +2712,6 @@ function Dashboard({
                   onSelect={selectRuntimeProfile}
                 />
               </div>
-              <p className="cluster-boundary">{t("runtimeProfile.boundary")}</p>
             </section>
           ) : page === "profiles" ? (
             <section className="resource-list">
@@ -2715,7 +2723,6 @@ function Dashboard({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">profiles.list · {number(visibleProfiles.length)}</span>
               </div>
               <div className="panel target-list-panel">
                 <ProfileTable
@@ -2771,9 +2778,6 @@ function Dashboard({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
-                <span className="scope-chip">
-                  storage-policies.list · {number(visibleStoragePolicies.length)}
-                </span>
               </div>
               <div className="panel target-list-panel">
                 <StoragePolicyTable
@@ -2783,70 +2787,29 @@ function Dashboard({
                 />
               </div>
 
-              <WorkspaceSnapshotPanel
-                snapshots={workspaceSnapshots}
-                sandboxes={sandboxes}
-                restoreRuntimeProfiles={restoreRuntimeProfiles}
-                selectedRestoreSnapshot={selectedRestoreSnapshot}
-                snapshotForm={snapshotForm}
-                restoreForm={restoreForm}
-                busy={busy !== null}
-                onCreate={createWorkspaceSnapshot}
-                onRestore={restoreWorkspaceSnapshot}
-                onSnapshotFormChange={setSnapshotForm}
-                onRestoreFormChange={setRestoreForm}
-                onCleanup={(snapshot) => {
-                  operationTriggerRef.current =
-                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
-                  setSnapshotCleanup(snapshot);
-                }}
-              />
-
               <section className="panel overview-panel">
                 <div className="panel-heading">
                   <div>
-                    <h2>{t("storagePolicy.formTitle")}</h2>
-                    <p>{t("storagePolicy.formDescription")}</p>
+                    <h2>
+                      {selectedStoragePolicy === undefined
+                        ? t("storagePolicy.createTitle")
+                        : t("storagePolicy.editTitle", {
+                            name: selectedStoragePolicy.metadata.name,
+                          })}
+                    </h2>
                   </div>
-                  <span className="scope-chip">storage-policies.get · storage-policies.update</span>
                 </div>
                 <form className="resource-form" onSubmit={saveStoragePolicy}>
-                  <div className="form-row">
-                    <label>
-                      <span>{t("storagePolicy.id")}</span>
-                      <input
-                        required
-                        maxLength={128}
-                        spellCheck={false}
-                        value={storagePolicyForm.policyId}
-                        disabled={selectedStoragePolicy !== undefined}
-                        onChange={(event) =>
-                          setStoragePolicyForm((current) => ({
-                            ...current,
-                            policyId: event.target.value,
-                          }))
-                        }
-                        placeholder="storage-standard"
-                      />
-                    </label>
-                    <label>
-                      <span>{t("storagePolicy.name")}</span>
-                      <input
-                        required
-                        maxLength={128}
-                        spellCheck={false}
-                        value={storagePolicyForm.policyName}
-                        disabled={selectedStoragePolicyReferenced}
-                        onChange={(event) =>
-                          setStoragePolicyForm((current) => ({
-                            ...current,
-                            policyName: event.target.value,
-                          }))
-                        }
-                        placeholder="storage-standard"
-                      />
-                    </label>
-                  </div>
+                  <NameField
+                    label={t("storagePolicy.name")}
+                    value={storagePolicyForm.policyName}
+                    takenMessage={storagePolicyNameTaken ? t("form.nameTaken") : ""}
+                    placeholder="storage-standard"
+                    disabled={selectedStoragePolicyReferenced}
+                    onChange={(policyName) =>
+                      setStoragePolicyForm((current) => ({ ...current, policyName }))
+                    }
+                  />
                   <label>
                     <span>{t("storagePolicy.userSummary")}</span>
                     <input
@@ -2882,85 +2845,112 @@ function Dashboard({
                       }
                     />
                   </label>
-                  <div className="form-row">
-                    <label>
-                      <span>{t("storagePolicy.snapshotBackendRef")}</span>
-                      <input
-                        maxLength={128}
-                        spellCheck={false}
-                        value={storagePolicyForm.snapshotBackendRef}
-                        disabled={selectedStoragePolicyReferenced}
-                        onChange={(event) =>
-                          setStoragePolicyForm((current) => ({
-                            ...current,
-                            snapshotBackendRef: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>{t("storagePolicy.artifactBackendRef")}</span>
-                      <input
-                        maxLength={128}
-                        spellCheck={false}
-                        value={storagePolicyForm.artifactBackendRef}
-                        disabled={selectedStoragePolicyReferenced}
-                        onChange={(event) =>
-                          setStoragePolicyForm((current) => ({
-                            ...current,
-                            artifactBackendRef: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <p className="cluster-boundary">
-                    {t(
-                      selectedStoragePolicyReferenced
-                        ? "storagePolicy.referencedBoundary"
-                        : "storagePolicy.lifecycleBoundary",
-                    )}
-                  </p>
+                  <AdvancedFields>
+                    <div className="form-row">
+                      <label>
+                        <span>{t("storagePolicy.snapshotBackendRef")}</span>
+                        <input
+                          maxLength={128}
+                          spellCheck={false}
+                          list="storage-backend-refs"
+                          value={storagePolicyForm.snapshotBackendRef}
+                          disabled={selectedStoragePolicyReferenced}
+                          onChange={(event) =>
+                            setStoragePolicyForm((current) => ({
+                              ...current,
+                              snapshotBackendRef: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>{t("storagePolicy.artifactBackendRef")}</span>
+                        <input
+                          maxLength={128}
+                          spellCheck={false}
+                          list="storage-backend-refs"
+                          value={storagePolicyForm.artifactBackendRef}
+                          disabled={selectedStoragePolicyReferenced}
+                          onChange={(event) =>
+                            setStoragePolicyForm((current) => ({
+                              ...current,
+                              artifactBackendRef: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <Suggestions
+                      id="storage-backend-refs"
+                      values={storagePolicies.flatMap(({ spec }) => [
+                        spec.snapshotBackendRef,
+                        spec.artifactBackendRef,
+                      ])}
+                    />
+                  </AdvancedFields>
+                  {selectedStoragePolicyReferenced ? (
+                    <p className="cluster-boundary">{t("storagePolicy.referencedBoundary")}</p>
+                  ) : null}
                   <button
                     className="button primary"
                     type="submit"
-                    disabled={busy !== null || selectedStoragePolicyReferenced}
+                    disabled={
+                      busy !== null || selectedStoragePolicyReferenced || storagePolicyNameTaken
+                    }
                   >
                     {t("storagePolicy.save")}
                   </button>
                 </form>
               </section>
 
-              <section className="activity-block" aria-labelledby="storage-policy-audit-title">
-                <div className="activity-heading">
-                  <h2 id="storage-policy-audit-title">{t("storagePolicy.audit")}</h2>
-                  <span className="scope-chip">
-                    audit.list · {number(storagePolicyAudit.length)}
-                  </span>
-                </div>
-                {storagePolicyAudit.length === 0 ? (
-                  <p className="activity-empty">{t("storagePolicy.noAudit")}</p>
-                ) : (
-                  <ol className="activity-list compact">
-                    {storagePolicyAudit.map((event) => (
-                      <li key={event.eventId}>
-                        <div>
-                          <strong>{auditLabel(event.action, t)}</strong>
-                          <span className={`phase ${phaseTone(event.result)}`}>
-                            <i /> {phaseLabel(event.result, t)}
-                          </span>
-                        </div>
-                        <small className="mono break">
-                          {t("common.actor", { actor: event.actor })}
-                        </small>
-                        <small className="mono">
-                          {event.requestId} · {dateTime(event.occurredAt)}
-                        </small>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </section>
+              {selectedStoragePolicy === undefined ? null : (
+                <section className="activity-block" aria-labelledby="storage-policy-audit-title">
+                  <div className="activity-heading">
+                    <h2 id="storage-policy-audit-title">{t("storagePolicy.audit")}</h2>
+                  </div>
+                  {storagePolicyAudit.length === 0 ? (
+                    <p className="activity-empty">{t("storagePolicy.noAudit")}</p>
+                  ) : (
+                    <ol className="activity-list compact">
+                      {storagePolicyAudit.map((event) => (
+                        <li key={event.eventId}>
+                          <div>
+                            <strong>{auditLabel(event.action, t)}</strong>
+                            <span className={`phase ${phaseTone(event.result)}`}>
+                              <i /> {phaseLabel(event.result, t)}
+                            </span>
+                          </div>
+                          <small className="mono break">
+                            {t("common.actor", { actor: event.actor })}
+                          </small>
+                          <small className="mono">
+                            {event.requestId} · {dateTime(event.occurredAt)}
+                          </small>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              )}
+
+              <WorkspaceSnapshotPanel
+                snapshots={workspaceSnapshots}
+                sandboxes={sandboxes}
+                restoreRuntimeProfiles={restoreRuntimeProfiles}
+                selectedRestoreSnapshot={selectedRestoreSnapshot}
+                snapshotForm={snapshotForm}
+                restoreForm={restoreForm}
+                busy={busy !== null}
+                onCreate={createWorkspaceSnapshot}
+                onRestore={restoreWorkspaceSnapshot}
+                onSnapshotFormChange={setSnapshotForm}
+                onRestoreFormChange={setRestoreForm}
+                onCleanup={(snapshot) => {
+                  operationTriggerRef.current =
+                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                  setSnapshotCleanup(snapshot);
+                }}
+              />
             </section>
           ) : page === "quotas" ? (
             <section className="resource-list">
@@ -3014,9 +3004,7 @@ function Dashboard({
                 <div className="panel-heading">
                   <div>
                     <h2>{t("quota.formTitle")}</h2>
-                    <p>{t("quota.formDescription")}</p>
                   </div>
-                  <span className="scope-chip">quotas.get · quotas.update</span>
                 </div>
                 <form className="resource-form" onSubmit={updateLeaseQuota}>
                   <div className="form-row">
@@ -3098,7 +3086,6 @@ function Dashboard({
               <section className="activity-block" aria-labelledby="quota-audit-title">
                 <div className="activity-heading">
                   <h2 id="quota-audit-title">{t("quota.audit")}</h2>
-                  <span className="scope-chip">audit.list · {number(leaseQuotaAudit.length)}</span>
                 </div>
                 {leaseQuotaAudit.length === 0 ? (
                   <p className="activity-empty">{t("quota.noAudit")}</p>
@@ -3143,9 +3130,6 @@ function Dashboard({
                 >
                   {t("overview.leaseAttention")}
                 </button>
-                <span className="scope-chip" role="status">
-                  leases.list · {number(visibleLeases.length)}
-                </span>
                 {leasePhaseFilter !== "" || leaseCleanupBlockedOnly ? (
                   <div
                     className="lease-active-state"
@@ -3178,7 +3162,6 @@ function Dashboard({
                     "table.name",
                     "table.observed",
                     "table.cleanup",
-                    "table.generation",
                     "table.expires",
                     "table.actions",
                   ] as const
@@ -3217,9 +3200,6 @@ function Dashboard({
                 >
                   {t("maintenance.failedOnly")}
                 </button>
-                <span className="scope-chip" role="status">
-                  operations.list · {number(visibleMaintenanceOperations.length)}
-                </span>
               </div>
               <div className="panel target-list-panel">
                 <MaintenanceOperationTable
@@ -3659,6 +3639,14 @@ function Dashboard({
           draft={releaseForm}
           feedback={feedback}
           disabled={busy !== null}
+          nameTaken={
+            releaseForm.releaseName.trim() !== "" &&
+            releases.some(
+              ({ metadata }) =>
+                metadata.uid ===
+                identifierFromName(releaseForm.releaseName.trim(), "worker-release"),
+            )
+          }
           onDraftChange={setReleaseForm}
           onClose={() => setRegisteringRelease(false)}
           onSubmit={registerRelease}
@@ -3671,6 +3659,8 @@ function Dashboard({
           storagePolicies={storagePolicies}
           networkPolicies={networkPolicies}
           releases={releases}
+          targets={targets}
+          credentialRefSuggestions={profiles.map(({ spec }) => spec.providerCredentialRef)}
           feedback={feedback}
           disabled={busy !== null}
           onDraftChange={setProfileForm}
@@ -3684,11 +3674,265 @@ function Dashboard({
           draft={targetForm}
           feedback={feedback}
           disabled={busy !== null}
+          nameTaken={
+            targetForm.targetName.trim() !== "" &&
+            targets.some(
+              ({ metadata }) =>
+                metadata.uid ===
+                identifierFromName(targetForm.targetName.trim(), targetForm.targetKind),
+            )
+          }
+          credentialRefSuggestions={[
+            ...targets.map(({ spec }) => spec.credentialRef),
+            ...profiles.map(({ spec }) => spec.providerCredentialRef),
+          ]}
           onDraftChange={setTargetForm}
-          onClose={() => setRegistering(false)}
+          onClose={() => {
+            setTargetForm(withoutKubeconfig);
+            setRegistering(false);
+          }}
           onSubmit={registerTarget}
         />
       ) : null}
     </div>
+  );
+}
+
+type AdminSessionState = "restoring" | "login" | "ready";
+
+export function App() {
+  const { t } = useI18n();
+  const [cliAuthorization] = useState(() => window.location.hash === "#cli");
+  const [anonymousSessionClient] = useState(() => createSessionHTTPClient(window.location.origin));
+  const [sessionClient, setSessionClient] = useState<BrowserSessionClient | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
+  const [session, setSession] = useState<BrowserSession | null>(null);
+  const [tenants, setTenants] = useState<readonly BrowserTenant[]>([]);
+  const [projects, setProjects] = useState<readonly Project[]>([]);
+  const [connection, setConnection] = useState(() =>
+    readSavedAdminConnection(window.sessionStorage),
+  );
+  const [state, setState] = useState<AdminSessionState>("restoring");
+  const [error, setError] = useState("");
+  const requestRef = useRef<AbortController | null>(null);
+
+  function clearSession(message = "") {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setSession(null);
+    setSessionClient(null);
+    setClient(null);
+    setTenants([]);
+    setProjects([]);
+    setError(message);
+    setState("login");
+  }
+
+  async function activate(nextSession: BrowserSession, signal: AbortSignal) {
+    if (nextSession.application !== "admin") throw new Error("session_wrong_console");
+    const authenticatedSessionClient = createSessionHTTPClient(
+      window.location.origin,
+      nextSession.csrfToken,
+    );
+    const nextClient = createBrowserHTTPClient(window.location.origin, nextSession.csrfToken);
+    const nextTenants = await listAllBrowserTenants(
+      authenticatedSessionClient,
+      nextSession,
+      signal,
+    );
+    const tenantId = nextTenants.some(({ id }) => id === connection.tenantId)
+      ? connection.tenantId
+      : (nextTenants[0]?.id ?? "");
+    const nextProjects =
+      tenantId === "" ? [] : await listAllAdminProjects(nextClient, tenantId, signal);
+    const projectId = nextProjects.some(({ metadata }) => metadata.uid === connection.projectId)
+      ? connection.projectId
+      : (nextProjects[0]?.metadata.uid ?? "");
+    const nextConnection = { tenantId, projectId };
+    setSession(nextSession);
+    setSessionClient(authenticatedSessionClient);
+    setClient(nextClient);
+    setTenants(nextTenants);
+    setProjects(nextProjects);
+    setConnection(nextConnection);
+    writeSavedAdminConnection(window.sessionStorage, nextConnection);
+    setError("");
+    setState("ready");
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+    void anonymousSessionClient
+      .getBrowserSession(signal)
+      .then((restored) => activate(restored, signal))
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        if (cause instanceof ClientError && cause.status === 401) clearSession();
+        else clearSession(t(sessionMessage(cause)));
+      });
+    return () => controller.abort();
+  }, [anonymousSessionClient]);
+
+  async function login(email: string, password: string) {
+    if (state === "restoring") return;
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setState("restoring");
+    setError("");
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+    try {
+      await activate(
+        await anonymousSessionClient.passwordLogin({ email, password }, signal),
+        signal,
+      );
+    } catch (cause) {
+      if (!controller.signal.aborted) clearSession(t(loginMessage(cause)));
+    }
+  }
+
+  async function changeScope(tenantId: string, projectId: string) {
+    if (client === null) return;
+    if (tenantId === connection.tenantId && projectId !== "") {
+      const next = { tenantId, projectId };
+      setConnection(next);
+      writeSavedAdminConnection(window.sessionStorage, next);
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setState("restoring");
+    try {
+      const nextProjects = await listAllAdminProjects(
+        client,
+        tenantId,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+      );
+      const next = { tenantId, projectId: nextProjects[0]?.metadata.uid ?? "" };
+      setProjects(nextProjects);
+      setConnection(next);
+      writeSavedAdminConnection(window.sessionStorage, next);
+      setState("ready");
+    } catch (cause) {
+      if (!controller.signal.aborted) {
+        setError(t(sessionMessage(cause)));
+        setState("ready");
+      }
+    }
+  }
+
+  if (state === "login")
+    return (
+      <LoginView client={anonymousSessionClient} busy={false} error={error} onSubmit={login} />
+    );
+  if (state === "restoring")
+    return (
+      <main className="connect-view" aria-live="polite">
+        <section className="connect-card">
+          <div className="eyebrow">{t("auth.secureSession")}</div>
+          <h1>{t("auth.loadingAdmin")}</h1>
+          <p className="lede">{t("auth.loadingAdminDescription")}</p>
+        </section>
+      </main>
+    );
+  if (session === null || sessionClient === null || client === null) return null;
+  if (cliAuthorization)
+    return (
+      <CLIAuthorization
+        client={sessionClient}
+        session={session}
+        labels={{
+          title: t("cli.title"),
+          description: t("cli.description"),
+          loading: t("cli.loading"),
+          expired: t("cli.expired"),
+          failed: t("cli.failed"),
+          approve: t("cli.approve"),
+          cancel: t("cli.cancel"),
+          back: t("cli.back"),
+        }}
+      />
+    );
+  const tenant = tenants.find(({ id }) => id === connection.tenantId);
+  const project = projects.find(({ metadata }) => metadata.uid === connection.projectId);
+  if (tenant === undefined || project === undefined)
+    return (
+      <main className="connect-view">
+        <section className="connect-card" aria-labelledby="admin-empty-title">
+          <div className="eyebrow">{t("auth.adminScope")}</div>
+          <h1 id="admin-empty-title">
+            {tenant === undefined ? t("auth.noTenants") : t("auth.noProjects")}
+          </h1>
+          <p className="lede">
+            {tenant === undefined ? t("auth.noTenantsHelp") : t("auth.noProjectsHelp")}
+          </p>
+          {tenants.length > 0 ? (
+            <label>
+              <span>{t("scope.tenant")}</span>
+              <select
+                value={connection.tenantId}
+                onChange={(event) => void changeScope(event.target.value, "")}
+              >
+                {tenants.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {error ? (
+            <div className="error-banner" role="alert">
+              {error}
+            </div>
+          ) : null}
+          <AccountManagement
+            session={session}
+            sessionClient={sessionClient}
+            {...(tenant === undefined ? {} : { tenant })}
+            onSessionEnded={() => clearSession(t("auth.sessionEnded"))}
+          />
+          <ProviderManagement session={session} sessionClient={sessionClient} />
+          {tenant === undefined ? null : (
+            <>
+              <EmailPolicyForm client={sessionClient} tenantId={tenant.id} />
+              <ServiceAccountManagement client={client} tenant={tenant} projects={projects} />
+              <InvitationManagement
+                client={client}
+                sessionClient={sessionClient}
+                tenant={tenant}
+                projects={projects}
+              />
+            </>
+          )}
+          <button
+            className="button outline"
+            type="button"
+            onClick={() => {
+              void sessionClient.logoutBrowserSession().finally(() => clearSession());
+            }}
+          >
+            Sign out
+          </button>
+        </section>
+      </main>
+    );
+  return (
+    <Dashboard
+      key={`${tenant.id}/${project.metadata.uid}`}
+      client={client}
+      connection={connection}
+      projects={projects}
+      session={session}
+      sessionClient={sessionClient}
+      tenant={tenant}
+      tenants={tenants}
+      project={project}
+      onScopeChange={(tenantId, projectId) => void changeScope(tenantId, projectId)}
+      onSessionExpired={() => clearSession(t("auth.sessionEnded"))}
+    />
   );
 }

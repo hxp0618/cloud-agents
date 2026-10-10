@@ -1,0 +1,7 @@
+{
+  "tokenSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expectedClientId": "cloud-agents-admin-web",
+  "expectedApplication": "admin",
+  "expectedTenantId": "tenant-alpha",
+  "expectedProjectId": "project-alpha"
+}

@@ -1,0 +1,6 @@
+{
+  "state": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "code": "provider-code",
+  "issuer": "https://id.example",
+  "sessionState": "keycloak-session"
+}

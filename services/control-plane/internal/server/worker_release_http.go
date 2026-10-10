@@ -68,11 +68,11 @@ func (server *WorkerReleaseHTTPServer) ServeHTTP(writer http.ResponseWriter, req
 		writePublicProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, releasePermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, releasePermission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -99,7 +99,7 @@ func (server *WorkerReleaseHTTPServer) register(writer http.ResponseWriter, requ
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -140,7 +140,7 @@ func (server *WorkerReleaseHTTPServer) list(writer http.ResponseWriter, request 
 			return
 		}
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -172,8 +172,8 @@ func (server *WorkerReleaseHTTPServer) list(writer http.ResponseWriter, request 
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
-func (server *WorkerReleaseHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *WorkerReleaseHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func workerReleaseResource(snapshot internalworkerrelease.Snapshot) platformv1alpha1.WorkerRelease {

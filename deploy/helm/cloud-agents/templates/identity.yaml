@@ -1,0 +1,180 @@
+{{- $identityProviderKeys := dict }}
+{{- range $ref, $key := .Values.identity.providers.clientSecrets }}
+{{- $_ := set $identityProviderKeys $key true }}
+{{- end }}
+{{- range $ref, $key := .Values.identity.providers.rootCAs }}
+{{- $_ := set $identityProviderKeys $key true }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-identity
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: identity
+  ports:
+    - name: https
+      port: {{ .Values.identity.service.port }}
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-identity
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity
+spec:
+  replicas: {{ .Values.identity.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: identity
+  template:
+    metadata:
+      labels:
+        {{- include "cloud-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/component: identity
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: install-identity-secrets
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              install -m 0400 /source/config/run.json /target/run.json
+              install -m 0400 /source/database/{{ .Values.database.identityServiceURLKey }} /target/database-url
+              install -m 0400 /source/tls/{{ .Values.identity.tls.certificateKey }} /target/tls.crt
+              install -m 0400 /source/tls/{{ .Values.identity.tls.privateKeyKey }} /target/tls.key
+              install -m 0400 /source/signing/{{ .Values.identity.signing.privateKeyKey }} /target/signing.key
+              install -m 0400 /source/csrf/{{ .Values.identity.csrf.key }} /target/csrf.key
+              install -m 0400 /source/provider-flow/{{ .Values.identity.providerFlow.key }} /target/provider-flow.key
+              {{- range $ref, $key := .Values.identity.providers.clientSecrets }}
+              install -m 0400 /source/providers/{{ $key }} /target/provider-{{ $key }}
+              {{- end }}
+              {{- range $ref, $key := .Values.identity.providers.rootCAs }}
+              install -m 0400 /source/providers/{{ $key }} /target/provider-{{ $key }}
+              {{- end }}
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.adminWebKey }} /target/admin-web.proof
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.userWebKey }} /target/user-web.proof
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.controlPlaneKey }} /target/control-plane.proof
+              install -m 0400 /source/credentials/{{ .Values.identity.credentials.controlPlaneAuthorizationKey }} /target/identity-control-plane.proof
+              install -m 0400 /source/control-plane-ca/{{ .Values.tls.controlPlaneCAKey }} /target/control-plane-ca.crt
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: identity-config, mountPath: /source/config, readOnly: true }
+            - { name: database, mountPath: /source/database, readOnly: true }
+            - { name: identity-tls, mountPath: /source/tls, readOnly: true }
+            - { name: identity-signing, mountPath: /source/signing, readOnly: true }
+            - { name: identity-csrf, mountPath: /source/csrf, readOnly: true }
+            - { name: identity-provider-flow, mountPath: /source/provider-flow, readOnly: true }
+            {{- if and .Values.identity.providers.secretName $identityProviderKeys }}
+            - { name: identity-providers, mountPath: /source/providers, readOnly: true }
+            {{- end }}
+            - { name: identity-credentials, mountPath: /source/credentials, readOnly: true }
+            - { name: control-plane-ca, mountPath: /source/control-plane-ca, readOnly: true }
+            - { name: identity-secrets, mountPath: /target }
+      containers:
+        - name: identity
+          image: {{ include "cloud-agents.image" .Values.images.identity | quote }}
+          imagePullPolicy: {{ .Values.images.identity.pullPolicy }}
+          args: ["run", "--config", "/run/cloud-agents/identity/secrets/run.json"]
+          ports:
+            - { name: https, containerPort: {{ .Values.identity.service.port }} }
+          readinessProbe:
+            tcpSocket: { port: https }
+          livenessProbe:
+            tcpSocket: { port: https }
+          resources:
+            {{- toYaml .Values.identity.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: identity-secrets, mountPath: /run/cloud-agents/identity/secrets, readOnly: true }
+      volumes:
+        - name: identity-config
+          configMap:
+            name: {{ include "cloud-agents.fullname" . }}-identity-config
+            items:
+              - { key: run.json, path: run.json }
+        - name: database
+          secret:
+            secretName: {{ .Values.database.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.database.identityServiceURLKey }}, path: {{ .Values.database.identityServiceURLKey }} }
+        - name: identity-tls
+          secret:
+            secretName: {{ .Values.identity.tls.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.tls.certificateKey }}, path: {{ .Values.identity.tls.certificateKey }} }
+              - { key: {{ .Values.identity.tls.privateKeyKey }}, path: {{ .Values.identity.tls.privateKeyKey }} }
+        - name: identity-signing
+          secret:
+            secretName: {{ .Values.identity.signing.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.signing.privateKeyKey }}, path: {{ .Values.identity.signing.privateKeyKey }} }
+        - name: identity-csrf
+          secret:
+            secretName: {{ .Values.identity.csrf.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.csrf.key }}, path: {{ .Values.identity.csrf.key }} }
+        - name: identity-provider-flow
+          secret:
+            secretName: {{ .Values.identity.providerFlow.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.providerFlow.key }}, path: {{ .Values.identity.providerFlow.key }} }
+        {{- if and .Values.identity.providers.secretName $identityProviderKeys }}
+        - name: identity-providers
+          secret:
+            secretName: {{ .Values.identity.providers.secretName }}
+            defaultMode: 0440
+            items:
+              {{- range $key, $_ := $identityProviderKeys }}
+              - { key: {{ $key }}, path: {{ $key }} }
+              {{- end }}
+        {{- end }}
+        - name: identity-credentials
+          secret:
+            secretName: {{ .Values.identity.credentials.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.credentials.adminWebKey }}, path: {{ .Values.identity.credentials.adminWebKey }} }
+              - { key: {{ .Values.identity.credentials.userWebKey }}, path: {{ .Values.identity.credentials.userWebKey }} }
+              - { key: {{ .Values.identity.credentials.controlPlaneKey }}, path: {{ .Values.identity.credentials.controlPlaneKey }} }
+              - { key: {{ .Values.identity.credentials.controlPlaneAuthorizationKey }}, path: {{ .Values.identity.credentials.controlPlaneAuthorizationKey }} }
+        - name: control-plane-ca
+          secret:
+            secretName: {{ .Values.tls.controlPlaneSecretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.tls.controlPlaneCAKey }}, path: {{ .Values.tls.controlPlaneCAKey }} }
+        - name: identity-secrets
+          emptyDir: { medium: Memory }

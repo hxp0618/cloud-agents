@@ -2,17 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { createHTTPClient } from "../../sdk/typescript/src/platform";
+import { readPrivateAutomationToken } from "./private-automation-token";
 
 // Run only against an owned local dev stack. No valid mutation body is ever sent.
 const [endpoint, userTokenFile, adminTokenFile, tenant, project] = process.argv.slice(2);
 assert.ok(
   endpoint && userTokenFile && adminTokenFile && tenant && project,
-  "usage: bun test/e2e/test-admin-user-boundary.ts LOCAL_ENDPOINT USER_TOKEN_FILE ADMIN_TOKEN_FILE TENANT PROJECT",
+  "usage: bun test/e2e/test-admin-user-boundary.ts HTTPS_ENDPOINT USER_AUTOMATION_TOKEN ADMIN_AUTOMATION_TOKEN TENANT PROJECT",
 );
 const origin = new URL(endpoint);
 assert.ok(
-  origin.protocol === "http:" &&
-    origin.hostname === "127.0.0.1" &&
+  origin.protocol === "https:" &&
+    (origin.hostname === "127.0.0.1" ||
+      origin.hostname === "localhost" ||
+      origin.hostname.endsWith(".localhost")) &&
     origin.pathname === "/" &&
     !origin.search &&
     !origin.hash &&
@@ -20,10 +23,11 @@ assert.ok(
     !origin.password,
   "Only an owned loopback dev endpoint is supported",
 );
-const token = () => readFileSync(userTokenFile, "utf8").trim();
+const userToken = readPrivateAutomationToken(userTokenFile);
+const adminToken = readPrivateAutomationToken(adminTokenFile);
 const signal = () => AbortSignal.timeout(10_000);
-const user = createHTTPClient(endpoint, token());
-const admin = createHTTPClient(endpoint, readFileSync(adminTokenFile, "utf8").trim());
+const user = createHTTPClient(endpoint, userToken);
+const admin = createHTTPClient(endpoint, adminToken);
 // Positive controls distinguish an ordinary authenticated user from an expired token or dead API.
 await user.getProject(tenant, project, crypto.randomUUID(), signal());
 await admin.listAdminDeploymentTargets(
@@ -48,6 +52,7 @@ const parameters: Record<string, string> = {
 };
 let operations = 0;
 let requests = 0;
+const crossAudienceRequestIds = new Set<string>();
 for (const [path, item] of Object.entries(
   contract.paths as Record<string, Record<string, { operationId?: string }>>,
 )) {
@@ -68,7 +73,10 @@ for (const [path, item] of Object.entries(
     for (const authenticated of [true, false]) {
       const requestId = crypto.randomUUID();
       const headers: Record<string, string> = { "X-Request-ID": requestId };
-      if (authenticated) headers.Authorization = `Bearer ${token()}`;
+      if (authenticated) {
+        headers.Authorization = `Bearer ${userToken}`;
+        crossAudienceRequestIds.add(requestId);
+      }
       if (method !== "get") {
         headers["Content-Type"] = "application/json";
         headers["Idempotency-Key"] = crypto.randomUUID();
@@ -80,8 +88,8 @@ for (const [path, item] of Object.entries(
         signal: signal(),
         body: method === "get" ? undefined : "{",
       });
-      const expected = authenticated ? 403 : 401;
-      const label = `${operation.operationId} ${authenticated ? "user" : "anonymous"}`;
+      const expected = 401;
+      const label = `${operation.operationId} ${authenticated ? "cross-audience user" : "anonymous"}`;
       // Do not print an unexpected body: a broken endpoint could contain secret bytes.
       assert.equal(response.status, expected, `${label}: unexpected status`);
       assert.equal(response.headers.get("cache-control"), "no-store", label);
@@ -89,12 +97,12 @@ for (const [path, item] of Object.entries(
       const problem = await response.json();
       assert.ok(
         isDeepStrictEqual(problem, {
-          type: `https://problems.cloud-agents.dev/${authenticated ? "authorization-denied" : "authentication-failed"}`,
-          title: authenticated ? "Authorization denied" : "Authentication failed",
+          type: "https://problems.cloud-agents.dev/authentication-failed",
+          title: "Authentication failed",
           status: expected,
           requestId,
           error: {
-            code: authenticated ? "AUTHORIZATION_DENIED" : "AUTHENTICATION_FAILED",
+            code: "AUTHENTICATION_FAILED",
             retryable: false,
           },
         }),
@@ -106,6 +114,29 @@ for (const [path, item] of Object.entries(
   }
 }
 assert.ok(operations > 0, "No Admin operations tested");
+const deniedRequestIds = new Set<string>();
+let deniedPageToken: string | undefined;
+let deniedPages = 0;
+do {
+  const page = (
+    await admin.listAdminDeniedWriteEvents(
+      tenant,
+      project,
+      crypto.randomUUID(),
+      200,
+      deniedPageToken,
+      signal(),
+    )
+  ).value;
+  for (const event of page.events) deniedRequestIds.add(event.requestId);
+  deniedPageToken = page.nextPageToken;
+  assert.ok(++deniedPages <= 100, "Denied-write audit pagination did not terminate");
+} while (deniedPageToken !== undefined);
+assert.equal(
+  [...crossAudienceRequestIds].some((requestId) => deniedRequestIds.has(requestId)),
+  false,
+  "Cross-audience authentication failures must not create authenticated denial audit events",
+);
 // In a fresh project, unknown infrastructure fields must be rejected before Profile lookup.
 const profiles = (
   await admin.listAdminEnvironmentProfiles(
@@ -140,7 +171,7 @@ for (const field of forbiddenFields) {
       redirect: "error",
       signal: signal(),
       headers: {
-        Authorization: `Bearer ${token()}`,
+        Authorization: `Bearer ${userToken}`,
         "X-Request-ID": crypto.randomUUID(),
         "Idempotency-Key": crypto.randomUUID(),
         "Content-Type": "application/json",
@@ -160,8 +191,9 @@ process.stdout.write(
   JSON.stringify({
     operations,
     requests,
-    authenticatedUser: 403,
+    crossAudienceUser: 401,
     anonymous: 401,
+    crossAudienceAuditEvents: 0,
     rejectedUserInfrastructureFields: forbiddenFields.length,
   }) + "\n",
 );

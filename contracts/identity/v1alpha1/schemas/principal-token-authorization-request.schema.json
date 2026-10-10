@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/principal-token-authorization-request.schema.json",
+  "title": "PrincipalTokenAuthorizationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "application",
+    "clientId",
+    "credentialSha256",
+    "tenantId"
+  ],
+  "properties": {
+    "application": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ]
+    },
+    "clientId": {
+      "type": "string",
+      "enum": [
+        "cloud-agents-cli",
+        "cloud-agents-automation"
+      ]
+    },
+    "credentialSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "tenantId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "projectId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    }
+  }
+}

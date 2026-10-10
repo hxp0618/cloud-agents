@@ -30,9 +30,20 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["controlPlane", "worker", "migrate", "accessGateway", "adminWeb", "userWeb"],
+      "required": [
+        "controlPlane",
+        "identity",
+        "worker",
+        "migrate",
+        "accessGateway",
+        "adminWeb",
+        "userWeb"
+      ],
       "properties": {
         "controlPlane": {
+          "$ref": "#/definitions/image"
+        },
+        "identity": {
           "$ref": "#/definitions/image"
         },
         "worker": {
@@ -73,10 +84,291 @@
     },
     "database": {
       "type": "object",
+      "required": ["identityServiceURLKey", "identityBootstrapURLKey"],
       "properties": {
         "tenantBootstrapURLKey": {
           "type": "string",
           "minLength": 1
+        },
+        "identityServiceURLKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identityBootstrapURLKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replicas",
+        "issuer",
+        "adminAudience",
+        "userAudience",
+        "signingKeyId",
+        "service",
+        "tls",
+        "signing",
+        "csrf",
+        "credentials",
+        "resources",
+        "providerFlow",
+        "providers"
+      ],
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "const": 1
+        },
+        "issuer": {
+          "type": "string",
+          "pattern": "^https://[^/?#]+$"
+        },
+        "adminAudience": {
+          "type": "string",
+          "pattern": "^https://[^/?#]+$"
+        },
+        "userAudience": {
+          "type": "string",
+          "pattern": "^https://[^/?#]+$"
+        },
+        "signingKeyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": {
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretName", "certificateKey", "privateKeyKey", "caKey"],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "certificateKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "privateKeyKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "caKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "signing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretName", "privateKeyKey"],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "privateKeyKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "csrf": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretName", "key"],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "secretName",
+            "adminWebKey",
+            "userWebKey",
+            "controlPlaneKey",
+            "controlPlaneAuthorizationKey"
+          ],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "adminWebKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "userWebKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controlPlaneKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controlPlaneAuthorizationKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "resources": {
+          "type": "object"
+        },
+        "providerFlow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretName", "key"],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253,
+              "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+            },
+            "key": {
+              "type": "string",
+              "maxLength": 253,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["secretName", "clientSecrets", "rootCAs"],
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "maxLength": 253,
+              "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+            },
+            "clientSecrets": {
+              "type": "object",
+              "maxProperties": 128,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9._~-]{1,128}$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              }
+            },
+            "rootCAs": {
+              "type": "object",
+              "maxProperties": 128,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9._~-]{1,128}$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "identityBootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "secretName",
+        "setupProofKey",
+        "passwordHashKey",
+        "userId",
+        "email",
+        "displayName",
+        "keyNotBefore",
+        "keyNotAfter"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "secretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "setupProofKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passwordHashKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 320
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "keyNotBefore": {
+          "type": "string"
+        },
+        "keyNotAfter": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "keyNotBefore": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          },
+          "keyNotAfter": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          }
         }
       }
     },
@@ -144,9 +436,14 @@
     "deploymentTargets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kubernetesCredentialSecretName", "sshCredentialSecretName"],
+      "required": ["kubernetesCredentialSecretName", "sshCredentialSecretName", "credentialKeySecretName"],
       "properties": {
         "kubernetesCredentialSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+        },
+        "credentialKeySecretName": {
           "type": "string",
           "maxLength": 253,
           "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
@@ -177,8 +474,12 @@
       "oneOf": [
         {
           "properties": {
-            "certificateAuthoritySecretName": { "const": "" },
-            "trustDomain": { "const": "" }
+            "certificateAuthoritySecretName": {
+              "const": ""
+            },
+            "trustDomain": {
+              "const": ""
+            }
           }
         },
         {
@@ -234,6 +535,22 @@
           "type": "integer",
           "const": 1
         },
+        "tlsSecretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tlsCertificateKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tlsPrivateKeyKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trustedProxyIP": {
+          "type": "string",
+          "maxLength": 64
+        },
         "controlPlaneCASecretName": {
           "type": "string",
           "minLength": 1,
@@ -254,6 +571,22 @@
         "replicas": {
           "type": "integer",
           "const": 1
+        },
+        "tlsSecretName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tlsCertificateKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tlsPrivateKeyKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trustedProxyIP": {
+          "type": "string",
+          "maxLength": 64
         },
         "controlPlaneCASecretName": {
           "type": "string",

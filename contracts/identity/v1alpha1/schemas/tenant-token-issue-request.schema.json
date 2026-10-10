@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/tenant-token-issue-request.schema.json",
+  "title": "TenantTokenIssueRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenantId"],
+  "properties": {
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "description": "Server-only request. Application, principal, roles, and scopes are derived from authenticated service/session and Control Plane authority."
+}

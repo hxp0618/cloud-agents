@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/token-status-request.schema.json",
+  "title": "TokenStatusRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tokenSha256", "expectedClientId", "expectedApplication", "expectedTenantId"],
+  "properties": {
+    "tokenSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "expectedClientId": {
+      "type": "string",
+      "enum": ["cloud-agents-admin-web", "cloud-agents-user-web", "cloud-agents-cli", "cloud-agents-automation"]
+    },
+    "expectedApplication": {
+      "type": "string",
+      "enum": ["admin", "user"]
+    },
+    "expectedTenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "expectedProjectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "description": "Server-only status check over the exact-token digest and verifier-established context."
+}

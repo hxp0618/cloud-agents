@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   type AdminAuditEvent,
   type DeploymentTarget,
@@ -7,8 +7,18 @@ import {
   type DeploymentTargetSchedulingPreview,
   type MaintenanceOperation,
 } from "@cloud-agents/cloud-agent-platform-sdk/platform";
-import { AdminSheet } from "../AdminSheet";
+import { AdminSheet, SheetHeading } from "../AdminSheet";
+import { identifierFromName } from "../admin";
 import { useI18n } from "../i18n";
+import { NameField, Suggestions } from "./form-fields";
+import {
+  maxKubeconfigBytes,
+  parseKubeconfig,
+  selectKubeconfigContext,
+  type Kubeconfig,
+  type KubeconfigContext,
+  type KubeconfigProblem,
+} from "./kubeconfig";
 import {
   auditLabel,
   operationImpactLabel,
@@ -17,15 +27,21 @@ import {
   resourceLabel,
   targetKindLabel,
 } from "./presentation";
-import { pageAdminTargets, targetIdentifierPattern, targetPageSizes } from "../admin";
+import { pageAdminTargets, targetPageSizes } from "../admin";
 
 export type TargetRegistrationDraft = {
-  targetId: string;
   targetName: string;
   targetKind: DeploymentTargetRegisterRequest["targetKind"];
   endpoint: string;
   credentialRef: string;
+  kubernetesConnection: "endpoint" | "kubeconfig";
+  kubeconfig: string;
+  kubeconfigContext: string;
 };
+
+export type KubeconfigSelection =
+  | Readonly<{ kubeconfig: Kubeconfig; context: KubeconfigContext }>
+  | KubeconfigProblem;
 
 export const targetEndpointPlaceholder: Readonly<
   Record<TargetRegistrationDraft["targetKind"], string>
@@ -37,30 +53,68 @@ export const targetEndpointPlaceholder: Readonly<
 
 export function targetRegistrationForm(): TargetRegistrationDraft {
   return {
-    targetId: "",
     targetName: "",
     targetKind: "docker",
     endpoint: "",
     credentialRef: "",
+    kubernetesConnection: "endpoint",
+    kubeconfig: "",
+    kubeconfigContext: "",
   };
 }
 
+function usesKubeconfig(draft: KubeconfigDraft): boolean {
+  return draft.targetKind === "kubernetes" && draft.kubernetesConnection === "kubeconfig";
+}
+
+type KubeconfigDraft = Pick<
+  TargetRegistrationDraft,
+  "targetKind" | "kubernetesConnection" | "kubeconfig" | "kubeconfigContext"
+>;
+
+/** Returns null until a kubeconfig is entered for a kubeconfig-based Kubernetes target. */
+export function kubeconfigSelectionFrom(draft: KubeconfigDraft): KubeconfigSelection | null {
+  if (!usesKubeconfig(draft) || draft.kubeconfig.trim() === "") return null;
+  const kubeconfig = parseKubeconfig(draft.kubeconfig);
+  if (typeof kubeconfig === "string") return kubeconfig;
+  return { kubeconfig, context: selectKubeconfigContext(kubeconfig, draft.kubeconfigContext) };
+}
+
+/** Returns null when the selected kubeconfig context cannot be registered. */
 export function deploymentTargetRegisterRequestFrom(
   draft: TargetRegistrationDraft,
-): DeploymentTargetRegisterRequest {
-  return {
-    targetId: draft.targetId.trim(),
-    targetName: draft.targetName.trim(),
+): DeploymentTargetRegisterRequest | null {
+  const targetName = draft.targetName.trim();
+  const request = {
+    targetId: identifierFromName(targetName, draft.targetKind),
+    targetName,
     targetKind: draft.targetKind,
     endpoint: draft.endpoint.trim(),
     credentialRef: draft.credentialRef.trim(),
   };
+  if (!usesKubeconfig(draft)) return request;
+  const selection = kubeconfigSelectionFrom(draft);
+  if (selection === null || typeof selection === "string") return null;
+  const { connection } = selection.context;
+  if (connection === null) return null;
+  return {
+    ...request,
+    endpoint: connection.endpoint,
+    kubernetesCredential: connection.credential,
+  };
+}
+
+/** Drops kubeconfig secrets from a draft while keeping the other fields. */
+export function withoutKubeconfig(draft: TargetRegistrationDraft): TargetRegistrationDraft {
+  return { ...draft, kubeconfig: "", kubeconfigContext: "" };
 }
 
 export function TargetRegistrationForm({
   draft,
   feedback,
   disabled,
+  nameTaken,
+  credentialRefSuggestions,
   onDraftChange,
   onClose,
   onSubmit,
@@ -68,80 +122,44 @@ export function TargetRegistrationForm({
   draft: TargetRegistrationDraft;
   feedback: ReactNode;
   disabled: boolean;
+  nameTaken: boolean;
+  credentialRefSuggestions: readonly string[];
   onDraftChange: (draft: TargetRegistrationDraft) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }>) {
   const { t } = useI18n();
+  const { targetKind, kubernetesConnection, kubeconfig, kubeconfigContext } = draft;
+  const kubeconfigMode = usesKubeconfig(draft);
+  const selection = useMemo(
+    () =>
+      kubeconfigSelectionFrom({ targetKind, kubernetesConnection, kubeconfig, kubeconfigContext }),
+    [targetKind, kubernetesConnection, kubeconfig, kubeconfigContext],
+  );
+  const selected = selection === null || typeof selection === "string" ? null : selection;
+  const problem = typeof selection === "string" ? selection : (selected?.context.problem ?? null);
+  const connection = selected?.context.connection ?? null;
+  async function loadKubeconfigFile(input: HTMLInputElement) {
+    const file = input.files?.[0];
+    input.value = "";
+    if (file === undefined) return;
+    // Reading one byte past the limit is enough for the parser to report tooLarge.
+    const text = await file.slice(0, maxKubeconfigBytes + 1).text();
+    onDraftChange({ ...draft, kubeconfig: text, kubeconfigContext: "" });
+  }
   return (
     <AdminSheet feedback={feedback} label={t("target.register.title")} onClose={onClose}>
       <section className="dialog" aria-labelledby="register-title">
-        <div className="panel-heading">
-          <div>
-            <div className="eyebrow">{t("target.register.eyebrow")}</div>
-            <h2 id="register-title">{t("target.register.title")}</h2>
-            <p>{t("target.register.description")}</p>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={t("action.close")}
-            onClick={() => onClose()}
-          >
-            ×
-          </button>
-        </div>
+        <SheetHeading id="register-title" title={t("target.register.title")} onClose={onClose} />
         <form className="resource-form" onSubmit={onSubmit}>
-          <div className="form-row">
-            <label>
-              <span>{t("target.id")}</span>
-              <input
-                value={draft.targetId}
-                pattern={targetIdentifierPattern}
-                aria-describedby="target-identifier-hint"
-                onInvalid={(event) =>
-                  event.currentTarget.setCustomValidity(t("target.identifierHint"))
-                }
-                onInput={(event) => event.currentTarget.setCustomValidity("")}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    targetId: event.target.value,
-                  })
-                }
-                placeholder="docker-primary"
-                maxLength={128}
-                required
-                autoFocus
-                data-sheet-autofocus
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              <span>{t("target.displayName")}</span>
-              <input
-                value={draft.targetName}
-                pattern={targetIdentifierPattern}
-                aria-describedby="target-identifier-hint"
-                onInvalid={(event) =>
-                  event.currentTarget.setCustomValidity(t("target.identifierHint"))
-                }
-                onInput={(event) => event.currentTarget.setCustomValidity("")}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    targetName: event.target.value,
-                  })
-                }
-                placeholder="docker-primary"
-                maxLength={128}
-                required
-              />
-            </label>
-          </div>
-          <p id="target-identifier-hint" className="field-help">
-            {t("target.identifierHint")}
-          </p>
+          <NameField
+            label={t("target.displayName")}
+            value={draft.targetName}
+            takenMessage={nameTaken ? t("form.nameTaken") : ""}
+            placeholder="docker-primary"
+            autoFocus
+            onChange={(targetName) => onDraftChange({ ...draft, targetName })}
+          />
           <label>
             <span>{t("target.kind")}</span>
             <select
@@ -158,28 +176,106 @@ export function TargetRegistrationForm({
               <option value="ssh">{t("target.kind.ssh")}</option>
             </select>
           </label>
-          <label>
-            <span>{t("target.endpoint")}</span>
-            <input
-              type="url"
-              value={draft.endpoint}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  endpoint: event.target.value,
-                })
-              }
-              placeholder={targetEndpointPlaceholder[draft.targetKind]}
-              maxLength={2048}
-              required
-              spellCheck={false}
-            />
-            <small>{t("target.endpointHelp")}</small>
-          </label>
+          {draft.targetKind === "kubernetes" ? (
+            <label>
+              <span>{t("target.connection")}</span>
+              <select
+                value={draft.kubernetesConnection}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...withoutKubeconfig(draft),
+                    kubernetesConnection: event.target
+                      .value as TargetRegistrationDraft["kubernetesConnection"],
+                  })
+                }
+              >
+                <option value="endpoint">{t("target.connection.endpoint")}</option>
+                <option value="kubeconfig">{t("target.connection.kubeconfig")}</option>
+              </select>
+            </label>
+          ) : null}
+          {kubeconfigMode ? (
+            <>
+              <label>
+                <span>{t("target.kubeconfig.file")}</span>
+                <input
+                  type="file"
+                  accept=".yaml,.yml,.conf,.config,text/yaml,application/yaml,text/plain"
+                  onChange={(event) => void loadKubeconfigFile(event.currentTarget)}
+                />
+              </label>
+              <label>
+                <span>{t("target.kubeconfig.content")}</span>
+                <textarea
+                  value={draft.kubeconfig}
+                  rows={8}
+                  required
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-invalid={problem === null ? undefined : true}
+                  onChange={(event) => onDraftChange({ ...draft, kubeconfig: event.target.value })}
+                />
+                {problem === null ? (
+                  <small>{t("target.kubeconfig.help")}</small>
+                ) : (
+                  <small className="danger-text" role="alert">
+                    {t(`target.kubeconfig.problem.${problem}`)}
+                  </small>
+                )}
+              </label>
+              {selected === null ? null : (
+                <>
+                  <label>
+                    <span>{t("target.kubeconfig.context")}</span>
+                    <select
+                      value={selected.context.name}
+                      onChange={(event) =>
+                        onDraftChange({ ...draft, kubeconfigContext: event.target.value })
+                      }
+                    >
+                      {selected.kubeconfig.contexts.map(({ name }) => (
+                        <option key={name} value={name}>
+                          {name === selected.kubeconfig.currentContext
+                            ? `${name} (${t("target.kubeconfig.current")})`
+                            : name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{t("target.kubeconfig.server")}</span>
+                    <input value={selected.context.server} readOnly spellCheck={false} />
+                    {connection === null ? null : (
+                      <small>{t(`target.kubeconfig.auth.${connection.authentication}`)}</small>
+                    )}
+                  </label>
+                </>
+              )}
+            </>
+          ) : (
+            <label>
+              <span>{t("target.endpoint")}</span>
+              <input
+                type="url"
+                value={draft.endpoint}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    endpoint: event.target.value,
+                  })
+                }
+                placeholder={targetEndpointPlaceholder[draft.targetKind]}
+                maxLength={2048}
+                required
+                spellCheck={false}
+              />
+            </label>
+          )}
           <label>
             <span>{t("target.credentialRef")}</span>
             <input
               value={draft.credentialRef}
+              list="target-credential-refs"
               onChange={(event) =>
                 onDraftChange({
                   ...draft,
@@ -191,13 +287,22 @@ export function TargetRegistrationForm({
               required
               spellCheck={false}
             />
-            <small>{t("target.credentialRefHelp")}</small>
+            <Suggestions id="target-credential-refs" values={credentialRefSuggestions} />
+            <small>
+              {t(
+                kubeconfigMode ? "target.kubeconfig.credentialRefHelp" : "target.credentialRefHelp",
+              )}
+            </small>
           </label>
           <div className="dialog-actions">
             <button className="button ghost" type="button" onClick={() => onClose()}>
               {t("action.cancel")}
             </button>
-            <button className="button primary" type="submit" disabled={disabled}>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={disabled || (kubeconfigMode && connection === null)}
+            >
               {t("action.registerTarget")}
             </button>
           </div>
@@ -326,7 +431,7 @@ export function TargetTable({
   selectedTargetId: string;
   onSelect: (targetId: string) => void;
 }>) {
-  const { t, number, dateTime } = useI18n();
+  const { t, dateTime } = useI18n();
   if (targets.length === 0)
     return (
       <div className="table-empty">
@@ -342,8 +447,6 @@ export function TargetTable({
             <th>{t("table.kind")}</th>
             <th>{t("table.status")}</th>
             <th>{t("table.engineApi")}</th>
-            <th>{t("table.osArchitecture")}</th>
-            <th>{t("table.generation")}</th>
             <th>{t("table.lastProbe")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
@@ -358,7 +461,9 @@ export function TargetTable({
               <td>
                 <button type="button" onClick={() => onSelect(target.metadata.uid)}>
                   <strong>{target.metadata.name}</strong>
-                  <small>{target.metadata.uid}</small>
+                  {target.metadata.uid === target.metadata.name ? null : (
+                    <small>{target.metadata.uid}</small>
+                  )}
                 </button>
               </td>
               <td>
@@ -370,24 +475,24 @@ export function TargetTable({
                 <span className={`phase ${phaseTone(target.spec.observedPhase)}`}>
                   <i /> {phaseLabel(target.spec.observedPhase, t)}
                 </span>
-                <small className="table-subline">
-                  {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
-                </small>
+                {target.spec.schedulingState === "active" ? null : (
+                  <small className="table-subline">
+                    {t("detail.schedulingState")}: {phaseLabel(target.spec.schedulingState, t)}
+                  </small>
+                )}
               </td>
               <td className="target-probe-facts">
-                <span>{target.spec.engineVersion || t("common.notAvailable")}</span>
-                <small className="table-subline">
-                  {t("cluster.apiVersion", {
-                    version: target.spec.apiVersion || t("common.notAvailable"),
-                  })}
-                </small>
+                {target.spec.engineVersion === "" ? (
+                  "—"
+                ) : (
+                  <>
+                    <span>{target.spec.engineVersion}</span>
+                    <small className="table-subline">
+                      {t("cluster.apiVersion", { version: target.spec.apiVersion })}
+                    </small>
+                  </>
+                )}
               </td>
-              <td className="target-probe-facts">
-                {target.spec.os && target.spec.architecture
-                  ? `${target.spec.os} / ${target.spec.architecture}`
-                  : t("common.notAvailable")}
-              </td>
-              <td className="mono">g{number(target.spec.generation)}</td>
               <td>{dateTime(target.spec.lastProbeAt)}</td>
               <td className="row-action-cell">
                 <button
@@ -541,7 +646,6 @@ export function TargetDetail({
       <section className="activity-block" aria-labelledby="target-operations-title">
         <div className="activity-heading">
           <h3 id="target-operations-title">{t("detail.operations")}</h3>
-          <span className="scope-chip">operations.list · {number(operations.length)}</span>
         </div>
         {operations.length === 0 ? (
           <p className="activity-empty">{t("detail.noOperations")}</p>
@@ -574,7 +678,6 @@ export function TargetDetail({
       <section className="activity-block" aria-labelledby="target-audit-title">
         <div className="activity-heading">
           <h3 id="target-audit-title">{t("detail.audit")}</h3>
-          <span className="scope-chip">audit.list · {number(audit.length)}</span>
         </div>
         {audit.length === 0 ? (
           <p className="activity-empty">{t("detail.noTargetAudit")}</p>
@@ -633,21 +736,7 @@ export function SchedulingConfirmation({
   const draining = preview.spec.desiredState === "drained";
   return (
     <section className="dialog" aria-labelledby="scheduling-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">targets.act · {t("common.destructive")}</div>
-          <h2 id="scheduling-title">{t("scheduling.confirmTitle")}</h2>
-          <p>{target.metadata.name}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="scheduling-title" title={t("scheduling.confirmTitle")} subject={target.metadata.name} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -741,21 +830,7 @@ export function CleanupConfirmation({
   );
   return (
     <section className="dialog" aria-labelledby="cleanup-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">targets.act · {t("common.destructive")}</div>
-          <h2 id="cleanup-title">{t("cleanup.confirmTitle")}</h2>
-          <p>{target.metadata.name}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="cleanup-title" title={t("cleanup.confirmTitle")} subject={target.metadata.name} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {

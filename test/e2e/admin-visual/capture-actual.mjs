@@ -1,23 +1,47 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { format } from "oxfmt";
 
-const [output, adminTokenFile, userTokenFile, projectId, tenantId = "tenant-local"] =
+const [output, adminAccountFile, deniedAccountFile, projectId, tenantId = "tenant-local"] =
   process.argv.slice(2);
-if (!output || !adminTokenFile || !userTokenFile || !projectId) {
+if (!output || !adminAccountFile || !deniedAccountFile || !projectId) {
   throw new Error(
-    "usage: node capture-actual.mjs OUTPUT ADMIN_TOKEN_FILE USER_TOKEN_FILE PROJECT_ID [TENANT_ID]",
+    "usage: node capture-actual.mjs OUTPUT ADMIN_ACCOUNT_FILE DENIED_ACCOUNT_FILE PROJECT_ID [TENANT_ID]",
   );
 }
+
+function readPrivateAccount(path) {
+  if ((statSync(path).mode & 0o077) !== 0) throw new Error("account fixture must be private");
+  const value = JSON.parse(readFileSync(path, "utf8"));
+  if (
+    Object.keys(value).sort().join(",") !== "email,password" ||
+    typeof value.email !== "string" ||
+    !/^[^@\s]+@[^@\s]+$/u.test(value.email) ||
+    value.email.length > 320 ||
+    typeof value.password !== "string" ||
+    value.password.length < 15 ||
+    value.password.length > 128 ||
+    /[\r\n]/u.test(value.password)
+  )
+    throw new Error("account fixture is invalid");
+  return Object.freeze(value);
+}
+
+const adminAccount = readPrivateAccount(adminAccountFile);
+const deniedAccount = readPrivateAccount(deniedAccountFile);
 
 const app = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_APP_URL ?? "http://127.0.0.1:4174/";
 const browserPath =
   process.env.CLOUD_AGENTS_BROWSER_PATH ??
   "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
+const browserTLSSPKI = process.env.CLOUD_AGENTS_BROWSER_TLS_SPKI ?? "";
+if (browserTLSSPKI && !/^[A-Za-z0-9+/=]+(?:,[A-Za-z0-9+/=]+)*$/u.test(browserTLSSPKI)) {
+  throw new Error("CLOUD_AGENTS_BROWSER_TLS_SPKI must contain comma-separated SHA-256 SPKI hashes");
+}
 const dockerTargetName = process.env.CLOUD_AGENTS_ADMIN_CAPTURE_DOCKER_TARGET ?? "visual-docker";
 const kubernetesTargetName =
   process.env.CLOUD_AGENTS_ADMIN_CAPTURE_KUBERNETES_TARGET ?? "visual-kubernetes";
@@ -39,6 +63,7 @@ const browser = spawn(
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-background-networking",
+    ...(browserTLSSPKI ? [`--ignore-certificate-errors-spki-list=${browserTLSSPKI}`] : []),
     "--remote-debugging-port=0",
     `--user-data-dir=${profile}`,
     "about:blank",
@@ -336,13 +361,46 @@ try {
     }
     accessibilityChecks.push({ name, ...check });
   };
-  const connect = async (token) => {
-    await waitFor("document.querySelector('.connect-form') !== null", "connection form");
-    const values = [app, tenantId, projectId, token];
+  const login = async (account, label) => {
+    await waitFor("document.querySelector('.connect-form') !== null", `${label} login form`);
+    const values = [account.email, account.password];
     const connected = await evaluate(
       `(() => { const inputs = [...document.querySelectorAll('.connect-form input')]; const values = ${JSON.stringify(values)}; if (inputs.length !== values.length) return false; for (let index = 0; index < inputs.length; index += 1) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(inputs[index], values[index]); inputs[index].dispatchEvent(new Event('input', { bubbles: true })); } document.querySelector('.connect-form').requestSubmit(); return true; })()`,
     );
-    if (!connected) throw new Error("Could not submit connection form");
+    if (!connected) throw new Error(`Could not submit ${label} login form`);
+  };
+  const logout = async (label) => {
+    const status = await evaluate(`fetch('/v1/identity/session', {
+      method: 'DELETE', credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': globalThis.__cloudAgentsCaptureCSRF ?? '' },
+    }).then(response => response.status)`);
+    assert.equal(status, 204, `${label} logout`);
+    await command("Page.navigate", { url: app });
+    await waitFor("document.querySelector('.connect-form') !== null", `${label} signed out`);
+  };
+  const selectScope = async () => {
+    await waitFor("document.querySelector('.scope-switchers select') !== null", "scope selectors");
+    const tenantSelected = await evaluate(`(() => {
+      const select = document.querySelector('.scope-switchers label:first-child select');
+      if (![...select.options].some(option => option.value === ${JSON.stringify(tenantId)})) return false;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(tenantId)});
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    assert.equal(tenantSelected, true, "capture tenant is selectable");
+    await waitFor(
+      `[...document.querySelectorAll('.scope-switchers label:last-child select option')].some(option => option.value === ${JSON.stringify(projectId)})`,
+      "capture project option",
+    );
+    await evaluate(`(() => {
+      const select = document.querySelector('.scope-switchers label:last-child select');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(projectId)});
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await waitFor(
+      `document.querySelector('.scope-switchers label:last-child select')?.value === ${JSON.stringify(projectId)}`,
+      "capture project selection",
+    );
   };
   const setTheme = async (theme) => {
     if ((await evaluate("document.documentElement.dataset.theme")) === theme) return;
@@ -1089,6 +1147,21 @@ try {
   await command("Network.enable");
   await command("Runtime.enable");
   await command("Log.enable");
+  await command("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (...args) => {
+        const response = await originalFetch(...args);
+        const path = new URL(typeof args[0] === 'string' ? args[0] : args[0].url, location.href).pathname;
+        if ((path === '/v1/identity/login/password' || path === '/v1/identity/session') && response.ok) {
+          void response.clone().json().then(value => {
+            if (typeof value?.csrfToken === 'string') globalThis.__cloudAgentsCaptureCSRF = value.csrfToken;
+          }).catch(() => {});
+        }
+        return response;
+      };
+    })();`,
+  });
   browserVersion = await command("Browser.getVersion");
   await command("Emulation.setEmulatedMedia", {
     media: "screen",
@@ -1100,8 +1173,9 @@ try {
   await evaluate("localStorage.setItem('cloud-agents-admin-locale', 'en-US'); location.reload()");
   await waitFor("document.readyState === 'complete'", "English locale reload");
   await waitFor("document.documentElement.lang === 'en-US'", "English locale");
-  await connect(readFileSync(adminTokenFile, "utf8").trim());
+  await login(adminAccount, "administrator");
   await waitFor("document.querySelector('.app-shell') !== null", "Admin API authority");
+  await selectScope();
   await navigateTargets();
 
   await setTheme("light");
@@ -1236,18 +1310,14 @@ try {
     "document.querySelector('.page-heading h1').textContent.trim()",
   );
   await command("Page.reload", { ignoreCache: true });
-  await waitFor(
-    "document.querySelector('.connect-form') !== null",
-    "Chinese reload connection form",
-  );
+  await waitFor("document.querySelector('.app-shell') !== null", "Chinese session reload");
   await waitFor("document.documentElement.lang === 'zh-CN'", "persisted Chinese locale");
   const persistedChinese = JSON.parse(
     await evaluate(
-      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('#connect-title').textContent.trim(), token: document.querySelector('input[type=password]').value })",
+      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('.page-heading h1').textContent.trim(), passwordField: document.querySelector('input[type=password]') !== null })",
     ),
   );
-  await connect(readFileSync(adminTokenFile, "utf8").trim());
-  await waitFor("document.querySelector('.app-shell') !== null", "Chinese Admin API authority");
+  await selectScope();
   await navigateTargets();
 
   await setTheme("light");
@@ -1278,6 +1348,16 @@ try {
       `JSON.stringify({ rows: [...document.querySelectorAll('tbody tr')].map((row) => ({ name: row.cells[0].innerText, kind: row.querySelector('[data-kind]')?.dataset.kind })), localKeys: Object.keys(localStorage).sort(), sessionKeys: Object.keys(sessionStorage).sort(), persistedValues: [...Object.values(localStorage), ...Object.values(sessionStorage)], locale: document.documentElement.lang, savedLocale: localStorage.getItem('cloud-agents-admin-locale'), messageKeyVisible: /\\b(?:action|account|boundary|cleanup|common|connection|detail|document|error|lease|nav|notice|operation|overview|page|phase|profile|resource|search|sheet|table|target)\\.[A-Za-z]/.test(document.body.innerText) })`,
     ),
   );
+  assert.equal(
+    authority.persistedValues.some(
+      (value) =>
+        value.includes(adminAccount.password) ||
+        value.includes(deniedAccount.password) ||
+        /bearer|authorization|session.?handle|eyJ[A-Za-z0-9_-]*\./iu.test(value),
+    ),
+    false,
+    "browser storage retained a reusable credential",
+  );
   const adminConsoleErrors = [...consoleErrors];
   const adminConsoleWarnings = [...consoleWarnings];
   const adminHTTPFailures = httpFailures.filter((failure) => failure.phase === "admin");
@@ -1299,18 +1379,27 @@ try {
   consoleWarnings.length = 0;
   phase = "permission-denied";
   await setViewport(1440, 900);
+  await logout("administrator");
   await evaluate("localStorage.setItem('cloud-agents-admin-locale', 'fr-FR'); location.reload()");
-  await waitFor("document.querySelector('.connect-form') !== null", "user-token connection form");
+  await waitFor("document.querySelector('.connect-form') !== null", "denied-account login form");
   await waitFor("document.documentElement.lang === 'en-US'", "invalid locale fallback");
   const fallbackLocale = JSON.parse(
     await evaluate(
-      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('#connect-title').textContent.trim() })",
+      "JSON.stringify({ locale: document.documentElement.lang, saved: localStorage.getItem('cloud-agents-admin-locale'), title: document.querySelector('#admin-login-title').textContent.trim() })",
     ),
   );
-  await connect(readFileSync(userTokenFile, "utf8").trim());
-  await waitFor("document.querySelector('[role=alert]') !== null", "Admin API permission denial");
+  await login(deniedAccount, "non-admin account");
+  await waitFor("typeof globalThis.__cloudAgentsCaptureCSRF === 'string'", "denied session CSRF");
+  const permissionDeniedStatus = await evaluate(
+    `fetch(${JSON.stringify(`/v1/admin/tenants/${encodeURIComponent(tenantId)}/projects/${encodeURIComponent(projectId)}/deployment-targets?pageSize=1`)}, { credentials: 'same-origin', headers: { 'X-CSRF-Token': globalThis.__cloudAgentsCaptureCSRF, 'X-Request-ID': 'admin-visual-permission-denied' } }).then(response => response.status)`,
+  );
+  assert.equal(permissionDeniedStatus, 403, "non-admin account must be denied by Admin API");
+  await waitFor(
+    "document.querySelector('#admin-empty-title, .connect-form') !== null",
+    "Admin permission-denied state",
+  );
   const permissionDenied = await evaluate(
-    "document.querySelector('[role=alert]').textContent.trim()",
+    "document.querySelector('#admin-empty-title, [role=alert]')?.textContent.trim() ?? ''",
   );
   await screenshot("permission-denied-light-desktop.png");
   assert.equal(
@@ -1319,7 +1408,7 @@ try {
     "horizontal page overflow",
   );
   assert.equal(authority.messageKeyVisible, false, "untranslated message key");
-  assert.equal(persistedChinese.token, "", "bearer survived reload");
+  assert.equal(persistedChinese.passwordField, false, "login credential field survived reload");
   const deniedRequests = httpFailures.filter((failure) => failure.phase === "permission-denied");
   assert.ok(deniedRequests.length > 0);
   assert.ok(deniedRequests.every((failure) => failure.status === 403));
@@ -1387,7 +1476,9 @@ try {
       requestOrigins: [...requestOrigins].sort(),
       localStorageKeys: authority.localKeys,
       sessionStorageKeys: authority.sessionKeys,
-      bearerPersisted: authority.persistedValues.some((value) => /^eyJ|bearer\s/i.test(value)),
+      bearerPersisted: authority.persistedValues.some((value) =>
+        /bearer|authorization|session.?handle|eyJ[A-Za-z0-9_-]*\./iu.test(value),
+      ),
       locale: {
         immediateChineseTitle,
         persistedChinese,

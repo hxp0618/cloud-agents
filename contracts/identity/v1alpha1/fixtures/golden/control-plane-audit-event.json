@@ -1,0 +1,17 @@
+{
+  "id": "audit-alpha",
+  "action": "membership.create",
+  "actor": {
+    "kind": "user",
+    "issuer": "https://identity.example.test",
+    "subject": "user-user-alpha"
+  },
+  "application": "admin",
+  "resourceKind": "membership",
+  "resourceId": "membership-alpha",
+  "tenantId": "tenant-alpha",
+  "decision": "allow",
+  "reasonCode": "service-account-create",
+  "correlationId": "request-alpha",
+  "occurredAt": "2026-10-09T10:00:00Z"
+}

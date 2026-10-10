@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/invitation-created.schema.json",
+  "title": "InvitationCreated",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invitation", "invitationCode"],
+  "properties": {
+    "invitation": {
+      "$ref": "invitation.schema.json"
+    },
+    "invitationCode": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    }
+  }
+}

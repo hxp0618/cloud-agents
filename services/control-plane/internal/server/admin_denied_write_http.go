@@ -32,10 +32,14 @@ func AdminDeniedWriteHandler(verifier AccessTokenVerifier, store *postgres.Durab
 			next.ServeHTTP(w, r)
 			return
 		}
-		principal, err := verifier.Verify(bearer, authn.VerificationRequest{TenantID: event.TenantID, ResourceLevel: "project", ResourceID: event.ProjectID, RequiredPermission: "projects.act"})
+		principal, err := verifyHTTPRequestAccessToken(r.Context(), verifier, bearer, authn.VerificationRequest{TenantID: event.TenantID, ResourceLevel: "project", ResourceID: event.ProjectID, RequiredPermission: "projects.act"})
+		readOnly := err != nil
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			principal, err = verifyHTTPRequestAccessToken(r.Context(), verifier, bearer, authn.VerificationRequest{TenantID: event.TenantID, ResourceLevel: "project", ResourceID: event.ProjectID, RequiredPermission: "projects.get"})
+			if err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 		writer := &adminDeniedWriteResponse{ResponseWriter: w, record: func() error {
 			// Rejection evidence survives a caller disconnect, with a bounded database deadline.
@@ -43,6 +47,11 @@ func AdminDeniedWriteHandler(verifier AccessTokenVerifier, store *postgres.Durab
 			defer cancel()
 			return store.RecordAdminDeniedWrite(ctx, principal, event)
 		}}
+		if readOnly {
+			preparePublicRequestID(writer, r)
+			writePublicProblem(writer, http.StatusForbidden, "AUTHORIZATION_DENIED")
+			return
+		}
 		next.ServeHTTP(writer, r)
 	})
 }
@@ -148,12 +157,12 @@ func listAdminDeniedWrites(w http.ResponseWriter, r *http.Request, verifier Acce
 		writePublicProblem(w, 401, "AUTHENTICATION_FAILED")
 		return
 	}
-	principal, err := verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenant, ResourceLevel: "project", ResourceID: project, RequiredPermission: "projects.get"})
+	principal, err := verifyHTTPRequestAccessToken(r.Context(), verifier, bearer, authn.VerificationRequest{TenantID: tenant, ResourceLevel: "project", ResourceID: project, RequiredPermission: "projects.get"})
 	if err != nil {
 		writePublicProblem(w, 401, "AUTHENTICATION_FAILED")
 		return
 	}
-	if _, err := verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenant, ResourceLevel: "project", ResourceID: project, RequiredPermission: "audit.list"}); err != nil {
+	if _, err := verifyHTTPRequestAccessToken(r.Context(), verifier, bearer, authn.VerificationRequest{TenantID: tenant, ResourceLevel: "project", ResourceID: project, RequiredPermission: "audit.list"}); err != nil {
 		writePublicProblem(w, 403, "AUTHORIZATION_DENIED")
 		return
 	}

@@ -68,12 +68,12 @@ func (server *StoragePolicyHTTPServer) ServeHTTP(writer http.ResponseWriter, req
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, projectPermission)
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission)
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, policyPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, policyPermission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -237,8 +237,8 @@ func (server *StoragePolicyHTTPServer) listAuditEvents(writer http.ResponseWrite
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
-func (server *StoragePolicyHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *StoragePolicyHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func storagePolicyResource(policy internalstoragepolicy.Snapshot) platformv1alpha1.StoragePolicy {

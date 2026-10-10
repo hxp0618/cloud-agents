@@ -1,0 +1,198 @@
+--- services/control-plane/migrations/product/000108/catalog/schema-000107.json
++++ services/control-plane/migrations/product/000109/catalog/schema-000108.json
+@@ -4,1 +4,1 @@
+-  "schema_head": "000108",
++  "schema_head": "000109",
+@@ -30628,0 +30629,146 @@
++    },
++    {
++      "migration_id": "000109",
++      "sql_sha256": "sha256:a5b999534b12c1836fd3a7990dbd0d0d7ccca37adc8f3822b9c6f92d4c55cfe8",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 614,
++          "sha256": "sha256:f3cc029eee38fb60d79364343ec4b14b40a3e1caf015eb28cf7cf0105f235947",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:trust_checkpoints",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 614,
++          "end": 688,
++          "sha256": "sha256:f9c46ecc128f024aeed69356ee40e63b1a28aa1c79478ef2ff95c960d17177e6",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:trust_checkpoints",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 688,
++          "end": 784,
++          "sha256": "sha256:7ab95a6a26d3eb7258e30e679799f3304e728747c42d757ecc312c5fe043b1c8",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "TABLE",
++            "target_identity": "table:unquoted:cloud_agents_identity/unquoted:trust_checkpoints",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 784,
++          "end": 1708,
++          "sha256": "sha256:fc2fb1e709a41d5c1345511cbb50160ba5d5cedc0dfe98986eb7f92ab2f285df",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:load_trust_checkpoint(unquoted:text)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 1708,
++          "end": 3514,
++          "sha256": "sha256:480315e71440f18c70472d6992f8dd26828964ffd4ffa25a11c37b4ab3e6b35d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:compare_trust_checkpoint(unquoted:text,unquoted:text,unquoted:text,unquoted:bytea)",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 3514,
++          "end": 3601,
++          "sha256": "sha256:f5d38b1210cd3e13c4bf6b4f72d48156c4d0698bdadef4e29baf051771e9afbf",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:load_trust_checkpoint(unquoted:text)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 6,
++          "start": 3601,
++          "end": 3709,
++          "sha256": "sha256:4342380033db0ab3f1703edb2d5c76bcb4a812d96d3bc0d8c5af10a592d54540",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:compare_trust_checkpoint(unquoted:text,unquoted:text,unquoted:text,unquoted:bytea)",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 7,
++          "start": 3709,
++          "end": 3778,
++          "sha256": "sha256:04a313f67eb2d5867db6cc1924a06848fc7331fc03466f5bef9cf14df0527b78",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "SCHEMA",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 8,
++          "start": 3778,
++          "end": 3879,
++          "sha256": "sha256:02388d037bbfff9235c0a54c26345e1912f16bcfef3c1c73a79780499ed0517f",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:load_trust_checkpoint(unquoted:text)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        },
++        {
++          "index": 9,
++          "start": 3879,
++          "end": 4002,
++          "sha256": "sha256:ea8f293e1aac6003a151b349100532947064e2c4c5bcf1c2093ac85784f04613",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "FUNCTION",
++            "target_identity": "function:unquoted:cloud_agents_identity/unquoted:compare_trust_checkpoint(unquoted:text,unquoted:text,unquoted:text,unquoted:bytea)",
++            "grantee": "CLOUD_AGENTS_RUNTIME",
++            "special_case": null
++          }
++        }
++      ]
+@@ -46391,0 +46538,45 @@
++          }
++        ]
++      }
++    },
++    {
++      "kind": "relation",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "trust_checkpoints"
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "load_trust_checkpoint",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          }
++        ]
++      }
++    },
++    {
++      "kind": "function",
++      "identity": {
++        "schema": "cloud_agents_identity",
++        "name": "compare_trust_checkpoint",
++        "arguments": [
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "text"
++          },
++          {
++            "schema": "pg_catalog",
++            "name": "bytea"

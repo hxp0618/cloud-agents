@@ -9,7 +9,7 @@ services:
     volumes:
       - cloud-agents-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 12
@@ -26,6 +26,8 @@ services:
       CLOUD_AGENTS_MIGRATION_PASSWORD: ${CLOUD_AGENTS_MIGRATION_PASSWORD:?set the migration LOGIN password}
       CLOUD_AGENTS_RUNTIME_PASSWORD: ${CLOUD_AGENTS_RUNTIME_PASSWORD:?set the runtime LOGIN password}
       CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD: ${CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD:?set the tenant-bootstrap LOGIN password}
+      CLOUD_AGENTS_IDENTITY_BOOTSTRAP_PASSWORD: ${CLOUD_AGENTS_IDENTITY_BOOTSTRAP_PASSWORD:?set the Identity bootstrap LOGIN password}
+      CLOUD_AGENTS_IDENTITY_SERVICE_PASSWORD: ${CLOUD_AGENTS_IDENTITY_SERVICE_PASSWORD:?set the identity-service LOGIN password}
     volumes:
       - ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}:/deploy:ro
     entrypoint: ["/bin/sh", "-ec"]
@@ -37,7 +39,10 @@ services:
         -v cloud_agents_migration_password="$${CLOUD_AGENTS_MIGRATION_PASSWORD}"
         -v cloud_agents_runtime_password="$${CLOUD_AGENTS_RUNTIME_PASSWORD}"
         -v cloud_agents_tenant_bootstrap_password="$${CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD}"
+        -v cloud_agents_identity_bootstrap_password="$${CLOUD_AGENTS_IDENTITY_BOOTSTRAP_PASSWORD}"
+        -v cloud_agents_identity_service_password="$${CLOUD_AGENTS_IDENTITY_SERVICE_PASSWORD}"
         -f /deploy/bootstrap/roles.sql
+        -f /deploy/bootstrap/roles_identity_service.sql
         -f /deploy/compose/provision.sql
         -f /deploy/bootstrap/database.sql
 
@@ -66,9 +71,9 @@ services:
       CLOUD_AGENTS_ORGANIZATION_UID: ${CLOUD_AGENTS_ORGANIZATION_UID:?set the initial organization UID}
       CLOUD_AGENTS_ORGANIZATION_NAME: ${CLOUD_AGENTS_ORGANIZATION_NAME:?set the initial organization name}
       CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME: ${CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME:?set the initial organization display name}
-      CLOUD_AGENTS_ADMIN_SUBJECT_KIND: ${CLOUD_AGENTS_ADMIN_SUBJECT_KIND:?set the initial administrator subject kind}
-      CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER: ${CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER:?set the initial administrator subject issuer}
-      CLOUD_AGENTS_ADMIN_SUBJECT_VALUE: ${CLOUD_AGENTS_ADMIN_SUBJECT_VALUE:?set the initial administrator subject value}
+      CLOUD_AGENTS_ADMIN_SUBJECT_KIND: user
+      CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER: ${CLOUD_AGENTS_IDENTITY_ISSUER:?set the stable Identity issuer}
+      CLOUD_AGENTS_ADMIN_SUBJECT_VALUE: user-${CLOUD_AGENTS_INITIAL_SUPER_ADMIN_USER_ID:?set the initialized super administrator user ID}
       CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID: ${CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID:?set the initial administrator membership UID}
       CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME: ${CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME:?set the initial administrator membership name}
       CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID: ${CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID:?set the initial administrator role binding UID}
@@ -109,9 +114,117 @@ services:
     restart: "no"
     volumes:
       - ${CLOUD_AGENTS_ACCESS_GRANT_KEY_FILE:?set the Sandbox access Grant key path}:/source/access-grant.key:ro
+      - ${CLOUD_AGENTS_TARGET_CREDENTIAL_KEY_FILE:?set the deployment target credential key path}:/source/target-credential.key:ro
       - cloud-agents-control-plane-secrets:/target
     entrypoint: ["/usr/bin/install"]
-    command: ["--mode=0400", "--owner=65532", "--group=65532", "/source/access-grant.key", "/target/access-grant.key"]
+    command:
+      [
+        "--mode=0400",
+        "--owner=65532",
+        "--group=65532",
+        "/source/access-grant.key",
+        "/source/target-credential.key",
+        "/target/",
+      ]
+
+  identity-runtime-secrets:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_IDENTITY_DATABASE_URL_FILE:?set the identity-service database URL file}:/source/database-url:ro
+      - ${CLOUD_AGENTS_IDENTITY_TLS_DIR:?set the Identity TLS directory}/server.crt:/source/tls.crt:ro
+      - ${CLOUD_AGENTS_IDENTITY_TLS_DIR:?set the Identity TLS directory}/server.key:/source/tls.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_SIGNING_KEY_FILE:?set the Identity signing private key path}:/source/signing.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_CSRF_KEY_FILE:?set the Identity CSRF key path}:/source/csrf.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_PROVIDER_FLOW_KEY_FILE:?set the Identity provider flow key path}:/source/provider-flow.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_PROVIDER_MATERIALS_DIR:?set the Identity provider material directory}:/source/providers:ro
+      - ${CLOUD_AGENTS_ADMIN_WEB_IDENTITY_PROOF_FILE:?set the Admin Web Identity proof path}:/source/admin-web.proof:ro
+      - ${CLOUD_AGENTS_USER_WEB_IDENTITY_PROOF_FILE:?set the User Web Identity proof path}:/source/user-web.proof:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_IDENTITY_PROOF_FILE:?set the Control Plane Identity proof path}:/source/control-plane.proof:ro
+      - ${CLOUD_AGENTS_IDENTITY_CONTROL_PLANE_PROOF_FILE:?set the Identity-to-Control-Plane proof path}:/source/identity-control-plane.proof:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/source/control-plane-ca.crt:ro
+      - cloud-agents-identity-secrets:/target
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        for name in database-url tls.crt tls.key signing.key csrf.key provider-flow.key admin-web.proof user-web.proof control-plane.proof identity-control-plane.proof control-plane-ca.crt;
+        do /usr/bin/install --mode=0400 --owner=65532 --group=65532 "/source/$$name" "/target/$$name"; done;
+        /usr/bin/install -d --mode=0700 --owner=65532 --group=65532 /target/providers;
+        for file in /source/providers/*;
+        do [ -e "$$file" ] || continue; [ -f "$$file" ] && [ ! -L "$$file" ] || exit 1;
+        /usr/bin/install --mode=0400 --owner=65532 --group=65532 "$$file" "/target/providers/$${file##*/}"; done
+
+  identity-initialize-secrets:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    profiles: [identity-initialize]
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_IDENTITY_BOOTSTRAP_DATABASE_URL_FILE:?set the Identity bootstrap database URL file}:/source/bootstrap-database-url:ro
+      - ${CLOUD_AGENTS_IDENTITY_SIGNING_KEY_FILE:?set the Identity signing private key path}:/source/signing.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_SETUP_PROOF_FILE:?set the one-time Identity setup proof path}:/source/setup.proof:ro
+      - ${CLOUD_AGENTS_IDENTITY_INITIAL_PASSWORD_HASH_FILE:?set the initial administrator password hash path}:/source/password.hash:ro
+      - cloud-agents-identity-initialize-secrets:/target
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        for name in bootstrap-database-url signing.key setup.proof password.hash;
+        do /usr/bin/install --mode=0400 --owner=65532 --group=65532 "/source/$$name" "/target/$$name"; done
+
+  control-plane-identity-secrets:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_CONTROL_PLANE_IDENTITY_PROOF_FILE:?set the Control Plane Identity proof path}:/source/control-plane.proof:ro
+      - ${CLOUD_AGENTS_IDENTITY_CONTROL_PLANE_PROOF_FILE:?set the Identity-to-Control-Plane proof path}:/source/identity-control-plane.proof:ro
+      - ${CLOUD_AGENTS_IDENTITY_CA_FILE:?set the Identity CA certificate path}:/source/identity-ca.crt:ro
+      - cloud-agents-control-plane-identity-secrets:/target
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        for name in control-plane.proof identity-control-plane.proof identity-ca.crt;
+        do /usr/bin/install --mode=0400 --owner=65532 --group=65532 "/source/$$name" "/target/$$name"; done
+
+  admin-web-secrets:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_ADMIN_WEB_IDENTITY_PROOF_FILE:?set the Admin Web Identity proof path}:/source/identity.proof:ro
+      - ${CLOUD_AGENTS_ADMIN_WEB_TLS_DIR:?set the Admin Web TLS directory}/server.crt:/source/tls.crt:ro
+      - ${CLOUD_AGENTS_ADMIN_WEB_TLS_DIR:?set the Admin Web TLS directory}/server.key:/source/tls.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_CA_FILE:?set the Identity CA certificate path}:/source/identity-ca.crt:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/source/control-plane-ca.crt:ro
+      - cloud-agents-admin-web-secrets:/target
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        for name in identity.proof tls.crt tls.key identity-ca.crt control-plane-ca.crt;
+        do /usr/bin/install --mode=0400 --owner=1000 --group=1000 "/source/$$name" "/target/$$name"; done
+
+  user-web-secrets:
+    image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    network_mode: none
+    read_only: true
+    restart: "no"
+    volumes:
+      - ${CLOUD_AGENTS_USER_WEB_IDENTITY_PROOF_FILE:?set the User Web Identity proof path}:/source/identity.proof:ro
+      - ${CLOUD_AGENTS_USER_WEB_TLS_DIR:?set the User Web TLS directory}/server.crt:/source/tls.crt:ro
+      - ${CLOUD_AGENTS_USER_WEB_TLS_DIR:?set the User Web TLS directory}/server.key:/source/tls.key:ro
+      - ${CLOUD_AGENTS_IDENTITY_CA_FILE:?set the Identity CA certificate path}:/source/identity-ca.crt:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/source/control-plane-ca.crt:ro
+      - cloud-agents-user-web-secrets:/target
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        for name in identity.proof tls.crt tls.key identity-ca.crt control-plane-ca.crt;
+        do /usr/bin/install --mode=0400 --owner=1000 --group=1000 "/source/$$name" "/target/$$name"; done
 
   access-gateway-ssh-key:
     image: ${CLOUD_AGENTS_POSTGRES_IMAGE:-postgres:17.6-bookworm}
@@ -122,7 +235,14 @@ services:
       - ${CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY:?set the Access Gateway SSH host key path}:/source/ssh-host-key:ro
       - cloud-agents-access-gateway-secrets:/target
     entrypoint: ["/usr/bin/install"]
-    command: ["--mode=0400", "--owner=65532", "--group=65532", "/source/ssh-host-key", "/target/ssh-host-key"]
+    command:
+      [
+        "--mode=0400",
+        "--owner=65532",
+        "--group=65532",
+        "/source/ssh-host-key",
+        "/target/ssh-host-key",
+      ]
 
   access-gateway:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
@@ -142,7 +262,19 @@ services:
       CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_RUNTIME_DATABASE_URL:?set the runtime database URL}
       CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY: /run/cloud-agents/docker-target-credentials
       CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY: /run/cloud-agents/kubernetes-target-credentials
-    command: ["--listen", ":8090", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key", "--ssh-listen", ":2222", "--ssh-host-key", "/run/cloud-agents/secrets/ssh-host-key"]
+    command:
+      [
+        "--listen",
+        ":8090",
+        "--tls-cert",
+        "/run/cloud-agents/tls/server.crt",
+        "--tls-key",
+        "/run/cloud-agents/tls/server.key",
+        "--ssh-listen",
+        ":2222",
+        "--ssh-host-key",
+        "/run/cloud-agents/secrets/ssh-host-key",
+      ]
     volumes:
       - ${CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR:?set the Docker target credential directory}:/run/cloud-agents/docker-target-credentials:ro
       - ${CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR:?set the Kubernetes target credential directory}:/run/cloud-agents/kubernetes-target-credentials:ro
@@ -190,6 +322,51 @@ services:
         exec pg_restore --dbname="$${CLOUD_AGENTS_MIGRATION_DATABASE_URL}"
         --exit-on-error --single-transaction --no-owner --role=cloud_agents_migration_owner
 
+  identity-initialize:
+    profiles: [identity-initialize]
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/identity.Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      identity-initialize-secrets:
+        condition: service_completed_successfully
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CLOUD_AGENTS_IDENTITY_CONFIG: /run/cloud-agents/identity/initialize.json
+    command: ["initialize", "--config", "/run/cloud-agents/identity/initialize.json"]
+    volumes:
+      - ${CLOUD_AGENTS_IDENTITY_INITIALIZE_CONFIG:?set the Identity initialize JSON path}:/run/cloud-agents/identity/initialize.json:ro
+      - cloud-agents-identity-initialize-secrets:/run/cloud-agents/identity/secrets:ro
+
+  identity:
+    platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
+    build:
+      context: ${CLOUD_AGENTS_RELEASE_DIR:?set the platform release output directory}
+      dockerfile: ${CLOUD_AGENTS_DEPLOY_DIR:?set the extracted deployment package directory}/docker/identity.Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      identity-runtime-secrets:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      CLOUD_AGENTS_IDENTITY_CONFIG: /run/cloud-agents/identity/run.json
+    command: ["run", "--config", "/run/cloud-agents/identity/run.json"]
+    volumes:
+      - ${CLOUD_AGENTS_IDENTITY_RUN_CONFIG:?set the Identity run JSON path}:/run/cloud-agents/identity/run.json:ro
+      - cloud-agents-identity-secrets:/run/cloud-agents/identity/secrets:ro
+    expose: ["8443"]
+
   control-plane:
     platform: ${CLOUD_AGENTS_PLATFORM:-linux/amd64}
     build:
@@ -200,22 +377,40 @@ services:
         condition: service_completed_successfully
       access-grant-key:
         condition: service_completed_successfully
+      control-plane-identity-secrets:
+        condition: service_completed_successfully
+      identity:
+        condition: service_started
     restart: unless-stopped
     environment:
       CLOUD_AGENTS_PLATFORM_DATABASE_URL: ${CLOUD_AGENTS_RUNTIME_DATABASE_URL:?set the runtime database URL}
-      CLOUD_AGENTS_PLATFORM_AUTH_CONFIG: /run/cloud-agents/auth.json
+      CLOUD_AGENTS_PLATFORM_AUTH_CONFIG: /run/cloud-agents/identity-config/control-plane.json
       CLOUD_AGENTS_PLATFORM_DOCKER_CREDENTIALS_DIRECTORY: /run/cloud-agents/docker-target-credentials
       CLOUD_AGENTS_PLATFORM_KUBERNETES_CREDENTIALS_DIRECTORY: /run/cloud-agents/kubernetes-target-credentials
       CLOUD_AGENTS_PLATFORM_SSH_CREDENTIALS_DIRECTORY: /run/cloud-agents/ssh-target-credentials
       CLOUD_AGENTS_PLATFORM_ACCESS_GRANT_KEY_FILE: /run/cloud-agents/secrets/access-grant.key
-    command: ["--listen", ":8080", "--auth-config", "/run/cloud-agents/auth.json", "--tls-cert", "/run/cloud-agents/tls/server.crt", "--tls-key", "/run/cloud-agents/tls/server.key", "--max-concurrent-requests", "${CLOUD_AGENTS_CONTROL_PLANE_MAX_CONCURRENT_REQUESTS:-128}"]
+      CLOUD_AGENTS_PLATFORM_TARGET_CREDENTIAL_KEY_FILE: /run/cloud-agents/secrets/target-credential.key
+    command:
+      [
+        "--listen",
+        ":8080",
+        "--auth-config",
+        "/run/cloud-agents/identity-config/control-plane.json",
+        "--tls-cert",
+        "/run/cloud-agents/tls/server.crt",
+        "--tls-key",
+        "/run/cloud-agents/tls/server.key",
+        "--max-concurrent-requests",
+        "${CLOUD_AGENTS_CONTROL_PLANE_MAX_CONCURRENT_REQUESTS:-128}",
+      ]
     volumes:
-      - ${CLOUD_AGENTS_AUTH_CONFIG:?set the verifier JSON path}:/run/cloud-agents/auth.json:ro
+      - ${CLOUD_AGENTS_CONTROL_PLANE_IDENTITY_CONFIG:?set the Control Plane Identity JSON path}:/run/cloud-agents/identity-config/control-plane.json:ro
       - ${CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR:?set the Control Plane TLS directory}:/run/cloud-agents/tls:ro
       - ${CLOUD_AGENTS_DOCKER_CREDENTIALS_DIR:?set the Docker target credential directory}:/run/cloud-agents/docker-target-credentials:ro
       - ${CLOUD_AGENTS_KUBERNETES_CREDENTIALS_DIR:?set the Kubernetes target credential directory}:/run/cloud-agents/kubernetes-target-credentials:ro
       - ${CLOUD_AGENTS_SSH_CREDENTIALS_DIR:?set the SSH target credential directory}:/run/cloud-agents/ssh-target-credentials:ro
       - cloud-agents-control-plane-secrets:/run/cloud-agents/secrets:ro
+      - cloud-agents-control-plane-identity-secrets:/run/cloud-agents/identity:ro
     ports:
       - "${CLOUD_AGENTS_CONTROL_PLANE_BIND:-127.0.0.1:8080}:8080"
 
@@ -227,16 +422,27 @@ services:
     depends_on:
       control-plane:
         condition: service_started
+      identity:
+        condition: service_started
+      admin-web-secrets:
+        condition: service_completed_successfully
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     environment:
-      CLOUD_AGENTS_ADMIN_WEB_UPSTREAM: https://control-plane:8080
-      NODE_EXTRA_CA_CERTS: /run/cloud-agents/control-plane-ca.crt
+      CLOUD_AGENTS_WEB_ORIGIN: ${CLOUD_AGENTS_ADMIN_WEB_ORIGIN:?set the public Admin Web HTTPS origin}
+      CLOUD_AGENTS_WEB_PEER_ORIGIN: ${CLOUD_AGENTS_USER_WEB_ORIGIN:?set the public User Web HTTPS origin}
+      CLOUD_AGENTS_WEB_TLS_CERT_FILE: /run/cloud-agents/web-secrets/tls.crt
+      CLOUD_AGENTS_WEB_TLS_KEY_FILE: /run/cloud-agents/web-secrets/tls.key
+      CLOUD_AGENTS_WEB_IDENTITY_URL: https://identity:8443
+      CLOUD_AGENTS_WEB_IDENTITY_CA_FILE: /run/cloud-agents/web-secrets/identity-ca.crt
+      CLOUD_AGENTS_WEB_IDENTITY_CREDENTIAL_FILE: /run/cloud-agents/web-secrets/identity.proof
+      CLOUD_AGENTS_WEB_CONTROL_PLANE_URL: https://control-plane:8080
+      CLOUD_AGENTS_WEB_CONTROL_PLANE_CA_FILE: /run/cloud-agents/web-secrets/control-plane-ca.crt
     volumes:
-      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/run/cloud-agents/control-plane-ca.crt:ro
+      - cloud-agents-admin-web-secrets:/run/cloud-agents/web-secrets:ro
     ports:
       - "${CLOUD_AGENTS_ADMIN_WEB_BIND:-127.0.0.1:4174}:4174"
 
@@ -248,16 +454,27 @@ services:
     depends_on:
       control-plane:
         condition: service_started
+      identity:
+        condition: service_started
+      user-web-secrets:
+        condition: service_completed_successfully
     restart: unless-stopped
     user: "1000:1000"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     environment:
-      CLOUD_AGENTS_WEB_UPSTREAM: https://control-plane:8080
-      NODE_EXTRA_CA_CERTS: /run/cloud-agents/control-plane-ca.crt
+      CLOUD_AGENTS_WEB_ORIGIN: ${CLOUD_AGENTS_USER_WEB_ORIGIN:?set the public User Web HTTPS origin}
+      CLOUD_AGENTS_WEB_PEER_ORIGIN: ${CLOUD_AGENTS_ADMIN_WEB_ORIGIN:?set the public Admin Web HTTPS origin}
+      CLOUD_AGENTS_WEB_TLS_CERT_FILE: /run/cloud-agents/web-secrets/tls.crt
+      CLOUD_AGENTS_WEB_TLS_KEY_FILE: /run/cloud-agents/web-secrets/tls.key
+      CLOUD_AGENTS_WEB_IDENTITY_URL: https://identity:8443
+      CLOUD_AGENTS_WEB_IDENTITY_CA_FILE: /run/cloud-agents/web-secrets/identity-ca.crt
+      CLOUD_AGENTS_WEB_IDENTITY_CREDENTIAL_FILE: /run/cloud-agents/web-secrets/identity.proof
+      CLOUD_AGENTS_WEB_CONTROL_PLANE_URL: https://control-plane:8080
+      CLOUD_AGENTS_WEB_CONTROL_PLANE_CA_FILE: /run/cloud-agents/web-secrets/control-plane-ca.crt
     volumes:
-      - ${CLOUD_AGENTS_CONTROL_PLANE_CA:?set the Control Plane CA certificate path}:/run/cloud-agents/control-plane-ca.crt:ro
+      - cloud-agents-user-web-secrets:/run/cloud-agents/web-secrets:ro
     ports:
       - "${CLOUD_AGENTS_USER_WEB_BIND:-127.0.0.1:4173}:4173"
 
@@ -265,3 +482,8 @@ volumes:
   cloud-agents-postgres:
   cloud-agents-access-gateway-secrets:
   cloud-agents-control-plane-secrets:
+  cloud-agents-control-plane-identity-secrets:
+  cloud-agents-identity-secrets:
+  cloud-agents-identity-initialize-secrets:
+  cloud-agents-admin-web-secrets:
+  cloud-agents-user-web-secrets:

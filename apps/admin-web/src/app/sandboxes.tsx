@@ -1,3 +1,4 @@
+import { SheetHeading } from "../AdminSheet";
 import { useState } from "react";
 import {
   type AdminSandboxAccessGrant,
@@ -40,7 +41,6 @@ export function SandboxTable({
             <th>{t("table.workspace")}</th>
             <th>{t("table.profile")}</th>
             <th>{t("table.target")}</th>
-            <th>{t("table.generation")}</th>
             <th>{t("table.updated")}</th>
             <th aria-label={t("table.actions")} />
           </tr>
@@ -71,9 +71,6 @@ export function SandboxTable({
                 {sandbox.spec.runtimeProfileId} · v{number(sandbox.spec.runtimeProfileVersion)}
               </td>
               <td className="mono">{sandbox.spec.targetId}</td>
-              <td className="mono">
-                {number(sandbox.spec.observedGeneration)} / {number(sandbox.spec.generation)}
-              </td>
               <td>{dateTime(sandbox.metadata.updatedAt ?? sandbox.metadata.createdAt)}</td>
               <td className="row-action-cell">
                 <button
@@ -141,7 +138,6 @@ export function SandboxDetail({
     <>
       <div className="detail-heading">
         <div>
-          <div className="eyebrow">Sandbox · g{number(sandbox.spec.generation)}</div>
           <h2>{sandbox.metadata.name}</h2>
           <span className={`phase ${phaseTone(sandbox.spec.observedState)}`}>
             <i /> {phaseLabel(sandbox.spec.observedState, t)}
@@ -659,23 +655,7 @@ export function SandboxLifecycleConfirmation({
   const actionLabel = t(stopping ? "sandbox.lifecycle.stop" : "sandbox.lifecycle.rebuild");
   return (
     <section className="dialog" aria-labelledby="sandbox-lifecycle-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">{t("sandbox.lifecycle.eyebrow")}</div>
-          <h2 id="sandbox-lifecycle-title">
-            {t("sandbox.lifecycle.title", { action: actionLabel })}
-          </h2>
-          <p>{sandbox.metadata.name}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="sandbox-lifecycle-title" title={t("sandbox.lifecycle.title", { action: actionLabel })} subject={sandbox.metadata.name} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {
@@ -756,21 +736,7 @@ export function SandboxGrantRevokeConfirmation({
   const [confirmed, setConfirmed] = useState(false);
   return (
     <section className="dialog" aria-labelledby="sandbox-grant-revoke-title">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">{t("sandbox.grants.eyebrow")}</div>
-          <h2 id="sandbox-grant-revoke-title">{t("sandbox.grants.revokeTitle")}</h2>
-          <p className="mono break">{grant.metadata.uid}</p>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label={t("action.close")}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
+      <SheetHeading id="sandbox-grant-revoke-title" title={t("sandbox.grants.revokeTitle")} subject={grant.metadata.uid} onClose={onClose} />
       <form
         className="resource-form"
         onSubmit={(event) => {

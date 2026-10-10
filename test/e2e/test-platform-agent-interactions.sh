@@ -3,6 +3,7 @@
 set -eu
 
 : "${CLOUD_AGENTS_ENDPOINT:?set the public Control Plane HTTPS endpoint}"
+: "${CLOUD_AGENTS_CLI_PROFILE:?set the User service-account CLI profile}"
 : "${CLOUD_AGENTS_TOKEN_FILE:?set the Control Plane bearer token file}"
 : "${CLOUD_AGENTS_TENANT:?set the tenant id}"
 : "${CLOUD_AGENTS_PROJECT:?set the project id}"
@@ -28,6 +29,7 @@ fi
 cloud_agentsctl=${CLOUD_AGENTSCTL-cloud-agentsctl}
 ca_file=${CLOUD_AGENTS_CA_FILE-}
 admin_token_file=${CLOUD_AGENTS_E2E_ADMIN_TOKEN_FILE-}
+admin_cli_profile=${CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE-}
 admin_curl_config=${CLOUD_AGENTS_E2E_ADMIN_CURL_CONFIG-}
 approval_session="$CLOUD_AGENTS_E2E_RUN_ID-approval"
 input_session="$CLOUD_AGENTS_E2E_RUN_ID-user-input"
@@ -98,8 +100,8 @@ if [ -n "$recovery_mcp_refs_json" ] || [ -n "$recovery_skill_refs_json" ]; then
   recovery_capability_bound=1
 fi
 
-if [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -d "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ]; then
-  echo "token file and E2E output directory must exist" >&2
+if [ ! -f "$CLOUD_AGENTS_CLI_PROFILE" ] || [ ! -f "$CLOUD_AGENTS_TOKEN_FILE" ] || [ ! -d "$CLOUD_AGENTS_E2E_OUTPUT_DIR" ]; then
+  echo "CLI profile, automation token file, and E2E output directory must exist" >&2
   exit 1
 fi
 command -v "$cloud_agentsctl" >/dev/null
@@ -126,12 +128,6 @@ if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
     echo "Control Plane container must be an exact Docker container id" >&2
     exit 1
   }
-fi
-auth_config_file=${CLOUD_AGENTS_E2E_AUTH_CONFIG-}
-auth_test_private_key_file=${CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY-}
-if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
-  [ -f "$auth_config_file" ] || { echo "auth config file is required for interaction authorization checks" >&2; exit 1; }
-  [ -f "$auth_test_private_key_file" ] || { echo "auth test private key is required for interaction authorization checks" >&2; exit 1; }
 fi
 if [ -n "${CLOUD_AGENTS_E2E_WORKER_CONTAINER-}" ]; then
   command -v docker >/dev/null
@@ -161,11 +157,7 @@ if [ -n "${CLOUD_AGENTS_E2E_POSTGRES_CONTAINER-}" ]; then
 fi
 
 run_ctl() {
-  if [ -n "$ca_file" ]; then
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$CLOUD_AGENTS_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  else
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$CLOUD_AGENTS_TOKEN_FILE" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  fi
+  "$cloud_agentsctl" --profile "$CLOUD_AGENTS_CLI_PROFILE" "$@"
 }
 
 bounded_request_id() {
@@ -178,12 +170,8 @@ bounded_request_id() {
 }
 
 run_admin_ctl() {
-  [ -n "$admin_token_file" ] || return 1
-  if [ -n "$ca_file" ]; then
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --ca-file "$ca_file" --token-file "$admin_token_file" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  else
-    "$cloud_agentsctl" --endpoint "$CLOUD_AGENTS_ENDPOINT" --token-file "$admin_token_file" --tenant "$CLOUD_AGENTS_TENANT" "$@"
-  fi
+  [ -n "$admin_cli_profile" ] && [ -f "$admin_cli_profile" ] || return 1
+  "$cloud_agentsctl" --profile "$admin_cli_profile" "$@"
 }
 
 cleanup_complete=0
@@ -197,7 +185,7 @@ cleanup() {
     wait "$execute_pid" >/dev/null 2>&1 || true
   fi
   for session_id in $active_sessions; do
-    run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
+    run_ctl --session "$session_id" \
       --request-id "$(bounded_request_id "$session_id-close")" --idempotency-key "$(bounded_request_id "$session_id-close")" session close >/dev/null 2>&1 || true
   done
 }
@@ -225,17 +213,17 @@ create_turn() {
   turn_id=$3
   prompt=$4
   if [ -n "$lease_id" ]; then
-    run_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" --session "$session_id" \
+    run_ctl --lease "$lease_id" --session "$session_id" \
     --request-id "$(bounded_request_id "$session_id-create")" --idempotency-key "$(bounded_request_id "$session_id-create")" session create --provider "$provider" >/dev/null
   else
-    run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
+    run_ctl --session "$session_id" \
       --request-id "$(bounded_request_id "$session_id-create")" --idempotency-key "$(bounded_request_id "$session_id-create")" \
       session create --provider "$provider" --workspace "$workspace_id" --sandbox "$sandbox_id" \
       --sandbox-generation "$sandbox_generation" --environment-profile "$environment_profile_id" \
       --environment-profile-version "$environment_profile_version" >/dev/null
   fi
   active_sessions="$active_sessions $session_id"
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" \
     --request-id "$turn_id-create" --idempotency-key "$turn_id-create" turn create --input "$prompt" >/dev/null
 }
 
@@ -254,7 +242,7 @@ start_execution() {
   fi
   execution_retry_request_id=$(bounded_request_id "$execution_id-run$execution_retry_suffix")
   execution_retry_idempotency_key=$(bounded_request_id "$execution_id-run")
-  run_ctl --timeout "$execution_timeout" --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --timeout "$execution_timeout" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_retry_request_id" --idempotency-key "$execution_retry_idempotency_key" execution execute \
     --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" "$@" --input "$prompt" >"$final_file" 2>"$final_file.stderr" &
   execute_pid=$!
@@ -270,7 +258,7 @@ wait_for_interaction() {
   attempt=0
   while [ "$attempt" -lt 90 ]; do
     attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$(bounded_request_id "$execution_id-interaction-$attempt")" execution get >"$current_file" 2>/dev/null; then
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$current_file" CLOUD_AGENTS_E2E_INTERACTION_TYPE="$interaction_type" node <<'NODE' >"$interaction_file"
 const { readFileSync } = require("node:fs");
@@ -320,7 +308,7 @@ expect_stale_approval_rejected() {
   generation=$(interaction_field "$interaction_file" generation)
   interaction_request=$(interaction_field "$interaction_file" requestId)
   set +e
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-stale-approval" execution resolve-approval \
     --generation "$((generation + 1))" --interaction-request "$interaction_request" --decision decline \
     >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-stale-approval.json" \
@@ -344,7 +332,7 @@ expect_stale_user_input_rejected() {
   question_id=$(interaction_field "$interaction_file" questionId)
   answers_json=$(CLOUD_AGENTS_E2E_QUESTION_ID="$question_id" node -e 'process.stdout.write(JSON.stringify({[process.env.CLOUD_AGENTS_E2E_QUESTION_ID]:["Staging"]}))')
   set +e
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-stale-user-input" execution resolve-user-input \
     --generation "$((generation + 1))" --interaction-request "$interaction_request" --answers-json "$answers_json" \
     >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-stale-user-input.json" \
@@ -391,110 +379,6 @@ expect_cross_tenant_interaction_rejected() {
   fi
   printf 'cross_tenant_interaction_negative=passed type=%s\n' "$interaction_type"
 }
-expect_interaction_authorization_rejected() {
-  session_id=$1
-  turn_id=$2
-  execution_id=$3
-  interaction_type=$4
-  interaction_file=$5
-  [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ] || return 0
-  generation=$(interaction_field "$interaction_file" generation)
-  interaction_request=$(interaction_field "$interaction_file" requestId)
-  if [ "$interaction_type" = approval ]; then
-    body=$(printf '{"generation":%s,"requestId":"%s","decision":"decline"}' "$generation" "$interaction_request")
-    action=resolveApproval
-  else
-    question_id=$(interaction_field "$interaction_file" questionId)
-    answers_json=$(node -e 'process.stdout.write(JSON.stringify({[process.argv[1]]:["Staging"]}))' "$question_id")
-    body=$(printf '{"generation":%s,"requestId":"%s","answers":%s}' "$generation" "$interaction_request" "$answers_json")
-    action=resolveUserInput
-  fi
-  token=$(cat "$CLOUD_AGENTS_TOKEN_FILE")
-  expired_token_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-expired-token"
-  AUTH_TEST_PRIVATE_KEY="$auth_test_private_key_file" AUTH_CONFIG_FILE="$auth_config_file" \
-    CLOUD_AGENTS_EXPIRED_TOKEN_FILE="$expired_token_file" node <<'NODE'
-const {createSign}=require("node:crypto");
-const {readFileSync,writeFileSync,chmodSync}=require("node:fs");
-const auth=JSON.parse(readFileSync(process.env.AUTH_CONFIG_FILE,"utf8"));
-const now=Math.floor(Date.now()/1000);
-const claims={iss:auth.issuer,aud:auth.audience,sub:"expired-interaction-token",exp:now-3600,iat:now-3601,client_id:"interaction-test-client",jti:"expired-interaction-token",scope:"projects.act",["https://schemas.cloud-agents.dev/claims/security-epoch"]:auth.securityEpoch,["https://schemas.cloud-agents.dev/claims/subject-kind"]:"user",["https://schemas.cloud-agents.dev/claims/tenant-id"]:"tenant-compose-smoke",["https://schemas.cloud-agents.dev/claims/token-profile"]:"cloud-agents-access-token/v1"};
-const encode=(value)=>Buffer.from(JSON.stringify(value)).toString("base64url");
-const signingInput=`${encode({alg:"RS256",kid:auth.keys[0].jwk.kid,typ:"at+jwt"})}.${encode(claims)}`;
-const signature=createSign("RSA-SHA256").update(signingInput).end().sign(readFileSync(process.env.AUTH_TEST_PRIVATE_KEY)).toString("base64url");
-writeFileSync(process.env.CLOUD_AGENTS_EXPIRED_TOKEN_FILE,`${signingInput}.${signature}\n`,{mode:0o600});
-chmodSync(process.env.CLOUD_AGENTS_EXPIRED_TOKEN_FILE,0o600);
-NODE
-  set +e
-  expired_status=$(curl --silent --show-error --cacert "$ca_file" \
-    --header "Authorization: Bearer $(cat "$expired_token_file")" --header "X-Request-ID: $execution_id-expired-auth-$interaction_type" \
-    --header "Content-Type: application/json" --request POST --data "$body" --output "$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-expired-auth-$interaction_type.json" \
-    --write-out '%{http_code}' \
-    "$CLOUD_AGENTS_ENDPOINT/v1/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/sessions/$session_id/turns/$turn_id/executions/$execution_id:$action")
-  expired_curl_status=$?
-  set -e
-  if [ "$expired_curl_status" -ne 0 ] || [ "$expired_status" -ne 401 ]; then
-    echo "expired interaction authorization was accepted: curl=$expired_curl_status http=$expired_status" >&2
-    return 1
-  fi
-  auth_backup="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-auth-original.json"
-  cp "$auth_config_file" "$auth_backup"
-  chmod 0600 "$auth_backup"
-  AUTH_CONFIG_FILE="$auth_config_file" node <<'NODE'
-const {readFileSync,writeFileSync,chmodSync}=require("node:fs");
-const path=process.env.AUTH_CONFIG_FILE;
-const auth=JSON.parse(readFileSync(path,"utf8"));
-auth.generation+=1;
-auth.securityEpoch+=1;
-chmodSync(path,0o600);
-writeFileSync(path,`${JSON.stringify(auth)}\n`);
-chmodSync(path,0o444);
-NODE
-  docker kill --signal HUP "$CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER" >/dev/null
-  revoked_status=0
-  revoked_http=0
-  attempt=0
-  while [ "$attempt" -lt 20 ]; do
-    set +e
-    revoked_http=$(curl --silent --show-error --cacert "$ca_file" \
-      --header "Authorization: Bearer $token" --header "X-Request-ID: $execution_id-revoked-auth-$interaction_type" \
-      --header "Content-Type: application/json" --request POST --data "$body" --output "$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-revoked-auth-$interaction_type.json" \
-      --write-out '%{http_code}' \
-      "$CLOUD_AGENTS_ENDPOINT/v1/tenants/$CLOUD_AGENTS_TENANT/projects/$CLOUD_AGENTS_PROJECT/sessions/$session_id/turns/$turn_id/executions/$execution_id:$action")
-    revoked_status=$?
-    set -e
-    [ "$revoked_status" -eq 0 ] && [ "$revoked_http" -eq 401 ] && break
-    attempt=$((attempt + 1))
-    sleep 0.1
-  done
-  AUTH_CONFIG_FILE="$auth_config_file" AUTH_BACKUP_FILE="$auth_backup" node <<'NODE'
-const {readFileSync,writeFileSync,chmodSync}=require("node:fs");
-const path=process.env.AUTH_CONFIG_FILE;
-const auth=JSON.parse(readFileSync(process.env.AUTH_BACKUP_FILE,"utf8"));
-auth.generation+=2;
-chmodSync(path,0o600);
-writeFileSync(path,`${JSON.stringify(auth)}\n`);
-chmodSync(path,0o444);
-NODE
-  docker kill --signal HUP "$CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER" >/dev/null
-  attempt=0
-  restored=1
-  while [ "$attempt" -lt 20 ]; do
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
-      --request-id "$execution_id-auth-restored-$interaction_type" execution get >/dev/null 2>&1; then
-      restored=0
-      break
-    fi
-    attempt=$((attempt + 1))
-    sleep 0.1
-  done
-  if [ "$revoked_status" -ne 0 ] || [ "$revoked_http" -ne 401 ] || [ "$restored" -ne 0 ]; then
-    echo "revoked interaction authorization check failed: curl=$revoked_status http=$revoked_http restored=$restored" >&2
-    return 1
-  fi
-  printf 'interaction_authorization_expired=passed type=%s\n' "$interaction_type"
-  printf 'interaction_authorization_revoked=passed type=%s\n' "$interaction_type"
-}
-
 expect_checkpoint_protocol_rejected() {
   session_id=$1
   turn_id=$2
@@ -524,7 +408,7 @@ expect_checkpoint_protocol_rejected() {
   postgres_query "$CLOUD_AGENTS_TENANT" "$session_id" "$turn_id" \
     "UPDATE cloud_agents.managed_agent_executions SET checkpoint_protocol = 'runtime-message-checkpoint-v0' WHERE tenant_id = :'tenant' AND project_uid = :'project' AND session_uid = :'session' AND turn_uid = :'turn' AND execution_uid = :'execution';" >/dev/null
   set +e
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-checkpoint-protocol" execution get \
     >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-protocol.json" \
     2>"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-protocol.stderr"
@@ -543,7 +427,7 @@ expect_checkpoint_protocol_rejected() {
   postgres_query "$CLOUD_AGENTS_TENANT" "$session_id" "$turn_id" \
     "UPDATE cloud_agents.managed_agent_executions SET runtime_messages = NULL WHERE tenant_id = :'tenant' AND project_uid = :'project' AND session_uid = :'session' AND turn_uid = :'turn' AND execution_uid = :'execution';" >/dev/null
   set +e
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-checkpoint-messages" execution get \
     >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-messages.json" \
     2>"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-messages.stderr"
@@ -562,7 +446,7 @@ expect_checkpoint_protocol_rejected() {
   postgres_query "$CLOUD_AGENTS_TENANT" "$session_id" "$turn_id" \
     "UPDATE cloud_agents.managed_agent_executions SET checkpoint_digest = 'sha256:$(printf '%064d' 0)' WHERE tenant_id = :'tenant' AND project_uid = :'project' AND session_uid = :'session' AND turn_uid = :'turn' AND execution_uid = :'execution';" >/dev/null
   set +e
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-checkpoint-digest" execution get \
     >"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-digest.json" \
     2>"$CLOUD_AGENTS_E2E_OUTPUT_DIR/$execution_id-checkpoint-digest.stderr"
@@ -589,7 +473,7 @@ wait_for_success() {
       cat "$final_file.stderr" >&2
     fi
     diagnostic_file="$final_file.failed"
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$execution_id-failed" execution get >"$diagnostic_file" 2>/dev/null; then
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$diagnostic_file" node <<'NODE' >&2
 const { readFileSync } = require("node:fs");
@@ -633,7 +517,7 @@ wait_for_claim_expiry() {
   attempt=0
   while [ "$attempt" -lt 60 ]; do
     attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$(bounded_request_id "$execution_id-claim-expiry-$attempt")" execution get >"$state_file" 2>/dev/null &&
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$state_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -664,7 +548,7 @@ prepare_interaction_takeover() {
   fi
   wait_for_claim_expiry "$session_id" "$turn_id" "$execution_id" "$output_prefix.claim-expired"
   set +e
-  run_ctl --timeout 60s --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --timeout 60s --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-run" --idempotency-key "$execution_id-run" execution execute \
     --runtime-mode "$runtime_mode" --interaction-mode "$interaction_mode" "$@" --input "$prompt" \
     >"$output_prefix.blocked" 2>"$output_prefix.blocked.stderr"
@@ -674,7 +558,7 @@ prepare_interaction_takeover() {
     echo "interactive recovery replay bypassed side-effect reconciliation" >&2
     return 1
   fi
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-recovery-state" execution get >"$output_prefix.awaiting-reconciliation"
   takeover_values=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$output_prefix.awaiting-reconciliation" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -700,7 +584,7 @@ reconcile_interaction_takeover() {
   session_id=$1
   turn_id=$2
   execution_id=$3
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-reconcile" --idempotency-key "$execution_id-reconcile" execution reconcile \
     --generation "$takeover_generation" --checkpoint-digest "$takeover_checkpoint_digest" --outcome not-applied >/dev/null
   execution_retry_suffix=-reconciled
@@ -752,14 +636,14 @@ restart_control_plane_while_waiting() {
     esac
     if { [ -n "$ca_file" ] && curl --silent --show-error --fail --noproxy '*' --cacert "$ca_file" "$CLOUD_AGENTS_ENDPOINT/readyz" >/dev/null 2>&1; } ||
       { [ -z "$ca_file" ] && curl --silent --show-error --fail --noproxy '*' "$CLOUD_AGENTS_ENDPOINT/readyz" >/dev/null 2>&1; }; then
-      if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" \
+      if run_ctl --session "$session_id" \
       --request-id "$(bounded_request_id "$session_id-after-control-plane-restart-$attempt")" session get >/dev/null 2>&1; then
         if [ "${CLOUD_AGENTS_E2E_REMOTE_WORKER-0}" = 1 ]; then
           target_ready=0
           target_attempt=0
           while [ "$target_attempt" -lt 90 ]; do
             target_attempt=$((target_attempt + 1))
-            if target_output=$(run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" \
+            if target_output=$(run_admin_ctl --target "${CLOUD_AGENTS_E2E_AGENT_TARGET_ID-}" \
               --request-id "$session_id-target-ready-$target_attempt" target get 2>/dev/null) &&
               case "$target_output" in
                 *'"targetKind":"remote-worker"'*'"observedPhase":"ready"'*) true ;;
@@ -816,7 +700,7 @@ wait_for_running() {
   attempt=0
   while [ "$attempt" -lt 90 ]; do
     attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$(bounded_request_id "$execution_id-running-$attempt")" execution get >"$state_file" 2>/dev/null; then
       CLOUD_AGENTS_E2E_EXECUTION_FILE="$state_file" node <<'NODE' >"$generation_file"
 const { readFileSync } = require("node:fs");
@@ -900,7 +784,7 @@ restart_worker_during_execution() {
       running=$(docker inspect --format '{{.State.Running}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || true)
       started_at=$(docker inspect --format '{{.State.StartedAt}}' "$CLOUD_AGENTS_E2E_WORKER_CONTAINER" 2>/dev/null || true)
       if [ "$running" = true ] && [ "$started_at" != "$previous_started_at" ] &&
-        target_output=$(run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --target "$CLOUD_AGENTS_E2E_AGENT_TARGET_ID" \
+        target_output=$(run_admin_ctl --target "$CLOUD_AGENTS_E2E_AGENT_TARGET_ID" \
           --request-id "$CLOUD_AGENTS_E2E_RUN_ID-worker-restart-target-$attempt" target get 2>/dev/null) &&
         case "$target_output" in *'"targetKind":"remote-worker"'*'"observedPhase":"ready"'*) true ;; *) false ;; esac; then
         return 0
@@ -933,7 +817,7 @@ NODE
           lease_file=$(mktemp)
           health_file=$(mktemp)
           health_status_file=$(mktemp)
-          if run_admin_ctl --project "$CLOUD_AGENTS_PROJECT" --lease "$lease_id" \
+          if run_admin_ctl --lease "$lease_id" \
             --request-id "$CLOUD_AGENTS_E2E_RUN_ID-worker-restart-lease" \
             environment-lease get >"$lease_file" 2>/dev/null; then
             lease_generation=$(CLOUD_AGENTS_E2E_LEASE_FILE="$lease_file" node <<'NODE'
@@ -1050,7 +934,7 @@ NODE
   attempt=0
   while [ "$attempt" -lt 180 ]; do
     attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$checkpoint_request_prefix-recovery-checkpoint-$attempt" execution get >"$checkpoint_file" 2>/dev/null; then
       if CLOUD_AGENTS_E2E_EXECUTION_FILE="$checkpoint_file" node <<'NODE' >"$checkpoint_diagnostic_file"
 const { readFileSync } = require("node:fs");
@@ -1150,7 +1034,7 @@ recovery_artifact_digest() {
   if [ "$recovery_environment" = remote-worker ]; then
     if [ -z "$recovery_grant_id" ]; then
       grant_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-grant")
-      grant_output=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+      grant_output=$(run_ctl --sandbox "$sandbox_id" \
         --request-id "$grant_request_id" --idempotency-key "$grant_request_id" sandbox grant \
         --expected-generation "$sandbox_generation" --ttl-seconds 300 2>/dev/null) || return 1
       recovery_grant_id=$(CLOUD_AGENTS_E2E_GRANT_JSON="$grant_output" node -e '
@@ -1166,7 +1050,7 @@ recovery_artifact_digest() {
       attempt=$((attempt + 1))
       read_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-read-$attempt")
       read_error_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-read-$attempt.stderr"
-      if page=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --grant "$recovery_grant_id" \
+      if page=$(run_ctl --grant "$recovery_grant_id" \
         --request-id "$read_request_id" files read --path "$artifact_relative" --limit 1048576 2>"$read_error_file") &&
         CLOUD_AGENTS_E2E_FILE_PAGE="$page" node -e '
           const { createHash } = require("node:crypto");
@@ -1186,7 +1070,7 @@ recovery_artifact_digest() {
       rm -f "$read_error_file"
       list_request_id=$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-list-$attempt")
       list_error_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$CLOUD_AGENTS_E2E_RUN_ID-artifact-file-list-$attempt.stderr"
-      if listing=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --grant "$recovery_grant_id" \
+      if listing=$(run_ctl --grant "$recovery_grant_id" \
         --request-id "$list_request_id" files list --path "$artifact_directory" 2>"$list_error_file") &&
         CLOUD_AGENTS_E2E_FILE_LIST="$listing" CLOUD_AGENTS_E2E_ARTIFACT_PATH="$artifact_relative" \
         CLOUD_AGENTS_E2E_ARTIFACT_NAME="$artifact_name" node -e '
@@ -1213,7 +1097,7 @@ recovery_artifact_digest() {
   attempt=0
   while [ "$attempt" -lt 5 ]; do
     attempt=$((attempt + 1))
-    if probe=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+    if probe=$(run_ctl --sandbox "$sandbox_id" \
       --request-id "$(bounded_request_id "$CLOUD_AGENTS_E2E_RUN_ID-artifact-probe-$attempt")" sandbox exec \
       --expected-generation "$sandbox_generation" \
       --command "if test -f '$artifact_absolute'; then sha256sum -- '$artifact_absolute' | cut -d' ' -f1; else printf 'absent\n'; fi") &&
@@ -1249,7 +1133,7 @@ reconcile_side_effect_takeover() {
     absent) outcome=not-applied ;;
     *) echo "recovery side effect has an unexpected digest" >&2; return 1 ;;
   esac
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-reconcile" --idempotency-key "$execution_id-reconcile" execution reconcile \
     --generation "$takeover_generation" --checkpoint-digest "$takeover_checkpoint_digest" --outcome "$outcome" >/dev/null
   execution_retry_suffix=-reconciled
@@ -1285,7 +1169,7 @@ wait_for_recovery_interaction() {
   attempt=0
   while [ "$attempt" -lt 180 ]; do
     attempt=$((attempt + 1))
-    if run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    if run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$(bounded_request_id "$execution_id-recovery-interaction-$attempt")" execution get >"$current_file" 2>/dev/null; then
       pending=$(CLOUD_AGENTS_E2E_EXECUTION_FILE="$current_file" \
         CLOUD_AGENTS_E2E_HANDLED_APPROVALS="$handled_approvals" node <<'NODE'
@@ -1336,7 +1220,7 @@ NODE
           approval_rest=${pending#approval|}
           approval_generation=${approval_rest%%|*}
           approval_request=${approval_rest#*|}
-          run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+          run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
             --request-id "$(bounded_request_id "$execution_id-recovery-approve-$attempt")" --idempotency-key "$(bounded_request_id "$execution_id-recovery-approve-$attempt")" \
             execution resolve-approval --generation "$approval_generation" \
             --interaction-request "$approval_request" --decision accept >/dev/null
@@ -1436,7 +1320,7 @@ run_worker_exit_recovery() {
   attempt=0
   while [ "$attempt" -lt 30 ]; do
     attempt=$((attempt + 1))
-    run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+    run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
       --request-id "$(bounded_request_id "$execution_id-after-worker-exit-$attempt")" execution get >"$final_file.after-worker-exit"
     if CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-worker-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -1465,7 +1349,7 @@ NODE
     return 0
   fi
   prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-resolve" execution resolve-user-input \
     --generation "$(interaction_field "$interaction_file" generation)" \
     --interaction-request "$(interaction_field "$interaction_file" requestId)" \
@@ -1550,7 +1434,7 @@ run_agent_exit_recovery() {
     fi
     docker exec "$agent_runtime_container" sh -c "$runtime_kill_command"
   else
-    kill_result=$(run_ctl --project "$CLOUD_AGENTS_PROJECT" --sandbox "$sandbox_id" \
+    kill_result=$(run_ctl --sandbox "$sandbox_id" \
       --request-id "$execution_id-kill-runtime" sandbox exec \
       --expected-generation "$sandbox_generation" --command "$runtime_kill_command") || return 1
     CLOUD_AGENTS_E2E_KILL_RESULT="$kill_result" node -e '
@@ -1567,7 +1451,7 @@ run_agent_exit_recovery() {
   else
     fence_remote_worker_pty
   fi
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$(bounded_request_id "$execution_id-after-agent-exit")" execution get >"$final_file.after-agent-exit"
   CLOUD_AGENTS_E2E_EXECUTION_FILE="$final_file.after-agent-exit" CLOUD_AGENTS_E2E_CHECKPOINT_MODE="$recovery_checkpoint_mode" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -1585,7 +1469,7 @@ NODE
     return 0
   fi
   prepare_interaction_takeover "$session_id" "$turn_id" "$execution_id" approval-required plan "$prompt" "$final_file" "$recovery_capability_bound"
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$execution_id-resolve" execution resolve-user-input \
     --generation "$(interaction_field "$interaction_file" generation)" \
     --interaction-request "$(interaction_field "$interaction_file" requestId)" \
@@ -1636,7 +1520,7 @@ run_controlled_stop() {
   start_execution "$session_id" "$turn_id" "$execution_id" full-access default "$prompt" "$background_file"
   generation=$(wait_for_running "$session_id" "$turn_id" "$execution_id" "$state_file")
   sleep 2
-  run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
+  run_ctl --session "$session_id" --turn "$turn_id" --execution "$execution_id" \
     --request-id "$(bounded_request_id "$execution_id-$action")" --idempotency-key "$(bounded_request_id "$execution_id-$action")" \
     execution "$action" --generation "$generation" >"$action_file"
   if wait "$execute_pid"; then :; fi
@@ -1677,7 +1561,6 @@ start_execution "$approval_session" "$approval_turn" "$approval_execution" appro
   wait_for_interaction "$approval_session" "$approval_turn" "$approval_execution" approval "$approval_interaction"
   expect_stale_approval_rejected "$approval_session" "$approval_turn" "$approval_execution" "$approval_interaction"
   expect_cross_tenant_interaction_rejected "$approval_session" "$approval_turn" "$approval_execution" approval "$approval_interaction"
-  expect_interaction_authorization_rejected "$approval_session" "$approval_turn" "$approval_execution" approval "$approval_interaction"
   expect_checkpoint_protocol_rejected "$approval_session" "$approval_turn" "$approval_execution"
 if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
   approval_interaction_after_restart="$approval_interaction.after-restart"
@@ -1686,7 +1569,7 @@ if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
   cmp "$approval_interaction" "$approval_interaction_after_restart"
   prepare_interaction_takeover "$approval_session" "$approval_turn" "$approval_execution" approval-required default "$approval_prompt" "$approval_final"
 fi
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$approval_session" --turn "$approval_turn" --execution "$approval_execution" \
+run_ctl --session "$approval_session" --turn "$approval_turn" --execution "$approval_execution" \
   --request-id "$approval_execution-resolve" execution resolve-approval \
   --generation "$(interaction_field "$approval_interaction" generation)" \
   --interaction-request "$(interaction_field "$approval_interaction" requestId)" --decision accept >/dev/null
@@ -1712,7 +1595,7 @@ process.stdout.write(String(indexes[0]));
 NODE
 )
 approval_artifact_file="$CLOUD_AGENTS_E2E_OUTPUT_DIR/$approval_execution-artifact.txt"
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$approval_session" --turn "$approval_turn" --execution "$approval_execution" \
+run_ctl --session "$approval_session" --turn "$approval_turn" --execution "$approval_execution" \
   --request-id "$approval_execution-artifact" execution download-artifact --message-index "$approval_artifact_index" >"$approval_artifact_file"
 CLOUD_AGENTS_E2E_ARTIFACT_FILE="$approval_artifact_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -1730,7 +1613,6 @@ start_execution "$input_session" "$input_turn" "$input_execution" approval-requi
   wait_for_interaction "$input_session" "$input_turn" "$input_execution" user-input "$input_interaction"
   expect_stale_user_input_rejected "$input_session" "$input_turn" "$input_execution" "$input_interaction"
   expect_cross_tenant_interaction_rejected "$input_session" "$input_turn" "$input_execution" user-input "$input_interaction"
-  expect_interaction_authorization_rejected "$input_session" "$input_turn" "$input_execution" user-input "$input_interaction"
 if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
   input_interaction_after_restart="$input_interaction.after-restart"
   restart_control_plane_while_waiting "$input_session"
@@ -1740,7 +1622,7 @@ if [ -n "${CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER-}" ]; then
 fi
 question_id=$(interaction_field "$input_interaction" questionId)
 answers_json=$(CLOUD_AGENTS_E2E_QUESTION_ID="$question_id" node -e 'process.stdout.write(JSON.stringify({[process.env.CLOUD_AGENTS_E2E_QUESTION_ID]:["Staging"]}))')
-run_ctl --project "$CLOUD_AGENTS_PROJECT" --session "$input_session" --turn "$input_turn" --execution "$input_execution" \
+run_ctl --session "$input_session" --turn "$input_turn" --execution "$input_execution" \
   --request-id "$input_execution-resolve" execution resolve-user-input \
   --generation "$(interaction_field "$input_interaction" generation)" \
   --interaction-request "$(interaction_field "$input_interaction" requestId)" --answers-json "$answers_json" >/dev/null

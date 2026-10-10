@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/provider-authorization-request.schema.json",
+  "title": "ProviderAuthorizationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "providerId",
+    "purpose"
+  ],
+  "properties": {
+    "providerId": {
+      "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json"
+    },
+    "purpose": {
+      "type": "string",
+      "enum": [
+        "login",
+        "invitation",
+        "reauth",
+        "link"
+      ]
+    },
+    "invitationCode": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "purpose": {
+            "const": "invitation"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "invitationCode",
+          "displayName"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "invitationCode"
+              ]
+            },
+            {
+              "required": [
+                "displayName"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

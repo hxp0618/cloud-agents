@@ -107,6 +107,7 @@ FROM (
             )
         ) AS document
     FROM cloud_agents.builtin_roles AS role
+    WHERE role.role_version = CASE WHEN role.role_name = 'platform.admin' AND $1 = 'admin' THEN 2 ELSE 1 END
     ORDER BY role.role_name, role.role_version
     LIMIT 8
 ) AS role_row`
@@ -217,28 +218,49 @@ func executeVerifiedRBACOperation(
 	if !ok {
 		return authz.ErrOperationDenied
 	}
-	now := handle.clock().UTC()
-	base := authz.Snapshot{TenantID: handle.tenantID}
-
-	scope, resolved, err := handle.resolveAuthorizationScope(ctx, resource)
+	base, now, err := handle.authorizationSnapshot(ctx, actor, resource)
 	if err != nil {
 		return err
 	}
-	base.Scope = scope
-	base.ScopeResolved = resolved
-	if resolved {
-		catalog, catalogErr := handle.readBuiltinRoleCatalog(ctx)
-		if catalogErr != nil {
-			return catalogErr
-		}
-		base.Catalog = catalog
-		candidates, candidatesErr := handle.readAuthorizationCandidates(ctx, actor)
-		if candidatesErr != nil {
-			return candidatesErr
-		}
-		base.Candidates = candidates
-	}
 	return operation.Execute(base, now, callback)
+}
+
+func (handle *tenantReadHandle) authorizationSnapshot(
+	ctx context.Context,
+	actor authz.SubjectRef,
+	resource authz.ScopeRef,
+) (authz.Snapshot, time.Time, error) {
+	if ctx == nil {
+		return authz.Snapshot{}, time.Time{}, ErrNilContext
+	}
+	if handle == nil || !handle.active || handle.transaction == nil || handle.tenantID == "" || handle.clock == nil ||
+		(handle.application != "admin" && handle.application != "user") {
+		return authz.Snapshot{}, time.Time{}, ErrTenantCapabilityClosed
+	}
+	now := handle.clock().UTC()
+	snapshot := authz.Snapshot{TenantID: handle.tenantID, Application: handle.application}
+	scope, resolved, err := handle.resolveAuthorizationScope(ctx, resource)
+	if err != nil {
+		return authz.Snapshot{}, time.Time{}, err
+	}
+	snapshot.Scope = scope
+	snapshot.ScopeResolved = resolved
+	if !resolved {
+		return snapshot, now, nil
+	}
+	snapshot.Catalog, err = handle.readBuiltinRoleCatalog(ctx)
+	if err != nil {
+		return authz.Snapshot{}, time.Time{}, err
+	}
+	snapshot.Candidates, err = handle.readAuthorizationCandidates(ctx, actor)
+	if err != nil {
+		return authz.Snapshot{}, time.Time{}, err
+	}
+	snapshot.GlobalBinding, err = handle.readGlobalRoleBinding(ctx, actor)
+	if err != nil {
+		return authz.Snapshot{}, time.Time{}, err
+	}
+	return snapshot, now, nil
 }
 
 func (handle *tenantReadHandle) resolveAuthorizationScope(
@@ -273,7 +295,7 @@ func (handle *tenantReadHandle) resolveAuthorizationScope(
 
 func (handle *tenantReadHandle) readBuiltinRoleCatalog(ctx context.Context) (authz.Catalog, error) {
 	var raw []byte
-	if err := handle.transaction.queryRow(ctx, readBuiltinRoleCatalogSQL).Scan(&raw); err != nil {
+	if err := handle.transaction.queryRow(ctx, readBuiltinRoleCatalogSQL, handle.application).Scan(&raw); err != nil {
 		return authz.Catalog{}, fmt.Errorf("read builtin role catalog: %w", err)
 	}
 	rows, err := decodeBoundedJSON[[]databaseCatalogRole](raw, maxCatalogJSONBytes)
@@ -293,6 +315,23 @@ func (handle *tenantReadHandle) readBuiltinRoleCatalog(ctx context.Context) (aut
 		}
 	}
 	return authz.Catalog{Roles: roles}, nil
+}
+
+func (handle *tenantReadHandle) readGlobalRoleBinding(ctx context.Context, subject authz.SubjectRef) (*authz.GlobalRoleBindingFact, error) {
+	if handle.application != "admin" {
+		return nil, nil
+	}
+	binding := authz.GlobalRoleBindingFact{RoleName: "platform.admin", RoleVersion: 2, State: authz.BindingActive}
+	err := handle.transaction.queryRow(ctx, `SELECT user_id, subject_kind, subject_issuer, subject_value, subject_digest
+		FROM cloud_agents_identity.read_platform_admin($1, $2, $3)`, subject.Kind, subject.Issuer, subject.Subject).
+		Scan(&binding.UserID, &binding.Subject.Kind, &binding.Subject.Issuer, &binding.Subject.Subject, &binding.SubjectHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read platform administrator: %w", err)
+	}
+	return &binding, nil
 }
 
 func (handle *tenantReadHandle) readAuthorizationCandidates(

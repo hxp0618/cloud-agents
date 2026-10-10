@@ -18,15 +18,93 @@ import (
 
 	"github.com/gorilla/websocket"
 	common "github.com/hxp0618/cloud-agents/sdk/go/gen/common/v1alpha1"
+	api "github.com/hxp0618/cloud-agents/sdk/go/gen/openapi/v1alpha1"
 	platform "github.com/hxp0618/cloud-agents/sdk/go/gen/platform/v1alpha1"
 	internalremoteworker "github.com/hxp0618/cloud-agents/services/control-plane/internal/remoteworker"
 )
+
+func runTestCommand(t *testing.T, args []string, stdout io.Writer) error {
+	t.Helper()
+	endpoint, rewritten := removeTestGlobalFlag(args, "--endpoint")
+	if endpoint == "" {
+		return run(args, stdout)
+	}
+	token, rewritten := removeTestGlobalFlag(rewritten, "--token")
+	tokenFile, rewritten := removeTestGlobalFlag(rewritten, "--token-file")
+	tenantID, rewritten := removeTestGlobalFlag(rewritten, "--tenant")
+	projectID, rewritten := removeTestGlobalFlag(rewritten, "--project")
+	caFile, rewritten := removeTestGlobalFlag(rewritten, "--ca-file")
+	if tokenFile != "" {
+		contents, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return err
+		}
+		token = strings.TrimSpace(string(contents))
+	}
+	if token == "" {
+		token = "token-alpha"
+	}
+	gatewayCommand := testContainsCommand(rewritten, "pty") || testContainsCommand(rewritten, "files") || testContainsCommand(rewritten, "preview")
+	application := "user"
+	if _, command, action, _, err := parseArgs(append([]string{"--profile", "/tmp/cloud-agentsctl-test-profile"}, rewritten...)); err == nil && !cliCommandAllowsApplication(command, action, application) {
+		application = "admin"
+	}
+	profileDirectory := t.TempDir()
+	if err := os.Chmod(profileDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(profileDirectory, "profile.json")
+	if err := createCLIProfile(profilePath, cliProfile{
+		Version: cliProfileVersion, WebEndpoint: "https://127.0.0.1:1", ControlPlaneEndpoint: endpoint,
+		CAFile: caFile, Application: application, CredentialKind: "serviceAccount",
+		Credential: strings.Repeat("a", 43), DefaultTenantID: tenantID, DefaultProjectID: projectID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	previous := issueCommandTenantToken
+	issueCommandTenantToken = func(context.Context, *api.CLIIdentityClient, cliProfile, string, string) (api.TenantToken, error) {
+		return api.TenantToken{AccessToken: token, TokenType: "Bearer", ExpiresAt: "2026-10-09T12:15:00Z"}, nil
+	}
+	defer func() { issueCommandTenantToken = previous }()
+	prefix := []string{"--profile", profilePath}
+	if gatewayCommand {
+		grantPath := filepath.Join(profileDirectory, "sandbox-access-grant")
+		if err := createPrivateCredentialFile(grantPath, []byte(token)); err != nil {
+			t.Fatal(err)
+		}
+		prefix = append(prefix, "--gateway-endpoint", endpoint, "--access-grant-file", grantPath)
+	}
+	return run(append(prefix, rewritten...), stdout)
+}
+
+func testContainsCommand(args []string, command string) bool {
+	for _, value := range args {
+		if value == command {
+			return true
+		}
+	}
+	return false
+}
+
+func removeTestGlobalFlag(args []string, name string) (string, []string) {
+	rewritten := make([]string, 0, len(args))
+	value := ""
+	for index := 0; index < len(args); index++ {
+		if args[index] == name && index+1 < len(args) {
+			value = args[index+1]
+			index++
+			continue
+		}
+		rewritten = append(rewritten, args[index])
+	}
+	return value, rewritten
+}
 
 func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 	for _, argument := range []string{"help", "-h", "--help"} {
 		t.Run(argument, func(t *testing.T) {
 			var stdout bytes.Buffer
-			if err := run([]string{argument}, &stdout); err != nil {
+			if err := runTestCommand(t, []string{argument}, &stdout); err != nil {
 				t.Fatal(err)
 			}
 			for _, expected := range []string{usage, "execution get|list|execute|download-artifact|cancel|interrupt|resolve-approval|resolve-user-input|reconcile", "environment-lease get|list (Admin API)"} {
@@ -40,7 +118,7 @@ func TestRunHelpDoesNotRequireConnectionOptions(t *testing.T) {
 
 func TestRunVersionDoesNotRequireConnectionOptions(t *testing.T) {
 	var stdout bytes.Buffer
-	if err := run([]string{"--version"}, &stdout); err != nil {
+	if err := runTestCommand(t, []string{"--version"}, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if stdout.String() != "cloud-agentsctl dev\n" {
@@ -77,7 +155,7 @@ func TestRunDockerTargetPreflightDoesNotRequireControlPlaneCredentials(t *testin
 	})
 
 	var stdout bytes.Buffer
-	if err := run([]string{"target", "preflight", "--kind", "docker", "--socket", socketPath}, &stdout); err != nil {
+	if err := runTestCommand(t, []string{"target", "preflight", "--kind", "docker", "--socket", socketPath}, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"apiVersion":"1.53"`) || strings.Contains(stdout.String(), socketPath) {
@@ -102,7 +180,7 @@ func TestRunRegistersDeploymentTargetThroughControlPlane(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--target", "docker-alpha", "--request-id", "request-alpha", "--idempotency-key", "register-alpha-key",
 		"target", "register", "--target-name", "docker-alpha", "--kind", "docker", "--target-endpoint", "https://docker.example.test:2376", "--credential-ref", "docker-alpha-mtls",
 	}, &stdout)
@@ -133,7 +211,7 @@ func TestRunClaimsRemoteWorkerEnrollmentSecretThroughBootstrapRoute(t *testing.T
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "bootstrap-token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
 		"--enrollment", "enrollment-alpha", "--request-id", "request-alpha", "--idempotency-key", "enrollment-claim-key-alpha",
 		"remote-worker-enrollment", "claim-secret", "--expected-resource-version", "1",
@@ -199,7 +277,7 @@ func TestRunExecutesSandboxThroughControlPlane(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
 		"--sandbox", "sandbox-alpha", "--request-id", "request-alpha", "sandbox", "exec",
 		"--expected-generation", "3", "--command", "printf hello", "--timeout-seconds", "5",
@@ -243,7 +321,7 @@ func TestRunAttachesPTYWithCursor(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
 		"--project", "project-alpha", "--grant", "grant-alpha", "--pty-session", "session-alpha",
 		"--request-id", "request-alpha", "pty", "attach", "--since", "7", "--takeover",
@@ -269,12 +347,56 @@ func TestRunWritesSandboxFileThroughAccessGateway(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
 		"--project", "project-alpha", "--grant", "grant-alpha", "--request-id", "request-alpha",
 		"files", "write", "--path", "notes.txt", "--content-base64url", "aGk",
 	}, &stdout)
 	if err != nil || !strings.Contains(stdout.String(), `"path":"notes.txt"`) {
+		t.Fatalf("output/error = %q / %v", stdout.String(), err)
+	}
+}
+
+func TestRunGatewayCommandUsesOnlyPrivateAccessGrantFile(t *testing.T) {
+	grant := "cag1_" + strings.Repeat("x", 43)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPut || request.URL.Path != "/v1/tenants/tenant-alpha/projects/project-alpha/sandbox-access-grants/grant-alpha/files" ||
+			request.Header.Get("Authorization") != "Bearer "+grant {
+			t.Fatalf("request = %s %s headers=%v", request.Method, request.URL.Path, request.Header)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"path":"notes.txt","type":"file","sizeBytes":2,"modifiedAt":"2026-09-06T00:00:00Z","fileVersion":"sfv1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}`))
+	}))
+	defer server.Close()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(directory, "profile.json")
+	if err := createCLIProfile(profilePath, cliProfile{
+		Version: cliProfileVersion, WebEndpoint: server.URL, ControlPlaneEndpoint: server.URL,
+		Application: "user", CredentialKind: "cliGrant", Credential: strings.Repeat("a", 43),
+		DefaultTenantID: "tenant-alpha", DefaultProjectID: "project-alpha",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	grantPath := filepath.Join(directory, "sandbox-access-grant")
+	if err := createPrivateCredentialFile(grantPath, []byte(grant+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	previous := issueCommandTenantToken
+	issueCommandTenantToken = func(context.Context, *api.CLIIdentityClient, cliProfile, string, string) (api.TenantToken, error) {
+		t.Fatal("Gateway command requested an Identity tenant token")
+		return api.TenantToken{}, errors.New("unreachable")
+	}
+	defer func() { issueCommandTenantToken = previous }()
+	var stdout bytes.Buffer
+	err := run([]string{
+		"--profile", profilePath, "--gateway-endpoint", server.URL, "--access-grant-file", grantPath,
+		"--grant", "grant-alpha", "--request-id", "request-alpha", "files", "write",
+		"--path", "notes.txt", "--content-base64url", "aGk",
+	}, &stdout)
+	if err != nil || !strings.Contains(stdout.String(), `"path":"notes.txt"`) || strings.Contains(stdout.String(), grant) {
 		t.Fatalf("output/error = %q / %v", stdout.String(), err)
 	}
 }
@@ -290,7 +412,7 @@ func TestRunRegistersPrivateSandboxPreviewPort(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "cag1_" + strings.Repeat("x", 43), "--tenant", "tenant-alpha",
 		"--project", "project-alpha", "--grant", "grant-alpha", "--request-id", "request-alpha",
 		"preview", "register", "--port", "3000",
@@ -323,7 +445,7 @@ func TestRunActionHelpDoesNotRequireConnectionOrResourceOptions(t *testing.T) {
 		{args: []string{"preview", "register", "help"}, expected: "-port int"},
 	} {
 		var stdout bytes.Buffer
-		if err := run(test.args, &stdout); err != nil {
+		if err := runTestCommand(t, test.args, &stdout); err != nil {
 			t.Fatalf("run(%v) = %v", test.args, err)
 		}
 		if !strings.Contains(stdout.String(), test.expected) {
@@ -350,7 +472,7 @@ func TestRunProjectGetUsesTokenFile(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token-file", tokenFile, "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha",
 		"project", "get",
 	}, &stdout)
@@ -381,16 +503,55 @@ func TestRunUsesCAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := run([]string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
+	err := runTestCommand(t, []string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(caFile, []byte("not a certificate"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err = run([]string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
+	err = runTestCommand(t, []string{"--endpoint", server.URL, "--ca-file", caFile, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
 	if err == nil || err.Error() != "CA file contains no certificates" {
 		t.Fatalf("invalid CA error = %v", err)
+	}
+}
+
+func TestRunAdminTenantUsesAdminRouteAndTenantScopedToken(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/admin/tenants/tenant-alpha" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		writer.Header().Set("X-Resource-Version", "1")
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"apiVersion":"platform.cloud-agents.dev/v1alpha1","kind":"PlatformTenant","metadata":{"uid":"tenant-alpha","name":"tenant-alpha","tenantRef":{"namespace":"cloud-agents","kind":"tenant","id":"tenant-alpha"},"resourceVersion":"1","createdAt":"2026-08-31T00:00:00Z"},"spec":{"displayName":"Tenant Alpha","state":"active"}}`)
+	}))
+	defer server.Close()
+	profileDirectory := t.TempDir()
+	if err := os.Chmod(profileDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	caFile := filepath.Join(profileDirectory, "ca.pem")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(profileDirectory, "profile.json")
+	if err := createCLIProfile(profilePath, cliProfile{
+		Version: cliProfileVersion, WebEndpoint: server.URL, ControlPlaneEndpoint: server.URL, CAFile: caFile,
+		Application: "admin", CredentialKind: "serviceAccount", Credential: strings.Repeat("a", 43),
+		DefaultTenantID: "tenant-alpha", DefaultProjectID: "project-alpha",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	previous := issueCommandTenantToken
+	issueCommandTenantToken = func(_ context.Context, _ *api.CLIIdentityClient, _ cliProfile, tenantID, projectID string) (api.TenantToken, error) {
+		if tenantID != "tenant-alpha" || projectID != "" {
+			t.Fatalf("token scope = tenant %q project %q", tenantID, projectID)
+		}
+		return api.TenantToken{AccessToken: "token-alpha", TokenType: "Bearer", ExpiresAt: "2026-10-09T12:15:00Z"}, nil
+	}
+	defer func() { issueCommandTenantToken = previous }()
+	if err := run([]string{"--profile", profilePath, "--request-id", "request-alpha", "tenant", "get"}, io.Discard); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -403,7 +564,7 @@ func TestRunSessionList(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha",
 		"session", "list", "--page-size", "1", "--page-token", "session-page-token-1",
 	}, &stdout)
@@ -441,7 +602,7 @@ func TestRunSessionCreateCarriesCapabilityReferences(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
 		"--session", "session-alpha", "--lease", "lease-alpha", "--request-id", "request-alpha", "--idempotency-key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R4",
 		"session", "create", "--provider", "pi",
@@ -462,7 +623,7 @@ func TestRunTurnList(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--request-id", "request-alpha",
 		"turn", "list", "--page-size", "1", "--page-token", "turn-page-token-1",
 	}, &stdout)
@@ -480,7 +641,7 @@ func TestRunExecutionListDoesNotRequireTurnOrExecutionID(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--request-id", "request-alpha",
 		"execution", "list", "--page-size", "1", "--page-token", "execution-page-token-1",
 	}, &stdout)
@@ -509,7 +670,7 @@ func TestRunExecutionCarriesCapabilityReferences(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha",
 		"--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "--idempotency-key", "idem-01JZ4X7PGQFHZ2YJR37QRYZ9R2",
 		"execution", "execute", "--input", "use capabilities",
@@ -548,7 +709,7 @@ func TestRunEventsWatchAdvancesCursorUntilExecutionTerminal(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	missingExecutionErr := run([]string{
+	missingExecutionErr := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha",
 		"--project", "project-alpha", "--session", "session-alpha", "--request-id", "request-events-watch",
 		"events", "watch", "--until-terminal",
@@ -557,7 +718,7 @@ func TestRunEventsWatchAdvancesCursorUntilExecutionTerminal(t *testing.T) {
 		t.Fatalf("missing execution error/calls = %v/%d", missingExecutionErr, calls)
 	}
 	stdout.Reset()
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha",
 		"--project", "project-alpha", "--session", "session-alpha", "--execution", "execution-alpha",
 		"--request-id", "request-events-watch", "events", "watch", "--limit", "1",
@@ -583,7 +744,7 @@ func TestRunExecutionDownloadArtifactWritesRawBytes(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha",
 		"execution", "download-artifact", "--message-index", "2",
 	}, &stdout)
@@ -601,7 +762,7 @@ func TestRunRoleList(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
 		"role", "list", "--page-size", "1", "--page-token", "role-page-token-1",
 	}, &stdout)
@@ -619,7 +780,7 @@ func TestRunMembershipList(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
 		"membership", "list", "--page-size", "1", "--page-token", "membership-page-token-1",
 	}, &stdout)
@@ -637,7 +798,7 @@ func TestRunRoleBindingList(t *testing.T) {
 	}))
 	defer server.Close()
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
 		"role-binding", "list", "--page-size", "1", "--page-token", "role-binding-page-token-1",
 	}, &stdout)
@@ -646,26 +807,26 @@ func TestRunRoleBindingList(t *testing.T) {
 	}
 }
 
-func TestParseArgsRejectsMissingRequiredGlobalInput(t *testing.T) {
-	if _, _, _, _, err := parseArgs([]string{"--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "project", "get"}); err == nil || !strings.Contains(err.Error(), "--endpoint is required") {
-		t.Fatalf("error = %v", err)
+func TestParseArgsRejectsLegacyCredentialAndContextFlags(t *testing.T) {
+	for _, flagName := range []string{"--endpoint", "--token", "--token-file", "--tenant", "--project"} {
+		if _, _, _, _, err := parseArgs([]string{flagName, "legacy-value", "tenant", "get"}); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+			t.Fatalf("%s error = %v", flagName, err)
+		}
 	}
-	base := []string{"--endpoint", "https://control-plane.example", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}
-	if _, _, _, _, err := parseArgs(base); err == nil || !strings.Contains(err.Error(), "--token or --token-file") {
-		t.Fatalf("missing token error = %v", err)
+	if _, _, _, _, err := parseArgs([]string{"--profile", "/tmp/profile.json", "--request-id", "request-alpha", "tenant", "get"}); err != nil {
+		t.Fatalf("profile args error = %v", err)
 	}
-	if _, _, _, _, err := parseArgs(append([]string{"--token", "token-alpha", "--token-file", "/tmp/token"}, base...)); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("conflicting token error = %v", err)
+	if _, _, _, _, err := parseArgs([]string{"--profile", "/tmp/profile.json", "--gateway-endpoint", "https://127.0.0.1:44772", "--access-grant-file", "/tmp/grant", "tenant", "get"}); err == nil {
+		t.Fatal("tenant command accepted Gateway credentials")
+	}
+	if _, _, _, _, err := parseArgs([]string{"--profile", "/tmp/profile.json", "--grant", "grant-alpha", "files", "list"}); err == nil {
+		t.Fatal("Gateway command accepted missing Gateway credentials")
 	}
 }
 
-func TestRunRejectsOversizedTokenFile(t *testing.T) {
-	tokenFile := t.TempDir() + "/token"
-	if err := os.WriteFile(tokenFile, bytes.Repeat([]byte("x"), maxBearerTokenFileBytes+1), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := run([]string{"--endpoint", "https://control-plane.example", "--token-file", tokenFile, "--tenant", "tenant-alpha", "--request-id", "request-alpha", "tenant", "get"}, io.Discard)
-	if err == nil || err.Error() != "cannot read bearer token file" {
+func TestRunRejectsMissingProfile(t *testing.T) {
+	err := run([]string{"--profile", filepath.Join(t.TempDir(), "missing.json"), "tenant", "get"}, io.Discard)
+	if !errors.Is(err, errCLIProfile) {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -677,14 +838,14 @@ func TestRunCancelsRequestAtConfiguredTimeout(t *testing.T) {
 	defer server.Close()
 
 	started := time.Now()
-	err := run([]string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "--timeout", "25ms", "tenant", "get"}, io.Discard)
+	err := runTestCommand(t, []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "--timeout", "25ms", "tenant", "get"}, io.Discard)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v", err)
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("request timeout took %v", elapsed)
 	}
-	if _, _, _, _, err := parseArgs([]string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha", "--timeout", "0s", "tenant", "get"}); err == nil {
+	if _, _, _, _, err := parseArgs([]string{"--profile", "/tmp/profile.json", "--request-id", "request-alpha", "--timeout", "0s", "tenant", "get"}); err == nil {
 		t.Fatal("zero timeout was accepted")
 	}
 }
@@ -713,7 +874,8 @@ func TestParseArgsAcceptsPublicReadResources(t *testing.T) {
 		{name: "environment lease", args: []string{"--project", "project-alpha", "--lease", "lease-alpha", "environment-lease", "get"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"--endpoint", "http://127.0.0.1:8080", "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha"}, test.args...)
+			_, commandArgs := removeTestGlobalFlag(test.args, "--project")
+			args := append([]string{"--profile", "/tmp/profile.json", "--request-id", "request-alpha"}, commandArgs...)
 			if _, _, _, _, err := parseArgs(args); err != nil {
 				t.Fatalf("parseArgs(%v) = %v", args, err)
 			}
@@ -735,7 +897,7 @@ func TestParseArgsAcceptsRBACMutations(t *testing.T) {
 		{name: "role binding revoke", args: []string{"--role-binding", "binding-alpha", "role-binding", "revoke"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"--endpoint", "http://127.0.0.1:8080", "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha"}, test.args...)
+			args := append([]string{"--profile", "/tmp/profile.json", "--request-id", "request-alpha"}, test.args...)
 			if _, _, _, _, err := parseArgs(args); err != nil {
 				t.Fatalf("parseArgs(%v) = %v", args, err)
 			}
@@ -762,7 +924,7 @@ func TestRunOrganizationCreate(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--organization", "organization-beta", "--request-id", "request-alpha",
 		"organization", "create", "--expected-tenant-revision", "4", "--name", "organization-beta", "--display-name", "Organization Beta", "--audit-fact-uid", "audit-organization-beta", "--reason-code", "operator-request",
 	}, &stdout)
@@ -790,7 +952,7 @@ func TestRunOrganizationList(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--request-id", "request-alpha",
 		"organization", "list", "--page-size", "1", "--page-token", "organization-page-token-1",
 	}, &stdout)
@@ -813,7 +975,7 @@ func TestRunProjectList(t *testing.T) {
 	defer server.Close()
 
 	var stdout bytes.Buffer
-	err := run([]string{
+	err := runTestCommand(t, []string{
 		"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--organization", "organization-alpha", "--request-id", "request-alpha",
 		"project", "list", "--page-size", "1", "--page-token", "project-page-token-1",
 	}, &stdout)
@@ -936,7 +1098,7 @@ func TestRunRBACMutations(t *testing.T) {
 				args = append(args, "--expected-tenant-revision", "9", "--expected-resource-version", "4", "--audit-fact-uid", "audit-revoke", "--reason-code", "operator-request")
 			}
 			var stdout bytes.Buffer
-			if err := run(args, &stdout); err != nil {
+			if err := runTestCommand(t, args, &stdout); err != nil {
 				t.Fatal(err)
 			}
 			wantPath := "/v1/tenants/tenant-alpha/"
@@ -978,7 +1140,7 @@ func TestRunEnvironmentLeaseGetUsesAdminAPI(t *testing.T) {
 	defer server.Close()
 	args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--lease", "lease-alpha", "--request-id", "request-alpha", "environment-lease", "get"}
 	var stdout bytes.Buffer
-	if err := run(args, &stdout); err != nil {
+	if err := runTestCommand(t, args, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"kind":"CloudEnvironmentLease"`) {
@@ -998,7 +1160,7 @@ func TestRunEnvironmentLeaseListDoesNotRequireLeaseID(t *testing.T) {
 	defer server.Close()
 	args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--request-id", "request-alpha", "environment-lease", "list", "--page-size", "1", "--page-token", "lease-page-token-1"}
 	var stdout bytes.Buffer
-	if err := run(args, &stdout); err != nil {
+	if err := runTestCommand(t, args, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stdout.String(), `"kind":"EnvironmentLeasePage"`) || !strings.Contains(stdout.String(), `"nextPageToken":"lease-page-token-2"`) {
@@ -1021,7 +1183,7 @@ func TestRunExecutionMutationUsesGenerationAndIdempotency(t *testing.T) {
 			defer server.Close()
 			args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "--idempotency-key", "idempotency-alpha", "execution", action, "--generation", "7"}
 			var stdout bytes.Buffer
-			if err := run(args, &stdout); err != nil {
+			if err := runTestCommand(t, args, &stdout); err != nil {
 				t.Fatal(err)
 			}
 			wantSuffix := ":" + action
@@ -1055,7 +1217,7 @@ func TestRunExecutionResolvesInteractions(t *testing.T) {
 			args := []string{"--endpoint", server.URL, "--token", "token-alpha", "--tenant", "tenant-alpha", "--project", "project-alpha", "--session", "session-alpha", "--turn", "turn-alpha", "--execution", "execution-alpha", "--request-id", "request-alpha", "execution", test.action}
 			args = append(args, test.flags...)
 			var stdout bytes.Buffer
-			if err := run(args, &stdout); err != nil {
+			if err := runTestCommand(t, args, &stdout); err != nil {
 				t.Fatal(err)
 			}
 			if !strings.HasSuffix(path, test.suffix) || body != test.body || !strings.Contains(stdout.String(), `"resolved":true`) {
@@ -1085,7 +1247,7 @@ func TestRunExecutionReconcilesUnknownSideEffect(t *testing.T) {
 		"--generation", "7", "--checkpoint-digest", digest, "--outcome", "not-applied",
 	}
 	var stdout bytes.Buffer
-	if err := run(args, &stdout); err != nil {
+	if err := runTestCommand(t, args, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasSuffix(path, ":reconcile") || body != `{"generation":7,"checkpointDigest":"`+digest+`","outcome":"not-applied"}` || !strings.Contains(stdout.String(), `"reconciled":true`) {

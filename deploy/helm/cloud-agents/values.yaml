@@ -4,6 +4,11 @@ images:
     tag: 0.2.0
     digest: ""
     pullPolicy: IfNotPresent
+  identity:
+    repository: cloud-agents/identity
+    tag: 0.2.0
+    digest: ""
+    pullPolicy: IfNotPresent
   worker:
     repository: cloud-agents/worker
     tag: 0.2.0
@@ -35,14 +40,57 @@ database:
   runtimeURLKey: runtime-url
   migrationURLKey: migration-url
   tenantBootstrapURLKey: tenant-bootstrap-url
+  identityServiceURLKey: identity-service-url
+  identityBootstrapURLKey: identity-bootstrap-url
 
 tenantBootstrap:
-  enabled: true
+  enabled: false
   secretName: cloud-agents-tenant-bootstrap
 
-auth:
-  secretName: cloud-agents-auth
-  configKey: auth.json
+identity:
+  replicas: 1
+  issuer: https://identity.cloud-agents.example
+  adminAudience: https://admin.cloud-agents.example
+  userAudience: https://user.cloud-agents.example
+  signingKeyId: identity-signing-1
+  service:
+    port: 8443
+  tls:
+    secretName: cloud-agents-identity-tls
+    certificateKey: tls.crt
+    privateKeyKey: tls.key
+    caKey: ca.crt
+  signing:
+    secretName: cloud-agents-identity-signing
+    privateKeyKey: signing.key
+  csrf:
+    secretName: cloud-agents-identity-csrf
+    key: csrf.key
+  providerFlow:
+    secretName: cloud-agents-identity-provider-flow
+    key: provider-flow.key
+  providers:
+    secretName: ""
+    clientSecrets: {}
+    rootCAs: {}
+  credentials:
+    secretName: cloud-agents-identity-service-proofs
+    adminWebKey: admin-web.proof
+    userWebKey: user-web.proof
+    controlPlaneKey: control-plane.proof
+    controlPlaneAuthorizationKey: identity-control-plane.proof
+  resources: {}
+
+identityBootstrap:
+  enabled: false
+  secretName: cloud-agents-identity-bootstrap
+  setupProofKey: setup.proof
+  passwordHashKey: password.hash
+  userId: initial-admin
+  email: admin@example.com
+  displayName: Initial administrator
+  keyNotBefore: ""
+  keyNotAfter: ""
 
 accessGrant:
   secretName: cloud-agents-access-grant
@@ -50,6 +98,7 @@ accessGrant:
 
 tls:
   controlPlaneSecretName: cloud-agents-control-plane-tls
+  controlPlaneCAKey: ca.crt
   workerSecretName: cloud-agents-worker-tls
   workerClientSecretName: cloud-agents-worker-client-tls
   accessGatewaySecretName: cloud-agents-access-gateway-tls
@@ -87,6 +136,9 @@ controlPlane:
 deploymentTargets:
   kubernetesCredentialSecretName: cloud-agents-kubernetes-targets
   sshCredentialSecretName: ""
+  # Secret with key target-credential.key (exactly 32 bytes) that seals
+  # kubeconfig credentials registered from Admin Web. Empty disables them.
+  credentialKeySecretName: ""
 
 remoteWorker:
   certificateAuthoritySecretName: ""
@@ -111,6 +163,10 @@ accessGateway:
 
 adminWeb:
   replicas: 1
+  tlsSecretName: cloud-agents-admin-web-tls
+  tlsCertificateKey: tls.crt
+  tlsPrivateKeyKey: tls.key
+  trustedProxyIP: ""
   controlPlaneCASecretName: cloud-agents-control-plane-tls
   controlPlaneCAKey: ca.crt
   service:
@@ -120,6 +176,10 @@ adminWeb:
 
 userWeb:
   replicas: 1
+  tlsSecretName: cloud-agents-user-web-tls
+  tlsCertificateKey: tls.crt
+  tlsPrivateKeyKey: tls.key
+  trustedProxyIP: ""
   controlPlaneCASecretName: cloud-agents-control-plane-tls
   controlPlaneCAKey: ca.crt
   service:

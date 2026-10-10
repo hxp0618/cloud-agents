@@ -1,0 +1,12 @@
+{
+  "passwordEnabled": false,
+  "loginMethods": [
+    {
+      "id": "login-method-1",
+      "providerId": "github-main",
+      "issuer": "https://github.com",
+      "subject": "123456",
+      "createdAt": "2026-10-09T08:00:00Z"
+    }
+  ]
+}

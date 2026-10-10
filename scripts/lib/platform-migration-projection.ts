@@ -50,7 +50,7 @@ const OBJECT_CREATOR_CLOSURE = ["cloud_agents_migration_owner"] as const;
 const BOOTSTRAP_ADMIN_ROLE = "cloud_agents_bootstrap_admin";
 const MIGRATION_OWNER_ROLE = "cloud_agents_migration_owner";
 const RUNTIME_ROLE = "cloud_agents_runtime";
-const GROUP_ROLES = [BOOTSTRAP_ADMIN_ROLE, MIGRATION_OWNER_ROLE, RUNTIME_ROLE] as const;
+const GROUP_ROLES_V1 = [BOOTSTRAP_ADMIN_ROLE, MIGRATION_OWNER_ROLE, RUNTIME_ROLE] as const;
 const STABLE_PROJECTION_ERRORS = [
   "MIGRATION_PROJECTION_UNSUPPORTED_MAJOR",
   "MIGRATION_PROJECTION_CAPABILITY_MISMATCH",
@@ -151,9 +151,9 @@ export function validateAuthorityProfile(profile: JsonObject): void {
     "required_projection_fields",
     "required_binding_fields",
   ]);
-  literal(
+  const format = literal(
     profile.format_version,
-    ["cloud-agents-platform-authority-contract/v1"],
+    ["cloud-agents-platform-authority-contract/v1", "cloud-agents-platform-authority-contract/v2"],
     "authority format",
   );
   literal(profile.contract_kind, ["database_role_authority"], "authority kind");
@@ -179,7 +179,14 @@ export function validateAuthorityProfile(profile: JsonObject): void {
   const groups = stringArray(profile.group_roles, "group roles");
   exactArray(
     groups,
-    ["cloud_agents_migration_owner", "cloud_agents_runtime", "cloud_agents_bootstrap_admin"],
+    format === "cloud-agents-platform-authority-contract/v1"
+      ? ["cloud_agents_migration_owner", "cloud_agents_runtime", "cloud_agents_bootstrap_admin"]
+      : [
+          "cloud_agents_migration_owner",
+          "cloud_agents_runtime",
+          "cloud_agents_bootstrap_admin",
+          "cloud_agents_identity_service",
+        ],
     "group roles",
   );
   exactArray(
@@ -377,7 +384,7 @@ function validateMechanicalAuthorityProfile(
   ) {
     fail("AUTHORITY_CURRENT_USER", `${phase}:${current}`);
   }
-  for (const groupName of GROUP_ROLES) {
+  for (const groupName of GROUP_ROLES_V1) {
     const group = roles.get(groupName);
     if (
       group === undefined ||
@@ -393,12 +400,12 @@ function validateMechanicalAuthorityProfile(
     boolean(sessionRole.inherit, "session inherit") ||
     hasUnsafeAuthorityAttributes(sessionRole) ||
     session === databaseOwner ||
-    GROUP_ROLES.includes(session as (typeof GROUP_ROLES)[number])
+    GROUP_ROLES_V1.includes(session as (typeof GROUP_ROLES_V1)[number])
   ) {
     fail("AUTHORITY_SESSION_ROLE", session);
   }
   if (
-    GROUP_ROLES.includes(databaseOwner as (typeof GROUP_ROLES)[number]) ||
+    GROUP_ROLES_V1.includes(databaseOwner as (typeof GROUP_ROLES_V1)[number]) ||
     hasUnsafeAuthorityAttributes(databaseOwnerRole)
   ) {
     fail("AUTHORITY_DATABASE_OWNER", databaseOwner);
@@ -448,7 +455,7 @@ function validateMechanicalAuthorityProfile(
   for (const grantor of grantors) {
     if (workloads.has(grantor)) fail("AUTHORITY_GRANTOR_OVERLAP", grantor);
   }
-  const expectedClosure = new Set<string>([...GROUP_ROLES, databaseOwner]);
+  const expectedClosure = new Set<string>([...GROUP_ROLES_V1, databaseOwner]);
   for (const workload of workloads.keys()) expectedClosure.add(workload);
   for (const grantor of grantors) expectedClosure.add(grantor);
   if (

@@ -1,0 +1,8 @@
+{
+  "userId": "account-alpha",
+  "issuer": "https://identity.example.com/",
+  "tenantId": "tenant-alpha",
+  "projectId": "project-alpha",
+  "application": "admin",
+  "scopes": ["agents.get", "agents.list"]
+}

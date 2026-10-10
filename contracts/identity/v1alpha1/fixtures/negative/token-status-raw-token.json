@@ -1,0 +1,5 @@
+{
+  "tokenSha256": "header.payload.signature",
+  "expectedApplication": "admin",
+  "expectedTenantId": "tenant-alpha"
+}

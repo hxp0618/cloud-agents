@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,8 @@ var (
 	ErrNotFound            = errors.New("deployment target was not found")
 	ErrConflict            = errors.New("deployment target transition is invalid")
 	ErrIdempotencyConflict = errors.New("deployment target idempotency key conflicts")
+	sealedKeyIDPattern     = regexp.MustCompile(`^k1-[0-9a-f]{32}$`)
+	fingerprintPattern     = regexp.MustCompile(`^hmac-sha256:[0-9a-f]{64}$`)
 )
 
 type Scope struct{ TenantID, ProjectID string }
@@ -30,6 +33,16 @@ type RegisterInput struct {
 	TargetID, TargetName, Kind string
 	Endpoint, CredentialRef    string
 	Mutation                   Mutation
+	// SealedCredential carries a Kubernetes connection taken from a kubeconfig.
+	SealedCredential *SealedCredential
+}
+
+// SealedCredential is already encrypted for its target. Fingerprint is a keyed
+// hash of the plaintext that binds the credential to the idempotency digest.
+type SealedCredential struct {
+	KeyID       string
+	Sealed      []byte
+	Fingerprint string
 }
 
 type ProbeInput struct {
@@ -112,6 +125,10 @@ func (input RegisterInput) Validate(tenantID string) error {
 		!validEndpoint(input.Kind, input.Endpoint) || invalidIdentifier(input.CredentialRef) {
 		return ErrInvalidInput
 	}
+	if credential := input.SealedCredential; credential != nil && (input.Kind != "kubernetes" || !sealedKeyIDPattern.MatchString(credential.KeyID) ||
+		len(credential.Sealed) < 29 || len(credential.Sealed) > 256<<10 || !fingerprintPattern.MatchString(credential.Fingerprint)) {
+		return ErrInvalidInput
+	}
 	return validateMutation(input.Mutation)
 }
 
@@ -143,6 +160,11 @@ func (input SchedulingInput) Validate(tenantID string) error {
 func RegisterMutationDigest(input RegisterInput) (string, error) {
 	if err := input.Validate(input.Scope.TenantID); err != nil {
 		return "", err
+	}
+	if input.SealedCredential != nil {
+		return digest(struct {
+			Operation, TenantID, ProjectID, TargetID, TargetName, Kind, Endpoint, CredentialRef, CredentialFingerprint string
+		}{"deployment-target.register", input.Scope.TenantID, input.Scope.ProjectID, input.TargetID, input.TargetName, input.Kind, input.Endpoint, input.CredentialRef, input.SealedCredential.Fingerprint}), nil
 	}
 	return digest(struct {
 		Operation, TenantID, ProjectID, TargetID, TargetName, Kind, Endpoint, CredentialRef string

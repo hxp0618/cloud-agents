@@ -23,9 +23,12 @@ import (
 
 type globalOptions struct {
 	endpoint             string
+	gatewayEndpoint      string
 	caFile               string
+	accessGrantFile      string
+	profile              string
+	application          string
 	token                string
-	tokenFile            string
 	tenant               string
 	organization         string
 	project              string
@@ -48,13 +51,14 @@ type globalOptions struct {
 }
 
 const (
-	maxBearerTokenFileBytes  = 16 << 10
 	maxCAFileBytes           = 1 << 20
 	defaultRequestTimeout    = 6 * time.Minute
 	defaultEventPollInterval = time.Second
 )
 
 var version = "dev"
+
+var issueCommandTenantToken = issueProfileTenantToken
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -72,32 +76,72 @@ func run(args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, help)
 		return err
 	}
+	if len(args) > 0 && args[0] == "login" {
+		return runCLILogin(args[1:], stdout)
+	}
+	if len(args) > 0 && args[0] == "profile" {
+		return runCLIProfile(args[1:], stdout)
+	}
 	options, command, action, actionArgs, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
 	localTargetPreflight := command == "target" && action == "preflight"
 	remoteWorkerCertificateIssue := command == "remote-worker-enrollment" && action == "issue-certificate"
+	gatewayAccess := requiresGrant(command, action)
 	var client *openapi.Client
 	if !actionHelpRequested(actionArgs) && !localTargetPreflight {
-		token := options.token
-		credentialFile := options.tokenFile
+		profile, _, profileErr := loadCLIProfile(options.profile)
+		if profileErr != nil {
+			return profileErr
+		}
+		options.endpoint, options.caFile = profile.ControlPlaneEndpoint, profile.CAFile
+		options.application = profile.Application
+		options.tenant, options.project = profile.DefaultTenantID, profile.DefaultProjectID
+		if !cliCommandAllowsApplication(command, action, profile.Application) {
+			return errors.New("CLI profile application cannot use this command")
+		}
+		if options.tenant == "" || requiresProject(command, action) && options.project == "" {
+			return errors.New("CLI profile context is incomplete; use cloud-agentsctl profile use")
+		}
+		if options.requestID == "" {
+			options.requestID, err = newCLIRequestID()
+			if err != nil {
+				return err
+			}
+		}
+		credentialFile := ""
 		if remoteWorkerCertificateIssue {
 			credentialFile = options.enrollmentSecretFile
+		} else if gatewayAccess {
+			credentialFile = options.accessGrantFile
+			options.endpoint = options.gatewayEndpoint
 		}
+		token := ""
 		if credentialFile != "" {
-			file, openErr := os.Open(credentialFile)
-			if openErr != nil {
-				return errors.New("cannot read credential file")
-			}
-			contents, readErr := io.ReadAll(io.LimitReader(file, maxBearerTokenFileBytes+1))
-			closeErr := file.Close()
-			if readErr != nil || closeErr != nil || len(contents) > maxBearerTokenFileBytes {
+			contents, readErr := readPrivateCredentialFile(credentialFile)
+			if readErr != nil {
 				return errors.New("cannot read bearer token file")
 			}
 			token = strings.TrimSuffix(strings.TrimSuffix(string(contents), "\n"), "\r")
+			if gatewayAccess && !validSandboxAccessGrant(token) {
+				return errors.New("invalid Sandbox access Grant file")
+			}
+		} else {
+			identityClient, clientErr := newProfileCLIClient(profile)
+			if clientErr != nil {
+				return clientErr
+			}
+			issueCtx, cancelIssue := context.WithTimeout(context.Background(), options.timeout)
+			issued, issueErr := issueCommandTenantToken(issueCtx, identityClient, profile, options.tenant, tenantTokenProjectID(command, action, options.project))
+			cancelIssue()
+			if issueErr != nil {
+				return errors.New("CLI tenant token issuance failed")
+			}
+			token = issued.AccessToken
 		}
 		client, err = newHTTPClient(options, token, remoteWorkerCertificateIssue)
+		options.token = token
 	}
 	if err != nil {
 		return err
@@ -204,11 +248,19 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "tenant get":
 		if err = parseActionFlags("tenant get", actionArgs, nil); err == nil {
-			value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminPlatformTenant(ctx, options.tenant, options.requestID)
+			} else {
+				value, err = client.GetPlatformTenant(ctx, options.tenant, options.requestID)
+			}
 		}
 	case "organization get":
 		if err = parseActionFlags("organization get", actionArgs, nil); err == nil {
-			value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminOrganization(ctx, options.tenant, options.organization, options.requestID)
+			} else {
+				value, err = client.GetOrganization(ctx, options.tenant, options.organization, options.requestID)
+			}
 		}
 	case "organization list":
 		var pageSize int
@@ -217,7 +269,11 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum organizations to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque organization page token")
 		}); err == nil {
-			value, err = client.ListOrganizations(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			if options.application == "admin" {
+				value, err = client.ListAdminOrganizations(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			} else {
+				value, err = client.ListOrganizations(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			}
 		}
 	case "organization create":
 		var flags struct {
@@ -234,18 +290,27 @@ func run(args []string, stdout io.Writer) error {
 			set.StringVar(&flags.auditFactUID, "audit-fact-uid", "", "audit fact identifier")
 			set.StringVar(&flags.reasonCode, "reason-code", "", "mutation reason code")
 		}); err == nil {
-			value, err = client.CreateOrganization(ctx, options.tenant, options.requestID, platform.OrganizationCreateRequest{
+			body := platform.OrganizationCreateRequest{
 				ExpectedTenantRevision: flags.expectedTenantRevision,
 				OrganizationID:         options.organization,
 				Name:                   flags.name,
 				DisplayName:            flags.displayName,
 				AuditFactUID:           flags.auditFactUID,
 				ReasonCode:             flags.reasonCode,
-			})
+			}
+			if options.application == "admin" {
+				value, err = client.CreateAdminOrganization(ctx, options.tenant, options.requestID, body)
+			} else {
+				value, err = client.CreateOrganization(ctx, options.tenant, options.requestID, body)
+			}
 		}
 	case "project get":
 		if err = parseActionFlags("project get", actionArgs, nil); err == nil {
-			value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminProject(ctx, options.tenant, options.project, options.requestID)
+			} else {
+				value, err = client.GetProject(ctx, options.tenant, options.project, options.requestID)
+			}
 		}
 	case "project list":
 		var pageSize int
@@ -254,7 +319,11 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum projects to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque project page token")
 		}); err == nil {
-			value, err = client.ListProjects(ctx, options.tenant, options.organization, options.requestID, pageSize, pageToken)
+			if options.application == "admin" {
+				value, err = client.ListAdminProjects(ctx, options.tenant, options.organization, options.requestID, pageSize, pageToken)
+			} else {
+				value, err = client.ListProjects(ctx, options.tenant, options.organization, options.requestID, pageSize, pageToken)
+			}
 		}
 	case "project create":
 		var flags struct {
@@ -267,10 +336,15 @@ func run(args []string, stdout io.Writer) error {
 			set.StringVar(&flags.organizationID, "organization-id", "", "organization identifier")
 			set.StringVar(&flags.displayName, "display-name", "", "project display name")
 		}); err == nil {
-			value, err = client.CreateProject(ctx, options.tenant, options.requestID, options.idempotencyKey, platform.ProjectCreateRequest{
+			body := platform.ProjectCreateRequest{
 				Name: flags.name, DisplayName: flags.displayName,
 				OrganizationRef: common.OrganizationRef{Namespace: "cloud-agents", Kind: "organization", ID: flags.organizationID},
-			})
+			}
+			if options.application == "admin" {
+				value, err = client.CreateAdminProject(ctx, options.tenant, options.requestID, options.idempotencyKey, body)
+			} else {
+				value, err = client.CreateProject(ctx, options.tenant, options.requestID, options.idempotencyKey, body)
+			}
 		}
 	case "session create":
 		var flags struct {
@@ -587,7 +661,11 @@ func run(args []string, stdout io.Writer) error {
 		}
 	case "membership get":
 		if err = parseActionFlags("membership get", actionArgs, nil); err == nil {
-			value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminMembership(ctx, options.tenant, options.membership, options.requestID)
+			} else {
+				value, err = client.GetMembership(ctx, options.tenant, options.membership, options.requestID)
+			}
 		}
 	case "membership list":
 		var pageSize int
@@ -596,7 +674,11 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum memberships to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque membership page token")
 		}); err == nil {
-			value, err = client.ListMemberships(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			if options.application == "admin" {
+				value, err = client.ListAdminMemberships(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			} else {
+				value, err = client.ListMemberships(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			}
 		}
 	case "membership create":
 		var flags membershipCreateFlags
@@ -604,7 +686,7 @@ func run(args []string, stdout io.Writer) error {
 			var scope common.AuthorizationScope
 			scope, err = cliAuthorizationScope(options.tenant, flags.scopeLevel, flags.scopeID)
 			if err == nil {
-				value, err = client.CreateMembership(ctx, options.tenant, options.requestID, platform.MembershipCreateRequest{
+				body := platform.MembershipCreateRequest{
 					ExpectedTenantRevision: flags.expectedTenantRevision,
 					MembershipID:           options.membership,
 					MembershipName:         flags.name,
@@ -613,7 +695,12 @@ func run(args []string, stdout io.Writer) error {
 					ExpiresAt:              flags.expiresAt,
 					AuditFactUID:           flags.auditFactUID,
 					ReasonCode:             flags.reasonCode,
-				})
+				}
+				if options.application == "admin" {
+					value, err = client.CreateAdminMembership(ctx, options.tenant, options.requestID, body)
+				} else {
+					value, err = client.CreateMembership(ctx, options.tenant, options.requestID, body)
+				}
 			}
 		}
 	case "membership resume", "membership suspend", "membership revoke":
@@ -625,17 +712,27 @@ func run(args []string, stdout io.Writer) error {
 				AuditFactUID:            flags.auditFactUID,
 				ReasonCode:              flags.reasonCode,
 			}
-			if action == "resume" {
+			if action == "resume" && options.application == "admin" {
+				value, err = client.ResumeAdminMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			} else if action == "resume" {
 				value, err = client.ResumeMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			} else if action == "suspend" && options.application == "admin" {
+				value, err = client.SuspendAdminMembership(ctx, options.tenant, options.membership, options.requestID, body)
 			} else if action == "suspend" {
 				value, err = client.SuspendMembership(ctx, options.tenant, options.membership, options.requestID, body)
+			} else if options.application == "admin" {
+				value, err = client.RevokeAdminMembership(ctx, options.tenant, options.membership, options.requestID, body)
 			} else {
 				value, err = client.RevokeMembership(ctx, options.tenant, options.membership, options.requestID, body)
 			}
 		}
 	case "role get":
 		if err = parseActionFlags("role get", actionArgs, nil); err == nil {
-			value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminRole(ctx, options.tenant, options.role, options.requestID)
+			} else {
+				value, err = client.GetRole(ctx, options.tenant, options.role, options.requestID)
+			}
 		}
 	case "role list":
 		var pageSize int
@@ -644,11 +741,19 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum roles to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque role page token")
 		}); err == nil {
-			value, err = client.ListRoles(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			if options.application == "admin" {
+				value, err = client.ListAdminRoles(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			} else {
+				value, err = client.ListRoles(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			}
 		}
 	case "role-binding get":
 		if err = parseActionFlags("role-binding get", actionArgs, nil); err == nil {
-			value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+			if options.application == "admin" {
+				value, err = client.GetAdminRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+			} else {
+				value, err = client.GetRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID)
+			}
 		}
 	case "role-binding list":
 		var pageSize int
@@ -657,7 +762,11 @@ func run(args []string, stdout io.Writer) error {
 			set.IntVar(&pageSize, "page-size", 0, "maximum role bindings to return")
 			set.StringVar(&pageToken, "page-token", "", "opaque role binding page token")
 		}); err == nil {
-			value, err = client.ListRoleBindings(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			if options.application == "admin" {
+				value, err = client.ListAdminRoleBindings(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			} else {
+				value, err = client.ListRoleBindings(ctx, options.tenant, options.requestID, pageSize, pageToken)
+			}
 		}
 	case "role-binding create":
 		var flags roleBindingCreateFlags
@@ -665,7 +774,7 @@ func run(args []string, stdout io.Writer) error {
 			var scope common.AuthorizationScope
 			scope, err = cliAuthorizationScope(options.tenant, flags.scopeLevel, flags.scopeID)
 			if err == nil {
-				value, err = client.BindRole(ctx, options.tenant, options.requestID, platform.RoleBindingCreateRequest{
+				body := platform.RoleBindingCreateRequest{
 					ExpectedTenantRevision: flags.expectedTenantRevision,
 					RoleBindingID:          options.roleBinding,
 					RoleBindingName:        flags.name,
@@ -676,18 +785,28 @@ func run(args []string, stdout io.Writer) error {
 					ExpiresAt:              flags.expiresAt,
 					AuditFactUID:           flags.auditFactUID,
 					ReasonCode:             flags.reasonCode,
-				})
+				}
+				if options.application == "admin" {
+					value, err = client.BindAdminRole(ctx, options.tenant, options.requestID, body)
+				} else {
+					value, err = client.BindRole(ctx, options.tenant, options.requestID, body)
+				}
 			}
 		}
 	case "role-binding revoke":
 		var flags rbacTransitionFlags
 		if err = parseActionFlags("role-binding revoke", actionArgs, defineRBACTransitionFlags(&flags)); err == nil {
-			value, err = client.RevokeRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID, platform.RoleBindingRevokeRequest{
+			body := platform.RoleBindingRevokeRequest{
 				ExpectedTenantRevision:  flags.expectedTenantRevision,
 				ExpectedResourceVersion: flags.expectedResourceVersion,
 				AuditFactUID:            flags.auditFactUID,
 				ReasonCode:              flags.reasonCode,
-			})
+			}
+			if options.application == "admin" {
+				value, err = client.RevokeAdminRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID, body)
+			} else {
+				value, err = client.RevokeRoleBinding(ctx, options.tenant, options.roleBinding, options.requestID, body)
+			}
 		}
 	case "managed-host-project get":
 		if err = parseActionFlags("managed-host-project get", actionArgs, nil); err == nil {
@@ -766,13 +885,10 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	set := flag.NewFlagSet("cloud-agentsctl", flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	var options globalOptions
-	set.StringVar(&options.endpoint, "endpoint", "", "Control Plane URL")
-	set.StringVar(&options.caFile, "ca-file", "", "PEM CA bundle for the Control Plane")
-	set.StringVar(&options.token, "token", "", "bearer token")
-	set.StringVar(&options.tokenFile, "token-file", "", "file containing the bearer token")
-	set.StringVar(&options.tenant, "tenant", "", "tenant identifier")
+	set.StringVar(&options.profile, "profile", "", "absolute CLI profile path")
+	set.StringVar(&options.gatewayEndpoint, "gateway-endpoint", "", "Sandbox Access Gateway HTTPS endpoint")
+	set.StringVar(&options.accessGrantFile, "access-grant-file", "", "0600 file containing a Sandbox access Grant")
 	set.StringVar(&options.organization, "organization", "", "organization identifier")
-	set.StringVar(&options.project, "project", "", "project identifier")
 	set.StringVar(&options.membership, "membership", "", "membership identifier")
 	set.StringVar(&options.role, "role", "", "role identifier")
 	set.StringVar(&options.roleBinding, "role-binding", "", "role binding identifier")
@@ -810,29 +926,23 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 	if command == "target" && action == "preflight" {
 		return options, command, action, actionArgs, nil
 	}
-	for name, value := range map[string]string{"endpoint": options.endpoint, "tenant": options.tenant, "request-id": options.requestID} {
-		if strings.TrimSpace(value) != value || value == "" {
-			return globalOptions{}, "", "", nil, fmt.Errorf("--%s is required", name)
-		}
-	}
 	remoteWorkerCertificateIssue := command == "remote-worker-enrollment" && action == "issue-certificate"
 	if remoteWorkerCertificateIssue {
-		if options.enrollmentSecretFile == "" || options.token != "" || options.tokenFile != "" {
-			return globalOptions{}, "", "", nil, errors.New("--enrollment-secret-file is required alone for certificate issuance")
+		if options.enrollmentSecretFile == "" {
+			return globalOptions{}, "", "", nil, errors.New("--enrollment-secret-file is required for certificate issuance")
 		}
-	} else if options.token == "" && options.tokenFile == "" {
-		return globalOptions{}, "", "", nil, errors.New("--token or --token-file is required")
-	} else if options.token != "" && options.tokenFile != "" {
-		return globalOptions{}, "", "", nil, errors.New("--token and --token-file are mutually exclusive")
 	}
-	if strings.TrimSpace(options.token) != options.token || strings.TrimSpace(options.tokenFile) != options.tokenFile || strings.TrimSpace(options.enrollmentSecretFile) != options.enrollmentSecretFile {
-		return globalOptions{}, "", "", nil, errors.New("bearer token input is invalid")
+	if strings.TrimSpace(options.profile) != options.profile || strings.TrimSpace(options.enrollmentSecretFile) != options.enrollmentSecretFile ||
+		strings.TrimSpace(options.gatewayEndpoint) != options.gatewayEndpoint || strings.TrimSpace(options.accessGrantFile) != options.accessGrantFile {
+		return globalOptions{}, "", "", nil, errors.New("credential input is invalid")
 	}
-	if strings.TrimSpace(options.caFile) != options.caFile {
-		return globalOptions{}, "", "", nil, errors.New("CA file input is invalid")
-	}
-	if requiresProject(command, action) && options.project == "" {
-		return globalOptions{}, "", "", nil, errors.New("--project is required")
+	gatewayAccess := requiresGrant(command, action)
+	if gatewayAccess {
+		if !strictCLIEndpoint(options.gatewayEndpoint) || !validCredentialPath(options.accessGrantFile) {
+			return globalOptions{}, "", "", nil, errors.New("--gateway-endpoint and --access-grant-file are required for Gateway commands")
+		}
+	} else if options.gatewayEndpoint != "" || options.accessGrantFile != "" {
+		return globalOptions{}, "", "", nil, errors.New("Gateway credential flags are only valid for PTY, files, and preview commands")
 	}
 	if requiresOrganization(command, action) && options.organization == "" {
 		return globalOptions{}, "", "", nil, errors.New("--organization is required")
@@ -877,6 +987,28 @@ func parseArgs(args []string) (globalOptions, string, string, []string, error) {
 		return globalOptions{}, "", "", nil, errors.New("--idempotency-key is required")
 	}
 	return options, command, action, actionArgs, nil
+}
+
+func cliCommandAllowsApplication(command, action, application string) bool {
+	if application != "admin" && application != "user" {
+		return false
+	}
+	if command == "target" && action != "preflight" || command == "remote-worker-enrollment" || command == "environment-lease" {
+		return application == "admin"
+	}
+	switch command {
+	case "session", "turn", "execution", "events", "sandbox", "pty", "files", "preview", "managed-host-project", "managed-host-role-binding":
+		return application == "user"
+	default:
+		return true
+	}
+}
+
+func tenantTokenProjectID(command, action, defaultProjectID string) string {
+	if requiresProject(command, action) {
+		return defaultProjectID
+	}
+	return ""
 }
 
 func actionHelpRequested(args []string) bool {
@@ -1073,6 +1205,19 @@ func requiresSandbox(command, action string) bool { return command == "sandbox" 
 func requiresGrant(command, action string) bool {
 	return command == "pty" || command == "files" || command == "preview"
 }
+func validSandboxAccessGrant(value string) bool {
+	if !strings.HasPrefix(value, "cag1_") || len(value) != 48 {
+		return false
+	}
+	for _, character := range value[len("cag1_"):] {
+		if character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' ||
+			character >= '0' && character <= '9' || character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
 func requiresPTYSession(command, action string) bool {
 	return command == "pty" && action != "create"
 }
@@ -1086,7 +1231,10 @@ func requiresIdempotency(command, action string) bool {
 	return command == "remote-worker-enrollment" || (command == "target" && (action == "register" || action == "probe" || action == "cleanup")) || (command == "project" && action == "create") || (command == "sandbox" && action == "grant") || (command == "session" && (action == "create" || action == "close")) || (command == "turn" && action == "create") || (command == "execution" && (action == "execute" || action == "cancel" || action == "interrupt" || action == "reconcile"))
 }
 
-const usage = `usage: cloud-agentsctl --endpoint URL [--ca-file PATH] (--token TOKEN | --token-file PATH) --tenant ID --request-id ID <resource> <action> [flags]
+const usage = `usage: cloud-agentsctl [--profile PATH] [--request-id ID] <resource> <action> [flags]
+	   cloud-agentsctl login --web-endpoint URL --control-plane-endpoint URL --application admin|user [--ca-file PATH] [--profile PATH]
+	   cloud-agentsctl profile show|use|logout|configure-service-account [flags]
+	   cloud-agentsctl --profile PATH --gateway-endpoint URL --access-grant-file PATH pty|files|preview <action> [flags]
 	   cloud-agentsctl [--timeout DURATION] target preflight --kind docker --socket /absolute/path/to/docker.sock
        cloud-agentsctl --version`
 

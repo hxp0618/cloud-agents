@@ -78,7 +78,7 @@ func (server *RoleHTTPServer) get(writer http.ResponseWriter, request *http.Requ
 		writeRoleError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "roles.get",
 	})
 	if err != nil {
@@ -138,7 +138,7 @@ func (server *RoleHTTPServer) list(writer http.ResponseWriter, request *http.Req
 		writeRoleError(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	principal, err := server.verifier.Verify(bearer, authn.VerificationRequest{
+	principal, err := verifyHTTPRequestAccessToken(request.Context(), server.verifier, bearer, authn.VerificationRequest{
 		TenantID: validated.TenantID, ResourceLevel: "tenant", ResourceID: validated.TenantID, RequiredPermission: "roles.list",
 	})
 	if err != nil {

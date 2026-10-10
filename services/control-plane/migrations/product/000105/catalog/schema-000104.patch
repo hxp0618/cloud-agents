@@ -1,0 +1,110 @@
+--- services/control-plane/migrations/product/000104/catalog/schema-000103.json
++++ services/control-plane/migrations/product/000105/catalog/schema-000104.json
+@@ -2,1 +2,1 @@
+-  "format_version": "cloud-agents-platform-catalog/v1",
++  "format_version": "cloud-agents-platform-catalog/v2",
+@@ -4,1 +4,1 @@
+-  "schema_head": "000104",
++  "schema_head": "000105",
+@@ -30156,0 +30157,90 @@
++    },
++    {
++      "migration_id": "000105",
++      "sql_sha256": "sha256:5b5f12a7a9f12f8b18fa22d122768b15aa3a49d81450c50933a6fc1215112e13",
++      "statements": [
++        {
++          "index": 0,
++          "start": 0,
++          "end": 79,
++          "sha256": "sha256:8aa43198363ad5b771e86a324321a9f14c5e66ec4414074da41b72a4232aa956",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "CREATE",
++            "object_kind": "SCHEMA",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": null,
++            "special_case": null
++          }
++        },
++        {
++          "index": 1,
++          "start": 79,
++          "end": 136,
++          "sha256": "sha256:071eae8c1dd25fd103a5b1f05c69b928e4cb2133efaebdd9087a4b929ff7d580",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "REVOKE",
++            "object_kind": "SCHEMA",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 2,
++          "start": 136,
++          "end": 214,
++          "sha256": "sha256:b0247b08e1398797b5dc1bb2e52eb006da41488faca361b24f33a44ef9fe59db",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "GRANT",
++            "object_kind": "SCHEMA",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "CLOUD_AGENTS_IDENTITY_SERVICE",
++            "special_case": null
++          }
++        },
++        {
++          "index": 3,
++          "start": 214,
++          "end": 348,
++          "sha256": "sha256:dc975fc379107106a1fa9f772056329fcd318eccc6876dd765fd10f5ae78a47b",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "DEFAULT_PRIVILEGES",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 4,
++          "start": 348,
++          "end": 484,
++          "sha256": "sha256:0f3f78550eac51f23350bbcf541f459af29cb8cf35fd6f8defd2efb2f4f5c0dd",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "DEFAULT_PRIVILEGES",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        },
++        {
++          "index": 5,
++          "start": 484,
++          "end": 592,
++          "sha256": "sha256:aa20ddcec6b39a39ceb3bf3bb48879fe88d909951c0ea2f18c868295f117042d",
++          "classification": {
++            "profile": "postgresql-ddl-v1",
++            "command": "ALTER",
++            "object_kind": "DEFAULT_PRIVILEGES",
++            "target_identity": "schema:unquoted:cloud_agents_identity",
++            "grantee": "PUBLIC",
++            "special_case": null
++          }
++        }
++      ]
+@@ -30160,1 +30250,1 @@
+-    "projection_slice": "A2.1a_namespace_only",
++    "projection_slice": "IDENTITY-V1_multi_schema_namespace",
+@@ -30166,1 +30256,1 @@
+-      "schema",
++      "schemas",
+@@ -45671,0 +45762,4 @@
++    },
++    {
++      "kind": "schema",
++      "name": "cloud_agents_identity"

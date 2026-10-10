@@ -1,0 +1,7 @@
+{
+  "application": "admin",
+  "clientId": "cloud-agents-automation",
+  "credentialSha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tenantId": "tenant-alpha",
+  "projectId": "project-alpha"
+}

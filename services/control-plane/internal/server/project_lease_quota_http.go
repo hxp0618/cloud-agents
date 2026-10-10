@@ -67,11 +67,11 @@ func (server *ProjectLeaseQuotaHTTPServer) ServeHTTP(writer http.ResponseWriter,
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, projectPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission); err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, quotaPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, quotaPermission); err != nil {
 		writePublicProblem(writer, http.StatusForbidden, "authorization_denied")
 		return
 	}
@@ -97,7 +97,7 @@ func (server *ProjectLeaseQuotaHTTPServer) get(writer http.ResponseWriter, reque
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -135,7 +135,7 @@ func (server *ProjectLeaseQuotaHTTPServer) set(writer http.ResponseWriter, reque
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.act")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.act")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -167,7 +167,7 @@ func (server *ProjectLeaseQuotaHTTPServer) listAuditEvents(writer http.ResponseW
 		writePublicProblem(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -184,7 +184,7 @@ func (server *ProjectLeaseQuotaHTTPServer) listAuditEvents(writer http.ResponseW
 			return
 		}
 	}
-	principal, err = server.verify(bearer, tenantID, projectID, "projects.get")
+	principal, err = server.verify(request.Context(), bearer, tenantID, projectID, "projects.get")
 	if err != nil {
 		writePublicProblem(writer, http.StatusUnauthorized, "authentication_failed")
 		return
@@ -222,8 +222,8 @@ func (server *ProjectLeaseQuotaHTTPServer) listAuditEvents(writer http.ResponseW
 	writeJSONResponse(writer, http.StatusOK, requestID, body)
 }
 
-func (server *ProjectLeaseQuotaHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *ProjectLeaseQuotaHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func writeProjectLeaseQuota(writer http.ResponseWriter, requestID string, quota internalprojectleasequota.Snapshot) {

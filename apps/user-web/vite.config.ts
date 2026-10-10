@@ -1,9 +1,9 @@
 import { defineConfig, loadEnv } from "vite";
 
 export default defineConfig(({ mode }) => {
-  const controlPlane = loadEnv(mode, process.cwd(), "").CLOUD_AGENTS_CONTROL_PLANE_URL;
-  const proxy = controlPlane
-    ? { "/v1": { target: controlPlane, changeOrigin: false, secure: true } }
+  const webServer = loadEnv(mode, process.cwd(), "").CLOUD_AGENTS_WEB_BFF_URL;
+  const proxy = webServer
+    ? { "/v1": { target: webServer, changeOrigin: false, secure: true } }
     : undefined;
 
   return {
@@ -14,5 +14,20 @@ export default defineConfig(({ mode }) => {
       ...(proxy === undefined ? {} : { proxy }),
     },
     preview: { host: "127.0.0.1", port: 4173, strictPort: true },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: "react",
+                test: /[\\/]node_modules[\\/].*[\\/](react|react-dom|scheduler)[\\/]/,
+              },
+              { name: "platform-sdk", test: /[\\/]sdk[\\/]typescript[\\/]/ },
+            ],
+          },
+        },
+      },
+    },
   };
 });

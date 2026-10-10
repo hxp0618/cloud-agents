@@ -19,6 +19,16 @@ describe("platform JSON SDK generator", () => {
     expect(new Set(inputs).size).toBe(inputs.length);
     expect(inputs).toContain("contracts/managed-agent/v1alpha1/openapi.json");
     expect(inputs).toContain("contracts/managed-host/v1alpha1/openapi.json");
+    expect(inputs).toContain("contracts/identity/v1alpha1/openapi.json");
+    expect(inputs).toContain("contracts/identity/v1alpha1/README.md");
+    expect(inputs).toContain("contracts/identity/v1alpha1/schemas/browser-session.schema.json");
+    expect(inputs).toContain("contracts/identity/v1alpha1/schemas/identity-jwks.schema.json");
+    expect(inputs).toContain(
+      "contracts/identity/v1alpha1/fixtures/negative/identity-jwks-private-key.json",
+    );
+    expect(inputs).toContain(
+      "contracts/identity/v1alpha1/fixtures/negative/tenant-token-scope-injection.json",
+    );
     expect(inputs).toContain(
       "contracts/managed-agent/v1alpha1/schemas/execution-user-input-resolution-request.schema.json",
     );

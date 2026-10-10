@@ -1,0 +1,9 @@
+{
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "eventKind": "password_reset_issued",
+  "decision": "allow",
+  "reasonCode": "password_reset_issued",
+  "correlationId": "request-example",
+  "occurredAt": "2026-10-09T00:00:00Z",
+  "resetCode": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

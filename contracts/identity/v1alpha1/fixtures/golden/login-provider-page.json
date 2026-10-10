@@ -1,0 +1,9 @@
+{
+  "providers": [
+    {
+      "id": "github-main",
+      "kind": "github",
+      "displayName": "GitHub"
+    }
+  ]
+}

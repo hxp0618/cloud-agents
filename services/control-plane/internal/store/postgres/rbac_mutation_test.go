@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -13,7 +14,8 @@ import (
 
 func TestRBACMutationTypedKernelsUseClosedFunctionSet(t *testing.T) {
 	tenantID := "tenant-alpha"
-	target := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-target"}
+	actor := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-operator"}
+	target := authz.SubjectRef{Kind: "serviceAccount", Issuer: "https://identity.example.test/", Subject: "service-target"}
 	scope := authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}
 	tests := []struct {
 		name      string
@@ -25,55 +27,55 @@ func TestRBACMutationTypedKernelsUseClosedFunctionSet(t *testing.T) {
 		{
 			name: "create membership", wantSQL: createMembershipSQL, wantUID: "membership-new", wantState: authz.MembershipActive,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return createMembershipInTransaction(ctx, handle, tenantID, CreateMembershipInput{
+				return createMembershipInTransaction(ctx, handle, tenantID, actor, CreateMembershipInput{
 					ExpectedTenantRevision: 7, MembershipUID: "membership-new", MembershipName: "membership-new",
-					Subject: target, Scope: scope, AuditFactUID: "audit-create", ReasonCode: "operator-request",
+					Subject: target, Scope: scope, AuditFactUID: "audit-create", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				})
 			},
 		},
 		{
 			name: "suspend membership", wantSQL: suspendMembershipSQL, wantUID: "membership-target", wantState: authz.MembershipSuspended,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return transitionMembershipInTransaction(ctx, handle, tenantID, MembershipTransitionInput{
+				return transitionMembershipInTransaction(ctx, handle, tenantID, actor, MembershipTransitionInput{
 					ExpectedTenantRevision: 7, MembershipUID: "membership-target", ExpectedResourceVersion: 6,
-					AuditFactUID: "audit-suspend", ReasonCode: "operator-request",
+					AuditFactUID: "audit-suspend", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				}, suspendMembershipSQL, authz.MembershipSuspended)
 			},
 		},
 		{
 			name: "resume membership", wantSQL: resumeMembershipSQL, wantUID: "membership-target", wantState: authz.MembershipActive,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return transitionMembershipInTransaction(ctx, handle, tenantID, MembershipTransitionInput{
+				return transitionMembershipInTransaction(ctx, handle, tenantID, actor, MembershipTransitionInput{
 					ExpectedTenantRevision: 7, MembershipUID: "membership-target", ExpectedResourceVersion: 6,
-					AuditFactUID: "audit-resume", ReasonCode: "operator-request",
+					AuditFactUID: "audit-resume", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				}, resumeMembershipSQL, authz.MembershipActive)
 			},
 		},
 		{
 			name: "revoke membership", wantSQL: revokeMembershipSQL, wantUID: "membership-target", wantState: authz.MembershipRevoked,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return transitionMembershipInTransaction(ctx, handle, tenantID, MembershipTransitionInput{
+				return transitionMembershipInTransaction(ctx, handle, tenantID, actor, MembershipTransitionInput{
 					ExpectedTenantRevision: 7, MembershipUID: "membership-target", ExpectedResourceVersion: 6,
-					AuditFactUID: "audit-revoke", ReasonCode: "operator-request",
+					AuditFactUID: "audit-revoke", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				}, revokeMembershipSQL, authz.MembershipRevoked)
 			},
 		},
 		{
 			name: "bind role", wantSQL: bindRoleSQL, wantUID: "binding-new", wantState: authz.BindingActive,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return bindRoleInTransaction(ctx, handle, tenantID, BindRoleInput{
+				return bindRoleInTransaction(ctx, handle, tenantID, actor, BindRoleInput{
 					ExpectedTenantRevision: 7, RoleBindingUID: "binding-new", RoleBindingName: "binding-new",
 					Subject: target, RoleName: "tenant.admin", RoleVersion: 1, Scope: scope,
-					AuditFactUID: "audit-bind", ReasonCode: "operator-request",
+					AuditFactUID: "audit-bind", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				})
 			},
 		},
 		{
 			name: "revoke role binding", wantSQL: revokeRoleBindingSQL, wantUID: "binding-target", wantState: authz.BindingRevoked,
 			invoke: func(ctx context.Context, handle *tenantReadHandle) (MutationResult, error) {
-				return revokeRoleBindingInTransaction(ctx, handle, tenantID, RevokeRoleBindingInput{
+				return revokeRoleBindingInTransaction(ctx, handle, tenantID, actor, RevokeRoleBindingInput{
 					ExpectedTenantRevision: 7, RoleBindingUID: "binding-target", ExpectedResourceVersion: 6,
-					AuditFactUID: "audit-binding-revoke", ReasonCode: "operator-request",
+					AuditFactUID: "audit-binding-revoke", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 				})
 			},
 		},
@@ -81,7 +83,7 @@ func TestRBACMutationTypedKernelsUseClosedFunctionSet(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			transaction := &fakeTransaction{rows: []rowScanner{rowValues(test.wantUID, int64(8), test.wantState)}}
-			handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: tenantID, clock: time.Now}
+			handle := &tenantReadHandle{active: true, transaction: transaction, tenantID: tenantID, clock: time.Now, application: "admin"}
 			result, err := test.invoke(context.Background(), handle)
 			if err != nil || result != (MutationResult{TenantID: tenantID, ResourceUID: test.wantUID, ResourceVersion: 8, State: test.wantState}) {
 				t.Fatalf("result/error = %#v/%v", result, err)
@@ -89,16 +91,22 @@ func TestRBACMutationTypedKernelsUseClosedFunctionSet(t *testing.T) {
 			if len(transaction.queries) != 1 || transaction.queries[0].sql != test.wantSQL {
 				t.Fatalf("typed SQL trace = %#v", transaction.queries)
 			}
+			args := transaction.queries[0].arguments
+			wantActor := []any{"user", "https://identity.example.test/", "user-operator", "admin", "request-alpha"}
+			if len(args) < 5 || !reflect.DeepEqual(args[len(args)-5:], wantActor) {
+				t.Fatalf("audit actor/application/correlation = %#v", args)
+			}
 		})
 	}
 }
 
 func TestRBACMutationTypedKernelSettlement(t *testing.T) {
 	tenantID := "tenant-alpha"
+	actor := authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-operator"}
 	input := CreateMembershipInput{
 		ExpectedTenantRevision: 7, MembershipUID: "membership-new", MembershipName: "membership-new",
-		Subject: authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "target"},
-		Scope:   authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-create", ReasonCode: "operator-request",
+		Subject: authz.SubjectRef{Kind: "serviceAccount", Issuer: "https://identity.example.test/", Subject: "target"},
+		Scope:   authz.ScopeRef{Level: authz.ScopeTenant, ID: tenantID}, AuditFactUID: "audit-create", ReasonCode: "operator-request", CorrelationID: "request-alpha",
 	}
 	callbackErr := errors.New("protected operation failed")
 	for _, test := range []struct {
@@ -123,7 +131,7 @@ func TestRBACMutationTypedKernelSettlement(t *testing.T) {
 			var result MutationResult
 			err := runner.withTenantMutation(context.Background(), tenantID, func(handle *tenantReadHandle) error {
 				var operationErr error
-				result, operationErr = createMembershipInTransaction(context.Background(), handle, tenantID, input)
+				result, operationErr = createMembershipInTransaction(context.Background(), handle, tenantID, actor, input)
 				return operationErr
 			})
 			result, err = settledMutationResult(result, err)
@@ -144,6 +152,11 @@ func TestRBACMutationValidationAndDatabaseErrorMapping(t *testing.T) {
 	zero := time.Time{}
 	if !validMutationIdentifier("tenant-alpha") || validMutationIdentifier("bad/tenant") || validMutationExpiry(&zero, time.Now()) {
 		t.Fatal("mutation lexical validation drift")
+	}
+	if validDirectMembershipSubject(authz.SubjectRef{Kind: "user", Issuer: "https://identity.example.test/", Subject: "user-target"}) ||
+		!validDirectMembershipSubject(authz.SubjectRef{Kind: "serviceAccount", Issuer: "https://identity.example.test/", Subject: "service-target"}) ||
+		!validDirectMembershipSubject(authz.SubjectRef{Kind: "workload", Issuer: "https://identity.example.test/", Subject: "workload-target"}) {
+		t.Fatal("direct human membership admission boundary drift")
 	}
 	if !errors.Is(mapMutationDatabaseError("create", &pgconn.PgError{Code: "23505"}), ErrMutationConflict) ||
 		!errors.Is(mapMutationDatabaseError("create", &pgconn.PgError{Code: "42501"}), ErrMutationAuthority) ||

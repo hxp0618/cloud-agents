@@ -1,0 +1,86 @@
+{{- if .Values.identityBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "cloud-agents.fullname" . }}-identity-bootstrap
+  labels:
+    {{- include "cloud-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity-bootstrap
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "cloud-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/component: identity-bootstrap
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: install-identity-bootstrap-secrets
+          image: {{ include "cloud-agents.image" .Values.images.migrate | quote }}
+          imagePullPolicy: {{ .Values.images.migrate.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              install -m 0400 /source/database/{{ .Values.database.identityBootstrapURLKey }} /target/bootstrap-database-url
+              install -m 0400 /source/signing/{{ .Values.identity.signing.privateKeyKey }} /target/signing.key
+              install -m 0400 /source/bootstrap/{{ .Values.identityBootstrap.setupProofKey }} /target/setup.proof
+              install -m 0400 /source/bootstrap/{{ .Values.identityBootstrap.passwordHashKey }} /target/password.hash
+              cat > /target/initialize.json <<'JSON'
+              {{ dict "bootstrapDatabaseUrlFile" "/run/cloud-agents/identity/secrets/bootstrap-database-url" "issuer" .Values.identity.issuer "adminAudience" .Values.identity.adminAudience "userAudience" .Values.identity.userAudience "signingKeyId" .Values.identity.signingKeyId "signingPrivateKeyFile" "/run/cloud-agents/identity/secrets/signing.key" "setupProofFile" "/run/cloud-agents/identity/secrets/setup.proof" "userId" .Values.identityBootstrap.userId "email" .Values.identityBootstrap.email "displayName" .Values.identityBootstrap.displayName "passwordHashFile" "/run/cloud-agents/identity/secrets/password.hash" "keyNotBefore" .Values.identityBootstrap.keyNotBefore "keyNotAfter" .Values.identityBootstrap.keyNotAfter | toJson }}
+              JSON
+              chmod 0400 /target/initialize.json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: database, mountPath: /source/database, readOnly: true }
+            - { name: identity-signing, mountPath: /source/signing, readOnly: true }
+            - { name: identity-bootstrap, mountPath: /source/bootstrap, readOnly: true }
+            - { name: identity-bootstrap-secrets, mountPath: /target }
+      containers:
+        - name: identity-bootstrap
+          image: {{ include "cloud-agents.image" .Values.images.identity | quote }}
+          imagePullPolicy: {{ .Values.images.identity.pullPolicy }}
+          args: ["initialize", "--config", "/run/cloud-agents/identity/secrets/initialize.json"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: identity-bootstrap-secrets, mountPath: /run/cloud-agents/identity/secrets, readOnly: true }
+      volumes:
+        - name: database
+          secret:
+            secretName: {{ .Values.database.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.database.identityBootstrapURLKey }}, path: {{ .Values.database.identityBootstrapURLKey }} }
+        - name: identity-signing
+          secret:
+            secretName: {{ .Values.identity.signing.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identity.signing.privateKeyKey }}, path: {{ .Values.identity.signing.privateKeyKey }} }
+        - name: identity-bootstrap
+          secret:
+            secretName: {{ .Values.identityBootstrap.secretName }}
+            defaultMode: 0440
+            items:
+              - { key: {{ .Values.identityBootstrap.setupProofKey }}, path: {{ .Values.identityBootstrap.setupProofKey }} }
+              - { key: {{ .Values.identityBootstrap.passwordHashKey }}, path: {{ .Values.identityBootstrap.passwordHashKey }} }
+        - name: identity-bootstrap-secrets
+          emptyDir: { medium: Memory }
+{{- end }}

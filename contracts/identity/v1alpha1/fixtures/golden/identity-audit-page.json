@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "eventKind": "password_changed",
+      "actorUserId": "account-example",
+      "targetUserId": "account-example",
+      "application": "admin",
+      "decision": "allow",
+      "reasonCode": "password_changed",
+      "correlationId": "request-example",
+      "occurredAt": "2026-10-09T00:00:00Z"
+    }
+  ]
+}

@@ -9,26 +9,27 @@ import {
 } from "../../src/app/profile-forms";
 
 describe("environment profile form mapping", () => {
-  it("deduplicates target references and maps enabled providers", () => {
+  it("derives the profile ID from the name and deduplicates selected targets", () => {
     expect(
-      environmentProfileCreateRequestFrom({
-        ...environmentProfileForm(),
-        profileId: " dev ",
-        profileName: " Development ",
-        version: "2",
-        description: " local profile ",
-        codex: true,
-        claudeAgent: false,
-        cpuLimitMillis: "1500",
-        memoryLimitMiB: "256",
-        storagePolicyRef: "storage-main",
-        networkPolicyRef: "network-main",
-        releaseDigest: ` ${"sha256:"}${"a".repeat(64)} `,
-        targetRefs: " docker-primary, docker-primary, ssh-overflow ",
-        providerCredentialRef: " provider-default ",
-      }),
+      environmentProfileCreateRequestFrom(
+        {
+          ...environmentProfileForm(),
+          profileName: " Development ",
+          description: " local profile ",
+          codex: true,
+          claudeAgent: false,
+          cpuLimitMillis: "1500",
+          memoryLimitMiB: "256",
+          storagePolicyRef: "storage-main",
+          networkPolicyRef: "network-main",
+          releaseDigest: ` ${"sha256:"}${"a".repeat(64)} `,
+          targetRefs: ["docker-primary", "docker-primary", "ssh-overflow"],
+          providerCredentialRef: " provider-default ",
+        },
+        2,
+      ),
     ).toEqual({
-      profileId: "dev",
+      profileId: "development",
       profileName: "Development",
       version: 2,
       description: "local profile",
@@ -45,21 +46,22 @@ describe("environment profile form mapping", () => {
 });
 
 describe("runtime profile form mapping", () => {
-  it("derives isolation and remote worker selectors from the draft", () => {
-    const request = runtimeProfileCreateRequestFrom({
-      ...runtimeProfileForm(),
-      profileId: " runtime-profile ",
-      profileName: " Runtime Profile ",
-      version: "3",
-      description: " test profile ",
-      workloadTrust: "shared-untrusted",
-      targetId: "pool-remote-worker:arm64",
-      networkPolicyRef: "network-deny",
-      imageUri: " registry.example/runtime:latest ",
-      releaseDigest: ` ${"sha256:"}${"a".repeat(64)} `,
-      cpuMillis: "2000",
-      memoryMiB: "512",
-    });
+  it("derives identity, isolation, digest and selectors from the draft", () => {
+    const imageUri = `registry.example/runtime@sha256:${"a".repeat(64)}`;
+    const request = runtimeProfileCreateRequestFrom(
+      {
+        ...runtimeProfileForm(),
+        profileName: " Runtime Profile ",
+        description: " test profile ",
+        workloadTrust: "shared-untrusted",
+        targetId: "pool-remote-worker:arm64",
+        networkPolicyRef: "network-deny",
+        imageUri: ` ${imageUri} `,
+        cpuMillis: "2000",
+        memoryMiB: "512",
+      },
+      3,
+    );
 
     expect(isolationRuntimeForTrust("shared-untrusted")).toBe("gvisor");
     expect(isolationRuntimeForTrust("trusted-single-tenant")).toBe("runc");
@@ -77,7 +79,7 @@ describe("runtime profile form mapping", () => {
         architecture: "arm64",
       },
       networkPolicyRef: "network-deny",
-      imageUri: "registry.example/runtime:latest",
+      imageUri,
       releaseDigest: `sha256:${"a".repeat(64)}`,
       cpuMillis: 2000,
       memoryBytes: 512 * 1_048_576,

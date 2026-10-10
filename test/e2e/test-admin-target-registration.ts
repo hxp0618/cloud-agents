@@ -1,19 +1,32 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import {
   ClientError,
   createHTTPClient,
   type DeploymentTargetRegisterRequest,
 } from "../../sdk/typescript/src/platform";
+import { readPrivateAutomationToken } from "./private-automation-token";
 
 // Registration only, in a fresh disposable project; never Probe these endpoints.
 const [endpoint, adminTokenFile, tenant, project] = process.argv.slice(2);
 assert.ok(
   endpoint && adminTokenFile && tenant && project,
-  "usage: bun test/e2e/test-admin-target-registration.ts ENDPOINT ADMIN_TOKEN_FILE TENANT EMPTY_DISPOSABLE_PROJECT",
+  "usage: bun test/e2e/test-admin-target-registration.ts HTTPS_ENDPOINT ADMIN_AUTOMATION_TOKEN TENANT EMPTY_DISPOSABLE_PROJECT",
 );
-const client = createHTTPClient(endpoint, readFileSync(adminTokenFile, "utf8").trim());
+const endpointURL = new URL(endpoint);
+assert.ok(
+  endpointURL.protocol === "https:" &&
+    (endpointURL.hostname === "127.0.0.1" ||
+      endpointURL.hostname === "localhost" ||
+      endpointURL.hostname.endsWith(".localhost")) &&
+    endpointURL.pathname === "/" &&
+    !endpointURL.search &&
+    !endpointURL.hash &&
+    !endpointURL.username &&
+    !endpointURL.password,
+  "Requires an owned HTTPS loopback dev stack",
+);
+const client = createHTTPClient(endpoint, readPrivateAutomationToken(adminTokenFile));
 const signal = () => AbortSignal.timeout(30_000);
 const existing = (
   await client.listAdminDeploymentTargets(tenant, project, randomUUID(), 1, undefined, signal())

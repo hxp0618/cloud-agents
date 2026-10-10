@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/tenant-token-authorization-request.schema.json",
+  "title": "TenantTokenAuthorizationRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application", "sessionSha256", "tenantId"],
+  "properties": {
+    "application": {
+      "type": "string",
+      "enum": ["admin", "user"]
+    },
+    "sessionSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "tenantId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" },
+    "projectId": { "$ref": "../../../common/v1alpha1/schemas/identifier.schema.json" }
+  },
+  "description": "Server-only Identity Service request. The Control Plane re-reads the session and derives the stable principal and scopes; callers cannot supply either."
+}

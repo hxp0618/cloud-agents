@@ -1,0 +1,5 @@
+{
+  "authorizationId": "cli-authorization-alpha",
+  "verificationUrl": "https://admin.example.com/auth/cli/authorize?id=cli-authorization-alpha&state=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "expiresAt": "2026-10-09T12:05:00Z"
+}

@@ -33,21 +33,21 @@ Admin Web 的页面布局、视觉风格、组件外观、响应式行为和交�
 - User Web 与 Admin Web 是两个独立构建、独立部署、独立路由和独立鉴权入口。
 - 两者共享 Cloud Agents 品牌，但 Admin Web 使用 Daytona `v0.190.0` 的视觉与布局；不得共享页面导航或
   依赖前端隐藏按钮实现权限隔离。
-- Admin Web 使用专用 Admin API 与管理员 scope；Control Plane token audience 沿用既有约定，由 `client_id` 绑定 Admin/User 应用用途。普通用户权限 token 不能调用 Admin API。
+- Admin Web 使用专用 Admin API 与管理员 scope；沿用分别配置的 Admin/User Control Plane resource audience，并由 `client_id` 进一步绑定应用用途。普通用户权限 token 不能调用 Admin API，Admin token 也不能进入 User API。
 
 ### 3.1.1 登录、邀请与范围选择（IDENTITY-V1）
 
 Admin Web 与 User Web 使用账号密码或已配置的外部登录，不要求用户填写 Tenant ID、Project ID 或 Bearer Token。每个账号有一个稳定用户 ID，tenant token 固定使用 Identity Service issuer 和 `sub = user-<id>`；密码凭据及按 `(issuer, subject)` 唯一标识的多个外部身份显式链接到同一账号，保留既有 subject key 和 RoleBinding，不按相同邮箱自动合并账号或身份。链接或解除身份必须由已登录用户重新认证。
 
-账号只由管理员邀请创建，不提供自助注册。管理员生成一次性邀请链接；配置 SMTP 时由系统发送，未配置时管理员必须通过已核验邮箱所有权的交付流程提供链接，复制链接本身不构成邮箱验证。新账号使用已验证且与邀请完全匹配的邮箱设置密码，或用满足同一条件的外部登录接受邀请；已有账号必须先登录再接受邀请，邀请不能覆盖其密码或已链接身份。没有现有账号或有效邀请的外部登录一律拒绝且不自动创建账号。
+除受控的首个平台管理员安装初始化外，账号只由管理员邀请创建，不提供自助注册。管理员生成一次性邀请链接；配置 SMTP 时由系统发送，未配置时管理员必须通过已核验邮箱所有权的交付流程提供链接，复制链接本身不构成邮箱验证。新账号使用已验证且与邀请完全匹配的邮箱设置密码，或用满足同一条件的外部登录接受邀请；已有账号必须先登录再接受邀请，邀请不能覆盖其密码或已链接身份。没有现有账号或有效邀请的外部登录一律拒绝且不自动创建账号。
 
-登录后由服务端返回当前账号有权使用的租户和项目：经重新授权后优先恢复上次选择，否则按稳定排序选择首个可用范围；多个租户/项目按名称下拉切换。Admin Web 对 `platform.admin` 列出全部有效租户，对 `tenant.admin` 只列出其管理的租户；User Web 只列出用户具有有效成员关系的租户。每个资源 API 仍检查权限和租户隔离；切换租户必须签发新的单租户 token，取消旧请求并清空旧范围数据。租户选择随每个请求的路径传给 session proxy，不保存在浏览器跨标签页或服务端 session 的全局可变字段，避免一个标签页切换租户改变另一个标签页的请求范围。没有可用租户时显示拒绝访问页，没有可用项目时显示明确空状态，均不回退到手填 ID。
+登录后由服务端返回当前账号有权使用的租户和项目：上次选择仅作为每页签 sessionStorage 中的非秘密 ID 偏好，经服务端重新授权后恢复，否则按稳定排序选择首个可用范围；多个租户/项目按名称下拉切换。Admin Web 对真实 `platform.admin` 平台绑定列出全部有效租户，对真实 `tenant.admin` tenant binding 只列出其管理的租户，不为平台管理员伪造 tenant membership/`tenant.admin` binding；User Web 始终只列出用户具有 active membership 的租户。每个资源 API 仍检查权限和租户隔离；切换租户必须签发新的单租户 token，取消旧请求并清空旧范围数据。租户选择随每个请求的路径传给 session proxy，不保存在浏览器跨标签页或服务端 session 的全局可变字段，避免一个标签页切换租户改变另一个标签页的请求范围。没有可用租户时显示拒绝访问页，没有可用项目时显示明确空状态，均不回退到手填 ID。
 
-租户管理员可以配置多个允许的邮箱域。空列表允许邀请任意已验证邮箱；非空列表只按规范化后的完整邮箱域大小写无关精确匹配，不接受通配符、字符串尾缀近似或子域自动匹配。后缀只限制邀请和新增成员，不限制已有账号登录，也不授予成员或角色；多个租户可以配置同一域。`platform.admin` 自身成为租户成员或执行平台管理时可豁免，但不能用该豁免替其他账号绕过邀请规则。
+租户管理员可以配置多个允许的邮箱域。空列表允许邀请任意已验证邮箱；非空列表只按规范化后的完整邮箱域大小写无关精确匹配，不接受通配符、字符串尾缀近似或子域自动匹配。后缀只限制邀请和新增成员，不限制已有账号登录，也不授予成员或角色；多个租户可以配置同一域。`platform.admin` 本人豁免邮箱域限制；加入 User Web 租户仍需有效邀请、已验证邮箱与显式 membership，且不能替他人豁免。
 
-Identity Service 是 durable session 的唯一 owner；两个 Web 的 BFF 分别只签发 cookie、代理请求并缓存非权威会话投影。浏览器只保存各自 `HttpOnly`、`Secure`、`SameSite`、`__Host-` cookie；cookie 名称、`client_id`/应用用途和服务端 session 不互通，Control Plane 既有 audience 保持不变，写请求同时验证 Origin 和 CSRF。浏览器不得接触或保存 Identity Provider、Identity Service 或 Control Plane 的 access、refresh、ID token；OAuth/OIDC redirect 的临时授权码和一次性 invitation proof 只可经回调/邀请 URL 一次性交换，完成后立即清除，不得成为持久登录凭据或留在浏览器存储、历史、日志和 Audit。P2 开始前先为两个 Web 提供最小 HTTPS，不能把 Secure cookie 所需 TLS 推迟到 P5 部署打包。会话、邀请和重置有效期统一引用 [SECURITY.md](../../../SECURITY.md)，本文件不另建第二份时限 authority。
+Identity Service 是 durable session 的唯一 owner；两个 Web 的 BFF 分别只签发 cookie、代理请求并缓存非权威会话投影。浏览器的登录凭据仅为各自 `HttpOnly`、`Secure`、`SameSite`、`__Host-` cookie；cookie 名称、分别配置的 Control Plane resource audience、`client_id`/应用用途和服务端 session 不互通，写请求以精确 Origin 校验防止 CSRF；若使用额外 CSRF proof，则按 SECURITY 校验，不以此替代 Origin。浏览器不得接触或保存 Identity Provider、Identity Service 或 Control Plane 的 access、refresh、ID token；OAuth/OIDC redirect 的临时授权码和一次性 invitation proof 只可经回调/邀请 URL 一次性交换，完成后立即清除，不得成为持久登录凭据；交换后立即替换带 proof 的 URL，不写入应用存储、日志或 Audit。P2 开始前先为两个 Web 提供最小 HTTPS，不能把 Secure cookie 所需 TLS 推迟到 P5 部署打包。会话、邀请和重置有效期统一引用 [SECURITY.md](../../../SECURITY.md)，本文件不另建第二份时限 authority。
 
-Web server 从请求路径取得租户，以服务端 session 向 Identity Service 换取默认 15 分钟、保持当前 RS256 profile 与 Control Plane audience 的单租户 token，再转发给 Control Plane。Control Plane 验证 Identity Service issuer/JWKS 并自动刷新密钥；签名和声明验证后，每个新请求还必须在线按 `jti` 查到 user/session/tenant/client 的权威状态且不使用正向缓存，再检查最新 RoleBinding，状态服务不可用或未知时 fail closed。仅离线验证 JWT 不足以满足撤销要求；撤销事务提交后开始的新请求必须立即拒绝，流式连接在每次受保护动作及不超过 15 秒的 heartbeat 重查并关闭。已经授权并开始的 mutation 不回滚，由既有幂等、Operation 和 Audit 规则收敛。
+Web server 从请求路径取得租户，以服务端 session 向 Identity Service 换取默认 15 分钟、保持当前 RS256 profile 并使用对应 Admin/User resource audience 与 `client_id` 的单租户 token，再转发给 Control Plane。Control Plane 验证 Identity Service issuer/JWKS 并自动刷新密钥；签名和声明验证后，每个新请求还必须在线按 `jti` 查到 user/session/tenant/client 的权威状态且不使用正向缓存，再检查最新 RoleBinding，状态服务不可用或未知时 fail closed。该 session 检查适用于 Web 及未来 CLI 登录的人类用户 token；P5 service-account token 检查自己的 active account/token 撤销状态，不创建虚假浏览器 session，也不复用 workload identity。仅离线验证 JWT 不足以满足撤销要求；撤销事务提交后开始的新请求必须立即拒绝，流式连接在每次受保护动作及不超过 15 秒的 heartbeat 重查并关闭。已经授权并开始的 mutation 不回滚，由既有幂等、Operation 和 Audit 规则收敛。
 
 ### 3.2 用户只消费环境规格
 
@@ -81,6 +81,9 @@ Admin Web 在当前底座阶段始终不能读取或搜索：
 ### 3.4 凭据只以引用出现
 
 - Admin Web 可以创建或选择 `credentialRef`，但不能读取引用背后的 Secret bytes。
+- 唯一的只写例外是注册 Kubernetes Target 时提交的 kubeconfig 连接凭据：浏览器只在内存中解析管理员上传或粘贴的
+  kubeconfig，由管理员选择 context，仅提交该 context 的 server、CA 以及 token 或客户端证书/私钥。Control Plane
+  用部署方持有的密钥加密后存入 Postgres，之后任何 API、审计、日志或错误都不返回这些内容，也不能再读回浏览器。
 - API 响应和审计日志只能返回凭据引用、类型和可用状态，不返回私钥、Token、kubeconfig 或 Provider JSON。
 - 前端不得把凭据值写入 `localStorage`、`sessionStorage`、URL、日志或错误详情。
 
@@ -129,7 +132,7 @@ Admin Web 在当前底座阶段始终不能读取或搜索：
 - Artifact 列表、预览和下载；
 - 已发布 `Environment Profile` 的选择；
 - 用户可理解的环境准备、运行、失败和释放状态。
-- 登录、退出、授权租户/项目切换，以及个人密码修改/恢复和外部登录链接管理。
+- 登录、退出、授权租户/项目切换、重新认证后的密码修改或管理员重置链接接受；外部登录链接管理在 P4 provider 完成后启用。
 
 ### 4.2 Admin Web
 
@@ -160,7 +163,7 @@ RemoteWorker 注册与能力/身份状态、Region/Pool 容量与调度结果。
 - 用户聊天内容审查；
 - 管理员源代码浏览器；用户自己的 Files API 不在此禁止范围；
 - Provider 凭据明文查看或下载；
-- 在浏览器中直接打开 Docker socket、kubeconfig 或 SSH shell；
+- 在浏览器中直接打开 Docker socket、用 kubeconfig 连接集群或打开 SSH shell（注册时本地解析 kubeconfig 不在此列）；
 - 因参考 Daytona 而复制其 Organization、Sandbox 或 Runner 后端模型；
 - 尚未进入对应 BASE 阶段时创建空的 Region/Pool/Node 页面，或因为页面导航而额外拆微服务。
 
@@ -193,24 +196,24 @@ Audit Logs 等资源页面，并为部分页面设置 owner/permission gate。Cl
 
 ### 6.1 角色基线
 
-`platform.admin` 是存放在任何单一租户之外的平台级 RoleBinding，称为超级管理员；`tenant.admin` 是现有租户内角色。前者可以发现并管理全部租户的身份配置，后者只管理绑定租户。两者都不绕过选定租户的 RLS，也不因管理员身份获得用户对话、Workspace 文件或 Artifact 内容权限。进入具体租户后，每个请求仍使用该租户上下文和资源权限。
+`platform.admin` 是存放在任何单一租户之外的平台级 RoleBinding，称为超级管理员；`tenant.admin` 是现有租户内角色。前者无需 tenant membership 即可发现全部租户，并在选定租户使用契约列明的有限 ADMIN permission；不得为其伪造 `tenant.admin` binding。后者只管理其真实 binding 覆盖的租户。两者都不使用 wildcard 或绕过选定租户的 RLS，也不因管理员身份获得 User Web membership、用户对话、Workspace 文件或 Artifact 内容权限。进入具体租户后，每个请求仍使用该租户上下文和数据库重检。
 
 身份管理范围固定为：
 
 | 角色 | 可发现租户 | 身份管理权限 |
 | --- | --- | --- |
-| `platform.admin` | 全部有效租户 | 配置 provider；创建/撤销平台管理员；全局禁用账号；生成管理员重置；在任一租户内按自身权限管理成员 |
+| `platform.admin` | 全部有效租户 | 配置 provider；创建/撤销平台管理员；全局禁用账号；生成管理员重置；在选定租户使用契约列明的有限 ADMIN permission，无需 tenant membership |
 | `tenant.admin` | 具有该角色的租户 | 管理本租户邀请、成员、允许邮箱域和租户内暂停；不能全局禁用多租户账号、重置账号凭据或授予 `platform.admin` |
-| 有效成员 | 具有 active membership 的租户 | 管理自己的密码、恢复流程和已链接登录；不能管理其他账号 |
+| 有效成员 | 具有 active membership 的租户 | 重新认证后修改自己的密码、接受管理员重置链接；P4 后管理已链接登录；不能管理其他账号 |
 
-下面带连字符的既有资源角色继续控制选定租户内的基础设施操作，不替代上述身份管理边界；其中 `platform-admin` 是历史资源角色名，不等于平台级 `platform.admin` RoleBinding：
+以下是页面职责分类，不是可签发 token 的 role ID。运行时角色以契约 catalog 为准；IDENTITY-V1 的平台管理使用 ADR-0033 提议的 `platform.admin` version 2 与 catalog revision 2，不改写冻结 v1：
 
 | 角色 | User Web | Admin Web |
 | --- | --- | --- |
-| `platform-user` | 使用对话、执行和 Artifact；选择已发布 Profile | 无访问权限 |
-| `platform-operator` | 可作为普通用户使用自己的项目 | 查看基础设施；执行 Probe、Drain、Upgrade、Cleanup |
-| `platform-admin` | 可作为普通用户使用自己的项目 | 注册和配置 Target、Profile、配额、存储网络策略及管理员权限 |
-| `platform-auditor` | 无额外用户内容权限 | 只读查看资源元数据、Operation 和 Audit |
+| 普通用户 | 使用对话、执行和 Artifact；选择已发布 Profile | 无访问权限 |
+| 基础设施运维人员 | 可作为普通用户使用自己的项目 | 查看基础设施；执行 Probe、Drain、Upgrade、Cleanup |
+| 基础设施管理员 | 可作为普通用户使用自己的项目 | 注册和配置 Target、Profile、配额、存储网络策略及管理员权限 |
+| 审计人员 | 无额外用户内容权限 | 只读查看资源元数据、Operation 和 Audit |
 
 ### 6.2 权限要求
 
@@ -235,8 +238,8 @@ Projects
     ├── Artifacts
     └── Environment Profile selector
 Account
-├── Password & Recovery
-└── Linked Logins
+├── Password & Admin Reset
+└── Linked Logins（P4）
 ```
 
 基础设施页面从 User Web 删除。环境选择放在“新建 Conversation/Session”流程中，运行后只展示 Profile 名称、
@@ -306,7 +309,19 @@ Last Probe、Active Leases、Actions。
 - `credentialRef`；
 - 可选 location/labels（后端支持后启用）。
 
-提交成功后 Target 初始为 `unprobed`，页面引导管理员执行 Probe，不把“注册成功”显示为“可部署”。
+`kubernetes` 有两种连接方式：
+
+- API endpoint：填写 endpoint 和 `credentialRef`，连接凭据为部署方目录中的 `<credentialRef>.ca.crt` 与
+  `<credentialRef>.token`。
+- kubeconfig：上传文件或粘贴内容，浏览器本地解析；存在多个 context 时由管理员选择，默认选中
+  `current-context`。endpoint 取自所选 context 的 cluster `server` 并只读展示。只接受内嵌
+  `certificate-authority-data` 加 `token`，或内嵌 `client-certificate-data` 与 `client-key-data`；`exec`、
+  `auth-provider`、文件路径引用、用户名密码、`insecure-skip-tls-verify`、`proxy-url` 和非 HTTPS server
+  在浏览器和 Control Plane 两侧都拒绝。`credentialRef` 仍为必填，只引用部署方持有的非秘密部署描述文件
+  （`.deployment.json`、`.foundation.json`、`.opensandbox.json`），不再读取同名 `.ca.crt`/`.token`。kubeconfig
+  原文只存在于表单内存，关闭或提交成功后清除；未配置 Target 凭据密钥时该方式返回稳定错误。
+
+Target ID 按 12.4.1 由名称派生，不作为注册字段展示。提交成功后 Target 初始为 `unprobed`，页面引导管理员执行 Probe，不把“注册成功”显示为“可部署”。
 
 #### 详情
 
@@ -516,9 +531,11 @@ cookie、邀请/重置 proof、authorization code、access/refresh/ID token、pr
 - Members & Invitations 显示邮箱、成员状态、租户角色、邀请者、到期/接受状态和安全操作，不显示一次性 proof。角色选择只提供 grantor 在当前租户可授予的集合。
 - Allowed Email Domains 支持同一租户多个规范化完整域、空列表允许任意已验证邮箱，并在保存前解释它只限制新邀请/成员、不授予访问；不提供 wildcard 或“包含子域”选项。
 - 租户管理员只能在当前租户暂停/恢复成员。全局账号禁用、管理员生成重置和平台管理员管理仅对 `platform.admin` 显示并由服务端再次授权；不能通过 UI 将租户暂停表述为全局账号禁用。
-- 用户 Account 页面支持修改/恢复自己的密码及链接/解除密码、OIDC、GitHub、GitLab、Feishu、DingTalk、WeCom 登录。链接/解除要求重新认证，不能按邮箱自动合并；至少保留一种可用登录方式。
-- Login Providers 页面只保存 discovery/client 元数据和 secret reference，不显示 secret value。Feishu/DingTalk/WeCom 分别配置是否信任 provider 返回的已验证邮箱；缺失或不可信邮箱不能接受邀请，已预链接 subject 仍可登录。
-- 上述列表和动作均写入无 secret 的 Audit；邀请 proof 和 authorization code 一次性交换后不得留在持久 URL/历史，且与密码、access/refresh/ID token、cookie、provider secret 一样不出现在列表、错误详情、浏览器存储、日志或 Audit。
+- P3 的用户 Account 页面只支持重新认证后修改自己的密码或接受管理员重置链接，不新增“忘记密码”自助邮件重置端点。P4 provider 完成后才验收链接/解除 OIDC、GitHub、GitLab、Feishu、DingTalk、WeCom；链接/解除要求重新认证，不能按邮箱自动合并，且至少保留一种可用登录方式。
+- Login Providers 是平台管理员的系统设置，入口位于 Admin Web 账号菜单；OIDC、GitHub、GitLab、Feishu、DingTalk、WeCom 的应用元数据、密钥引用和回调地址通过 Identity API 持久化到数据库，不作为产品环境变量或启动配置。Admin/User 分别配置；Admin 回调由当前 Web HTTPS origin 派生，User 回调由设置中的 User Web HTTPS origin 派生，页面显示精确的 `/auth/provider/callback` 地址供上游应用登记。
+- 系统设置只保存 discovery/client 元数据和 secret reference，不显示或保存 secret value。Identity 每次登录读取当前设置，元数据修改无需重启；修改后的版本使尚未完成的旧登录 flow 失效。密钥引用对应的秘密材料仍由运维预置，更改部署中的材料或引用白名单遵循部署说明。Feishu/DingTalk/WeCom 分别显式配置：当上游缺少 verified flag 时，邮箱 assertion 是否可在限定的受信企业/组织与配置来源内视为已验证；缺失邮箱永远不能接受邀请，未满足配置的 assertion 也不能，已预链接 subject 仍可登录。
+- 固定协议的 scope 在系统设置中只读展示并保存规范值：GitHub 为 `read:user`、`user:email`，Feishu 为 `contact:user.email:readonly`，DingTalk 为 `corpid`、`openid`，WeCom 为空且不发送 scope 参数。服务端在保存及读取登录配置时均拒绝不匹配的 scope；OIDC/GitLab 保留可编辑 scope，并始终加入登录必需的 `openid`、`email`、`profile`。
+- 上述列表和动作均写入无 secret 的 Audit；邀请 proof 和 authorization code 一次性交换后立即从当前 URL 清除；与密码、access/refresh/ID token、cookie、provider secret 一样，不写入列表、错误详情、应用存储、日志或 Audit。
 
 ## 9. 关键流程
 
@@ -607,7 +624,7 @@ Cleanup 前必须展示将删除的 Worker、容器/Pod、Workspace volume 和�
 底座新增 Workspace/Sandbox 用户管理 API 及受授权的数据接口；Admin API 只取其运维投影。
 RemoteWorker 注册、身份与通道属于独立的内部接入协议，不能复用用户/管理员 bearer 作为节点身份。
 
-跨租户发现只通过为 `platform.admin` 设计的窄数据库函数和 Identity API；选定租户后的资源请求仍设置并验证单一 tenant context。Admin Web 不通过枚举普通租户 API 拼装跨租户运维视图，Control Plane 不因 `platform.admin` 绕过 RLS 或扩大用户内容投影。
+租户发现只通过用途分离的窄数据库函数和 Identity API：普通用户/租户管理员读取自己的 active membership 或真实管理 binding，`platform.admin` 读取有限字段的全租户分页视图。选定租户后的资源请求仍设置并验证单一 tenant context。Admin Web 不通过枚举普通租户 API 拼装跨租户运维视图，Control Plane 不因 `platform.admin` 绕过 RLS 或扩大用户内容投影。
 
 ### 10.2 既有实现承接与底座增量
 
@@ -675,7 +692,7 @@ P0 不引入 Next.js、Ant Design、Tailwind 或新的状态管理框架。先�
 - IDENTITY-V1 P2 开始前两个域名必须具备 HTTPS，确保 `Secure`、`__Host-` cookie 在开发验收与部署中使用同一安全边界；
 - Admin Web BFF 只暴露同站身份入口和 Admin API；
 - User Web BFF 只暴露同站身份入口和 User API；
-- CSP、OIDC redirect URI、cookie、`client_id`/应用用途和权限分别配置；Control Plane audience 沿用既有约定。
+- CSP、OIDC redirect URI、cookie、分别配置的 Admin/User Control Plane resource audience、`client_id`/应用用途和权限均保持隔离。
 
 ## 12. 视觉与交互规范
 
@@ -718,6 +735,19 @@ Admin Web 不沿用当前 User Web 的 Modern Dark 视觉。界面以 Daytona `v
 - Upgrade、Drain、Terminate、Cleanup 在 Daytona 确认交互上增加影响范围和 generation，不得为追求视觉一致
   删除安全信息；
 - 键盘焦点、ARIA、对比度和 `prefers-reduced-motion` 至少保持当前可访问性要求。
+
+### 12.4.1 表单输入
+
+- 创建和编辑表单不展示、不接受资源 ID 输入。契约仍要求的 ID 由前端从名称派生：长期具名资源
+  （Target、Release、Profile、存储/网络策略、Worker、Workspace、登录 Provider）使用规范化名称；同名
+  Target/Release/策略在提交前提示名称已占用，同名 Profile 表示创建该 Profile 的下一个版本。一次性资源
+  （RemoteWorker 注册意图、快照、恢复出的 Sandbox）在名称后附加随表单实例固定的随机后缀，重试保持同一
+  请求体和幂等键。列表与详情继续只读展示 opaque ID。
+- 可从当前约束推导的字段不再手填：Profile 版本取同一 Profile 的下一个连续版本；RuntimeProfile 的
+  release digest 取自 digest 固定的镜像地址；隔离运行时由工作负载信任级别决定。
+- 引用当前范围已有资源的字段使用下拉或多选，只列出可用项；当前没有列表 API 的引用（凭据、备份后端、
+  DNS/代理策略等）使用带已有值建议的输入框，次要引用收进“高级设置”。
+- 有固定上下限的时长使用预设选项并按本地化单位展示，提交值仍为契约要求的秒数。
 
 ### 12.5 视觉验收
 
@@ -802,11 +832,13 @@ ADMIN-M1～M4 已完成；详细里程碑记录已在开源整理前归档。原
 13. Admin Web 支持 `zh-CN` 与 `en-US` 即时切换、刷新恢复和 locale fallback；两种语言没有缺失 key、未翻译
     的界面文案或布局溢出，并分别通过 light/dark、桌面/移动视觉回归。
 
+<a id="identity-v1"></a>
+
 ### IDENTITY-V1
 
-当前状态为 P0 `Proposed`：本节只冻结 Web/角色/权限需求，等待 owner 对 [ADR-0033](../adr/0033-built-in-identity-service.md) 的明确批准；不得据此启动 runtime、标记 PASS、关闭 Gate 或部署。批准后按 [05 §0.4](05-gates-and-acceptance.md#identity-v1) 依次验收 P1 核心、P2 Web 登录与范围切换、P3 租户管理、P4 外部 provider、P5 CLI/自动化/部署。
+本节 Web/角色/权限需求与 [ADR-0033](../adr/0033-built-in-identity-service.md) 及其链接的完整 P0 规范已获 owner 批准，用户要求作为 Goal 持续推进。开发授权不等于验收 PASS、Gate 关闭或既有部署写入授权。按 [05 §0.4](05-gates-and-acceptance.md#identity-v1) 依次验收 P1 核心、P2 Web 登录与范围切换、P3 租户管理、P4 外部 provider、P5 CLI/自动化/部署。
 
-P4 顺序固定为标准 OIDC → GitHub/GitLab → Feishu/DingTalk/WeCom。每个 provider 必须覆盖登录、显式链接/解除、未知身份拒绝、邀请接受和无 secret Audit；非标准 provider 的邮箱信任逐 provider 配置，缺失或不可信邮箱不能接受邀请，已预链接 subject 仍可登录。P5 的生产迁移和部署需要与 P0 决策批准分开的明确生产授权，不在本文记录具体生产地址。
+P4 顺序固定为标准 OIDC → GitHub/GitLab → Feishu/DingTalk/WeCom。每个 provider 必须覆盖登录、显式链接/解除、未知身份拒绝、邀请接受和无 secret Audit；非标准 provider 显式配置上游缺少 verified flag 时其邮箱 assertion 能否在限定的受信企业/组织与配置来源内视为已验证，缺失邮箱永远不能接受邀请，已预链接 subject 仍可登录。P3 不以前述 provider 或链接流程完成为前提。P5 的生产迁移和部署需要与 P0 决策批准分开的明确生产授权，不在本文记录具体生产地址。
 
 ## 16. 状态入口
 

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/reauthentication.schema.json",
+  "title": "Reauthentication",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "expiresAt"
+  ],
+  "properties": {
+    "expiresAt": {
+      "$ref": "../../../common/v1alpha1/schemas/date-time.schema.json"
+    }
+  }
+}

@@ -105,12 +105,12 @@ func (server *RemoteWorkerEnrollmentHTTPServer) ServeHTTP(writer http.ResponseWr
 		writePublicProblem(writer, 401, "authentication_failed")
 		return
 	}
-	principal, err := server.verify(bearer, tenantID, projectID, projectPermission)
+	principal, err := server.verify(request.Context(), bearer, tenantID, projectID, projectPermission)
 	if err != nil {
 		writePublicProblem(writer, 401, "authentication_failed")
 		return
 	}
-	if _, err := server.verify(bearer, tenantID, projectID, enrollmentPermission); err != nil {
+	if _, err := server.verify(request.Context(), bearer, tenantID, projectID, enrollmentPermission); err != nil {
 		writePublicProblem(writer, 403, "authorization_denied")
 		return
 	}
@@ -750,8 +750,8 @@ func remoteWorkerEnrollmentMutationRequest(writer http.ResponseWriter, request *
 	return key, body, true
 }
 
-func (server *RemoteWorkerEnrollmentHTTPServer) verify(bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
-	return server.verifier.Verify(bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
+func (server *RemoteWorkerEnrollmentHTTPServer) verify(ctx context.Context, bearer, tenantID, projectID, permission string) (*authn.VerifiedPrincipal, error) {
+	return verifyHTTPRequestAccessToken(ctx, server.verifier, bearer, authn.VerificationRequest{TenantID: tenantID, ResourceLevel: "project", ResourceID: projectID, RequiredPermission: permission})
 }
 
 func writeRemoteWorkerEnrollmentError(writer http.ResponseWriter, err error) {

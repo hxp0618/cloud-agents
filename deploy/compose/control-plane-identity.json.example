@@ -1,0 +1,9 @@
+{
+  "issuer": "https://identity.cloud-agents.example",
+  "userAudience": "https://user.cloud-agents.example:4173",
+  "adminAudience": "https://admin.cloud-agents.example:4174",
+  "identityBaseUrl": "https://identity:8443",
+  "caFile": "/run/cloud-agents/identity/identity-ca.crt",
+  "controlPlaneCredentialFile": "/run/cloud-agents/identity/control-plane.proof",
+  "identityCredentialFile": "/run/cloud-agents/identity/identity-control-plane.proof"
+}

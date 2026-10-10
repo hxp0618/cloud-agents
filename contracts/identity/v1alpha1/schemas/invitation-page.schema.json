@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/invitation-page.schema.json",
+  "title": "InvitationPage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["invitations"],
+  "properties": {
+    "invitations": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "invitation.schema.json"
+      }
+    },
+    "nextPageToken": {
+      "$ref": "../../../common/v1alpha1/schemas/page-token.schema.json"
+    }
+  }
+}

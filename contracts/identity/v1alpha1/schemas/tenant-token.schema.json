@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cloud-agents.dev/identity/v1alpha1/schemas/tenant-token.schema.json",
+  "title": "TenantToken",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accessToken", "tokenType", "expiresAt"],
+  "properties": {
+    "accessToken": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 8192,
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+    },
+    "tokenType": {
+      "type": "string",
+      "const": "Bearer"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

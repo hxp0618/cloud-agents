@@ -373,6 +373,7 @@ mcp_fixture_marker=
 mcp_fixture_side_effect_file=
 capability_transport_recovery_ran=0
 approval_execute_pid=
+automation_refresh_pid=
 mcp_fixture_docker() {
   if [ -n "$mcp_fixture_docker_host" ]; then
     docker -H "$mcp_fixture_docker_host" "$@"
@@ -435,6 +436,10 @@ compose_base() {
 cleanup() {
   status=$?
   trap - 0 HUP INT TERM
+  if [ -n "$automation_refresh_pid" ]; then
+    kill "$automation_refresh_pid" >/dev/null 2>&1 || true
+    wait "$automation_refresh_pid" 2>/dev/null || true
+  fi
   if [ -n "$approval_execute_pid" ]; then
     kill "$approval_execute_pid" >/dev/null 2>&1 || true
     wait "$approval_execute_pid" 2>/dev/null || true
@@ -644,6 +649,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 mkdir -p "$smoke_directory/deployment" "$smoke_directory/access-gateway-tls" "$smoke_directory/control-plane-tls" \
+  "$smoke_directory/identity-tls" "$smoke_directory/admin-web-tls" "$smoke_directory/user-web-tls" \
+  "$smoke_directory/identity-provider-materials" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/capability-materialization-control-plane" "$smoke_directory/capability-materialization-worker" "$smoke_directory/workspace" "$smoke_directory/snapshots" \
   "$smoke_directory/mcp-side-effect" \
   "$smoke_directory/docker-target-credentials/docker-compose-target" \
@@ -670,6 +677,7 @@ remember_opensandbox_runtime_id() {
 }
 mcp_fixture_bundle="$smoke_directory/managed-capability-mcp-server.mjs"
 chmod 0755 "$smoke_directory" "$smoke_directory/access-gateway-tls" "$smoke_directory/control-plane-tls" \
+  "$smoke_directory/identity-tls" "$smoke_directory/admin-web-tls" "$smoke_directory/user-web-tls" \
   "$smoke_directory/worker-tls" "$smoke_directory/provider-credentials" "$smoke_directory/capability-materialization-control-plane" "$smoke_directory/capability-materialization-worker" \
   "$smoke_directory/docker-target-credentials" "$smoke_directory/docker-target-credentials/docker-compose-target" \
   "$smoke_directory/docker-target-credentials/docker-compose-target-restore" \
@@ -683,6 +691,32 @@ chmod 0700 "$smoke_directory/remote-worker-node-restore"
 chmod 0777 "$smoke_directory/workspace" "$smoke_directory/snapshots"
 chmod 0777 "$smoke_directory/mcp-side-effect"
 tar -xf "$1" -C "$smoke_directory/deployment"
+set -- $(node <<'NODE'
+const net = require("node:net");
+const servers = [];
+const ports = [];
+const reserve = () => new Promise((resolve, reject) => {
+  const server = net.createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    servers.push(server);
+    ports.push(server.address().port);
+    resolve();
+  });
+});
+(async () => {
+  await reserve();
+  await reserve();
+  await reserve();
+  process.stdout.write(`${ports.join(" ")}\n`);
+  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+})().catch((error) => { console.error(error); process.exit(1); });
+NODE
+)
+[ "$#" -eq 3 ] || { echo "failed to reserve Compose HTTPS ports" >&2; exit 1; }
+control_plane_host_port=$1
+admin_web_host_port=$2
+user_web_host_port=$3
 server_build_directory=$(mktemp -d "${TMPDIR:-/tmp}/cloud-agents-compose-server-build.XXXXXX")
 node "$smoke_directory/deployment/scripts/build-opensandbox-server-successor.ts" \
   --output-root "$server_build_directory" --tag "cloud-agents/${project}-server:v1" \
@@ -710,6 +744,24 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
   -subj /CN=cloud-agents-compose-smoke-ca \
   -keyout "$smoke_directory/ca.key" -out "$smoke_directory/ca.crt" \
   -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign >/dev/null 2>&1
+generate_compose_https_certificate() {
+  certificate_name=$1
+  certificate_directory=$2
+  certificate_dns=$3
+  openssl req -newkey rsa:2048 -nodes -sha256 -subj "/CN=$certificate_name" \
+    -keyout "$certificate_directory/server.key" -out "$certificate_directory/server.csr" \
+    -addext "subjectAltName=$certificate_dns" \
+    -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
+  openssl x509 -req -sha256 -days 1 -in "$certificate_directory/server.csr" \
+    -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
+    -copy_extensions copy -out "$certificate_directory/server.crt" >/dev/null 2>&1
+}
+generate_compose_https_certificate identity "$smoke_directory/identity-tls" \
+  "DNS:identity,DNS:identity.compose-smoke.localhost"
+generate_compose_https_certificate admin.compose-smoke.localhost "$smoke_directory/admin-web-tls" \
+  "DNS:admin.compose-smoke.localhost"
+generate_compose_https_certificate user.compose-smoke.localhost "$smoke_directory/user-web-tls" \
+  "DNS:user.compose-smoke.localhost"
 openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=worker \
   -keyout "$smoke_directory/worker-tls/server.key" -out "$smoke_directory/worker.csr" \
   -addext subjectAltName=DNS:worker,URI:spiffe://cloud-agents.compose/worker \
@@ -736,7 +788,7 @@ openssl x509 -req -sha256 -days 1 -in "$smoke_directory/control-plane-client.csr
 openssl req -newkey rsa:2048 -nodes -sha256 -subj /CN=control-plane \
   -keyout "$smoke_directory/control-plane-tls/server.key" \
   -out "$smoke_directory/control-plane-server.csr" \
-  -addext subjectAltName=DNS:control-plane,DNS:host.docker.internal,IP:127.0.0.1 \
+  -addext subjectAltName=DNS:control-plane,DNS:control-plane.compose-smoke.localhost,DNS:host.docker.internal,IP:127.0.0.1 \
   -addext extendedKeyUsage=serverAuth -addext keyUsage=digitalSignature >/dev/null 2>&1
 openssl x509 -req -sha256 -days 1 -in "$smoke_directory/control-plane-server.csr" \
   -CA "$smoke_directory/ca.crt" -CAkey "$smoke_directory/ca.key" -CAcreateserial \
@@ -793,7 +845,16 @@ cp "$smoke_directory/docker-target-credentials/docker-compose-target/key.pem" \
 cp "$smoke_directory/docker-target-ca.crt" \
   "$smoke_directory/kubernetes-target-credentials/kubernetes-compose-target.ca.crt"
 chmod 0444 "$smoke_directory"/access-gateway-tls/* \
-  "$smoke_directory"/control-plane-tls/* "$smoke_directory"/worker-tls/*
+  "$smoke_directory"/control-plane-tls/* "$smoke_directory"/identity-tls/server.crt \
+  "$smoke_directory"/admin-web-tls/server.crt "$smoke_directory"/user-web-tls/server.crt \
+  "$smoke_directory"/worker-tls/*
+chmod 0400 "$smoke_directory"/identity-tls/server.key "$smoke_directory"/admin-web-tls/server.key \
+  "$smoke_directory"/user-web-tls/server.key
+admin_web_spki=$(openssl x509 -in "$smoke_directory/admin-web-tls/server.crt" -pubkey -noout | \
+  openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+user_web_spki=$(openssl x509 -in "$smoke_directory/user-web-tls/server.crt" -pubkey -noout | \
+  openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl base64 -A)
+browser_tls_spki="$admin_web_spki,$user_web_spki"
 chmod 0600 "$smoke_directory/access-gateway-ssh-host-key"
 
 CLOUD_AGENTS_COMPOSE_SMOKE_STATE="$smoke_directory" \
@@ -803,9 +864,12 @@ CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM="$image_platform" \
 CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY="$docker_gateway" \
 CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST="$real_provider_test" \
 CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER="$capability_bound_recovery_provider" \
+CLOUD_AGENTS_COMPOSE_CONTROL_PLANE_PORT="$control_plane_host_port" \
+CLOUD_AGENTS_COMPOSE_ADMIN_WEB_PORT="$admin_web_host_port" \
+CLOUD_AGENTS_COMPOSE_USER_WEB_PORT="$user_web_host_port" \
   node <<'NODE'
-const { createSign, generateKeyPairSync, randomBytes } = require("node:crypto");
-const { chmodSync, writeFileSync } = require("node:fs");
+const { generateKeyPairSync, randomBytes } = require("node:crypto");
+const { chmodSync, readFileSync, writeFileSync } = require("node:fs");
 const { isIP } = require("node:net");
 
 const state = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_STATE;
@@ -813,33 +877,25 @@ const release = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_RELEASE;
 const project = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PROJECT;
 const platform = process.env.CLOUD_AGENTS_COMPOSE_SMOKE_PLATFORM;
 const dockerGateway = process.env.CLOUD_AGENTS_COMPOSE_DOCKER_GATEWAY;
+const controlPlanePort = process.env.CLOUD_AGENTS_COMPOSE_CONTROL_PLANE_PORT;
+const adminWebPort = process.env.CLOUD_AGENTS_COMPOSE_ADMIN_WEB_PORT;
+const userWebPort = process.env.CLOUD_AGENTS_COMPOSE_USER_WEB_PORT;
 const codexWriteReceiptDelay = process.env.CLOUD_AGENTS_COMPOSE_REAL_PROVIDER_TEST === "1" &&
   process.env.CLOUD_AGENTS_COMPOSE_CAPABILITY_BOUND_RECOVERY_PROVIDER === "codex" ? "30000" : "12000";
 const deepseekHarnessToolDelay = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_TOOL_DELAY_MS ?? "";
 const deepseekHarnessManagedToolDelay = process.env.CLOUD_AGENT_DEEPSEEK_HARNESS_MANAGED_TOOL_DELAY_MS ?? "";
-if (![state, release, project, platform, dockerGateway].every((value) => value && !value.includes("\n"))) {
+if (![state, release, project, platform, dockerGateway, controlPlanePort, adminWebPort, userWebPort].every((value) => value && !value.includes("\n"))) {
   throw new Error("invalid Compose smoke environment");
 }
 if (/[\r\n]/u.test(deepseekHarnessToolDelay)) throw new Error("invalid DeepSeek harness delay");
 if (/[\r\n]/u.test(deepseekHarnessManagedToolDelay)) throw new Error("invalid DeepSeek managed-tool delay");
 if (isIP(dockerGateway) !== 4) throw new Error("invalid Docker bridge gateway");
 const deploy = `${state}/deployment/deploy`;
-const issuer = "https://issuer.compose.test";
-const audience = "https://api.compose.test";
-const adminAudience = "https://admin-api.compose.test";
-const kid = "compose-smoke-key";
-const now = Math.floor(Date.now() / 1000);
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const exported = publicKey.export({ format: "jwk" });
-const jwk = { alg: "RS256", e: exported.e, key_ops: ["verify"], kid, kty: "RSA", n: exported.n, use: "sig" };
-const auth = {
-  issuer, audience, adminAudience, generation: 1, securityEpoch: 1, notBefore: now - 60, expiresAt: now + 7200,
-  keys: [{ jwk, enabled: true, notBefore: now - 60, notAfter: now + 7200 }],
-};
-writeFileSync(`${state}/auth.json`, `${JSON.stringify(auth)}\n`);
-writeFileSync(`${state}/auth-test-private-key.pem`, privateKey.export({ format: "pem", type: "pkcs8" }), { mode: 0o600 });
-chmodSync(`${state}/auth-test-private-key.pem`, 0o600);
+const issuer = "https://identity.compose-smoke.localhost";
+const adminAudience = `https://admin.compose-smoke.localhost:${adminWebPort}`;
+const userAudience = `https://user.compose-smoke.localhost:${userWebPort}`;
 writeFileSync(`${state}/access-grant.key`, randomBytes(32));
+writeFileSync(`${state}/target-credential.key`, randomBytes(32));
 const opensandboxApiKey = randomBytes(32).toString("hex");
 writeFileSync(`${state}/opensandbox-api-key`, opensandboxApiKey);
 writeFileSync(`${state}/opensandbox.toml`, `[server]
@@ -864,48 +920,8 @@ allowed_host_paths=[]
 type="sqlite"
 path="/tmp/opensandbox.db"
 `);
-const baseClaims = {
-  iss: issuer, sub: "user-compose-smoke", exp: now + 3500, iat: now - 10,
-  client_id: "compose-smoke-client",
-  "https://schemas.cloud-agents.dev/claims/security-epoch": 1,
-  "https://schemas.cloud-agents.dev/claims/subject-kind": "user",
-  "https://schemas.cloud-agents.dev/claims/tenant-id": "tenant-compose-smoke",
-  "https://schemas.cloud-agents.dev/claims/token-profile": "cloud-agents-access-token/v1",
-};
-const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-const issueToken = (tokenId, tokenAudience, scopes) => {
-  const claims = { ...baseClaims, aud: tokenAudience, jti: tokenId, scope: [...scopes].sort().join(" ") };
-  const signingInput = `${encode({ alg: "RS256", kid, typ: "at+jwt" })}.${encode(claims)}`;
-  const signature = createSign("RSA-SHA256").update(signingInput).end().sign(privateKey).toString("base64url");
-  return `${signingInput}.${signature}`;
-};
-const adminScopes = [
-  "audit.list", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
-  "leases.act", "leases.get", "leases.list", "organizations.list", "profiles.act",
-  "mcp-servers.create", "mcp-servers.get", "mcp-servers.list", "mcp-servers.delete", "skill-bundles.create", "skill-bundles.get", "skill-bundles.list", "skill-bundles.delete",
-  "operations.list", "profiles.create", "profiles.get", "profiles.list", "projects.act", "projects.create",
-  "network-policies.get", "network-policies.list", "network-policies.update", "projects.get", "quotas.get", "quotas.update", "releases.create", "releases.list", "sandboxes.act", "sandboxes.get", "sandboxes.list", "storage-policies.get", "storage-policies.list", "storage-policies.update", "targets.act", "targets.create", "targets.get", "targets.list", "workers.list",
-  "snapshots.act", "snapshots.create", "snapshots.delete", "snapshots.get", "snapshots.list",
-  "remote-worker-enrollments.act", "remote-worker-enrollments.create", "remote-worker-enrollments.get", "remote-worker-enrollments.list",
-];
-const userScopes = [
-	"environment-quotas.get", "environments.create", "environments.delete", "environments.get", "environment-profiles.list",
-	"organizations.list", "projects.act", "projects.create", "projects.get", "projects.list", "sandboxes.update", "tenants.get",
-];
-const adminToken = issueToken("compose-smoke-admin-token", adminAudience, adminScopes);
-const adminDeniedToken = issueToken("compose-smoke-admin-denied-token", adminAudience, userScopes);
-const userToken = issueToken("compose-smoke-user-token", audience, userScopes);
-const remoteWorkerBootstrapToken = issueToken("compose-smoke-remote-worker-bootstrap", audience, ["projects.act", "remote-worker-bootstrap.act"]);
 const admissionToken = randomBytes(24).toString("hex");
 const kubernetesToken = randomBytes(24).toString("hex");
-writeFileSync(`${state}/token`, `${adminToken}\n`);
-writeFileSync(`${state}/admin-token`, `${adminToken}\n`);
-writeFileSync(`${state}/admin-denied-token`, `${adminDeniedToken}\n`);
-writeFileSync(`${state}/user-token`, `${userToken}\n`);
-writeFileSync(`${state}/remote-worker-bootstrap-token`, `${remoteWorkerBootstrapToken}\n`);
-writeFileSync(`${state}/admin-curl.conf`, `header = "Authorization: Bearer ${adminToken}"\n`);
-writeFileSync(`${state}/admin-denied-curl.conf`, `header = "Authorization: Bearer ${adminDeniedToken}"\n`);
-writeFileSync(`${state}/user-curl.conf`, `header = "Authorization: Bearer ${userToken}"\n`);
 writeFileSync(`${state}/ssh-askpass.sh`, '#!/bin/sh\nprintf "%s\\n" "$CLOUD_AGENTS_GATEWAY_PASSWORD"\n');
 writeFileSync(`${state}/runtime.env`, [
   "CLOUD_AGENT_PROVIDER_HOST_EXPERIMENTAL_PROVIDERS=codex,claudeAgent,pi,deepseek-harness",
@@ -980,24 +996,94 @@ writeFileSync(`${state}/kubernetes-api.mjs`, [
   'process.on("SIGTERM", () => process.exit(0));',
 ].join("\n") + "\n");
 const password = randomBytes(24).toString("hex");
+const identityPassword = randomBytes(24).toString("base64url");
+for (const [name, email] of [
+  ["admin-account.json", "admin@example.com"],
+  ["admin-denied-account.json", "compose-member@identity.test"],
+  ["user-account.json", "compose-member@identity.test"],
+]) {
+  writeFileSync(`${state}/${name}`, `${JSON.stringify({ email, password: identityPassword })}\n`, { mode: 0o600 });
+  chmodSync(`${state}/${name}`, 0o600);
+}
+writeFileSync(`${state}/initial-password`, `${identityPassword}\n`, { mode: 0o400 });
+const identitySigningKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
+  format: "pem",
+  type: "pkcs8",
+});
+writeFileSync(`${state}/identity-signing.key`, identitySigningKey, { mode: 0o600 });
+writeFileSync(`${state}/identity-csrf.key`, randomBytes(32), { mode: 0o600 });
+writeFileSync(`${state}/identity-provider-flow.key`, randomBytes(32), { mode: 0o600 });
+for (const name of [
+  "identity-setup.proof",
+  "admin-web-identity.proof",
+  "user-web-identity.proof",
+  "control-plane-identity.proof",
+  "identity-control-plane.proof",
+]) {
+  writeFileSync(`${state}/${name}`, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
+}
+writeFileSync(
+  `${state}/identity-database-url`,
+  `postgresql://cloud_agents_identity_service_login:${password}@postgres:5432/cloud_agents`,
+  { mode: 0o600 },
+);
+writeFileSync(
+  `${state}/identity-bootstrap-database-url`,
+  `postgresql://cloud_agents_identity_bootstrap:${password}@postgres:5432/cloud_agents`,
+  { mode: 0o600 },
+);
+const updateIdentityConfig = (name, updates) => {
+  const value = JSON.parse(readFileSync(`${deploy}/compose/${name}.json.example`, "utf8"));
+  Object.assign(value, updates);
+  const path = `${state}/${name}.json`;
+  writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o444 });
+  return path;
+};
+const identityRunConfig = updateIdentityConfig("identity-run", {
+  issuer,
+  adminAudience,
+  userAudience,
+});
+const identityInitializeConfig = updateIdentityConfig("identity-initialize", {
+  issuer,
+  adminAudience,
+  userAudience,
+  keyNotBefore: new Date(Date.now() - 60_000).toISOString().replace(/\.000Z$/u, "Z"),
+  keyNotAfter: new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString().replace(/\.000Z$/u, "Z"),
+});
+const controlPlaneIdentityConfig = updateIdentityConfig("control-plane-identity", {
+  issuer,
+  adminAudience,
+  userAudience,
+});
 const values = [
   `COMPOSE_PROJECT_NAME=${project}`,
   `CLOUD_AGENTS_RELEASE_DIR=${release}`,
   `CLOUD_AGENTS_DEPLOY_DIR=${deploy}`,
   `CLOUD_AGENTS_PLATFORM=${platform}`,
-  "CLOUD_AGENTS_CONTROL_PLANE_BIND=127.0.0.1:",
-  "CLOUD_AGENTS_USER_WEB_BIND=127.0.0.1:",
-  "CLOUD_AGENTS_ADMIN_WEB_BIND=127.0.0.1:",
+  `CLOUD_AGENTS_CONTROL_PLANE_BIND=127.0.0.1:${controlPlanePort}`,
+  `CLOUD_AGENTS_USER_WEB_BIND=127.0.0.1:${userWebPort}`,
+  `CLOUD_AGENTS_ADMIN_WEB_BIND=127.0.0.1:${adminWebPort}`,
   "CLOUD_AGENTS_WORKER_BIND=127.0.0.1:",
   "CLOUD_AGENTS_POSTGRES_DB=cloud_agents",
   `CLOUD_AGENTS_POSTGRES_INSTALL_PASSWORD=${password}`,
   `CLOUD_AGENTS_MIGRATION_PASSWORD=${password}`,
   `CLOUD_AGENTS_RUNTIME_PASSWORD=${password}`,
   `CLOUD_AGENTS_TENANT_BOOTSTRAP_PASSWORD=${password}`,
+  `CLOUD_AGENTS_IDENTITY_BOOTSTRAP_PASSWORD=${password}`,
+  `CLOUD_AGENTS_IDENTITY_SERVICE_PASSWORD=${password}`,
   `CLOUD_AGENTS_BOOTSTRAP_DATABASE_URL=postgresql://cloud_agents_install_admin:${password}@postgres:5432/cloud_agents`,
   `CLOUD_AGENTS_MIGRATION_DATABASE_URL=postgresql://cloud_agents_migration:${password}@postgres:5432/cloud_agents`,
   `CLOUD_AGENTS_RUNTIME_DATABASE_URL=postgresql://cloud_agents_runtime_login:${password}@postgres:5432/cloud_agents`,
   `CLOUD_AGENTS_TENANT_BOOTSTRAP_DATABASE_URL=postgresql://cloud_agents_tenant_bootstrap:${password}@postgres:5432/cloud_agents`,
+  `CLOUD_AGENTS_IDENTITY_DATABASE_URL_FILE=${state}/identity-database-url`,
+  `CLOUD_AGENTS_IDENTITY_BOOTSTRAP_DATABASE_URL_FILE=${state}/identity-bootstrap-database-url`,
+  `CLOUD_AGENTS_IDENTITY_RUN_CONFIG=${identityRunConfig}`,
+  `CLOUD_AGENTS_IDENTITY_INITIALIZE_CONFIG=${identityInitializeConfig}`,
+  `CLOUD_AGENTS_CONTROL_PLANE_IDENTITY_CONFIG=${controlPlaneIdentityConfig}`,
+  "CLOUD_AGENTS_IDENTITY_INITIALIZE=1",
+  `CLOUD_AGENTS_IDENTITY_ISSUER=${issuer}`,
+  "CLOUD_AGENTS_INITIAL_SUPER_ADMIN_USER_ID=initial-admin",
   "CLOUD_AGENTS_TENANT_UID=tenant-compose-smoke",
   "CLOUD_AGENTS_TENANT_NAME=tenant-compose-smoke",
   "CLOUD_AGENTS_TENANT_DISPLAY_NAME=Compose Smoke Tenant",
@@ -1006,7 +1092,7 @@ const values = [
   "CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME=Compose Smoke Organization",
   "CLOUD_AGENTS_ADMIN_SUBJECT_KIND=user",
   `CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER=${issuer}`,
-  "CLOUD_AGENTS_ADMIN_SUBJECT_VALUE=user-compose-smoke",
+  "CLOUD_AGENTS_ADMIN_SUBJECT_VALUE=user-initial-admin",
   "CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID=membership-compose-admin",
   "CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME=membership-compose-admin",
   "CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID=role-binding-compose-admin",
@@ -1015,8 +1101,8 @@ const values = [
   "CLOUD_AGENTS_MEMBERSHIP_AUDIT_FACT_UID=audit-compose-membership",
   "CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID=audit-compose-role-binding",
   "CLOUD_AGENTS_BOOTSTRAP_REASON_CODE=compose-smoke",
-  `CLOUD_AGENTS_AUTH_CONFIG=${state}/auth.json`,
   `CLOUD_AGENTS_ACCESS_GRANT_KEY_FILE=${state}/access-grant.key`,
+  `CLOUD_AGENTS_TARGET_CREDENTIAL_KEY_FILE=${state}/target-credential.key`,
   `CLOUD_AGENTS_RUNTIME_ENV_FILE=${state}/runtime.env`,
   `CLOUD_AGENTS_PROVIDER_CREDENTIALS_DIR=${state}/provider-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_CAPABILITY_MATERIALIZATION_DIR=${state}/capability-materialization-control-plane`,
@@ -1027,6 +1113,22 @@ const values = [
   `CLOUD_AGENTS_SSH_CREDENTIALS_DIR=${state}/ssh-target-credentials`,
   `CLOUD_AGENTS_CONTROL_PLANE_TLS_DIR=${state}/control-plane-tls`,
   `CLOUD_AGENTS_CONTROL_PLANE_CA=${state}/ca.crt`,
+  `CLOUD_AGENTS_IDENTITY_TLS_DIR=${state}/identity-tls`,
+  `CLOUD_AGENTS_IDENTITY_CA_FILE=${state}/ca.crt`,
+  `CLOUD_AGENTS_IDENTITY_SIGNING_KEY_FILE=${state}/identity-signing.key`,
+  `CLOUD_AGENTS_IDENTITY_CSRF_KEY_FILE=${state}/identity-csrf.key`,
+  `CLOUD_AGENTS_IDENTITY_PROVIDER_FLOW_KEY_FILE=${state}/identity-provider-flow.key`,
+  `CLOUD_AGENTS_IDENTITY_PROVIDER_MATERIALS_DIR=${state}/identity-provider-materials`,
+  `CLOUD_AGENTS_IDENTITY_SETUP_PROOF_FILE=${state}/identity-setup.proof`,
+  `CLOUD_AGENTS_IDENTITY_INITIAL_PASSWORD_HASH_FILE=${state}/initial-password.hash`,
+  `CLOUD_AGENTS_ADMIN_WEB_IDENTITY_PROOF_FILE=${state}/admin-web-identity.proof`,
+  `CLOUD_AGENTS_USER_WEB_IDENTITY_PROOF_FILE=${state}/user-web-identity.proof`,
+  `CLOUD_AGENTS_CONTROL_PLANE_IDENTITY_PROOF_FILE=${state}/control-plane-identity.proof`,
+  `CLOUD_AGENTS_IDENTITY_CONTROL_PLANE_PROOF_FILE=${state}/identity-control-plane.proof`,
+  `CLOUD_AGENTS_ADMIN_WEB_TLS_DIR=${state}/admin-web-tls`,
+  `CLOUD_AGENTS_USER_WEB_TLS_DIR=${state}/user-web-tls`,
+  `CLOUD_AGENTS_ADMIN_WEB_ORIGIN=${adminAudience}`,
+  `CLOUD_AGENTS_USER_WEB_ORIGIN=${userAudience}`,
   `CLOUD_AGENTS_ACCESS_GATEWAY_TLS_DIR=${state}/access-gateway-tls`,
   `CLOUD_AGENTS_ACCESS_GATEWAY_SSH_HOST_KEY=${state}/access-gateway-ssh-host-key`,
   `CLOUD_AGENTS_WORKER_TLS_DIR=${state}/worker-tls`,
@@ -1054,8 +1156,8 @@ const managedAgentPrefixes = [
 ];
 writeFileSync(`${state}/compose.no-agent.env`, `${values.filter((value) =>
   !managedAgentPrefixes.some((prefix) => value.startsWith(prefix))).join("\n")}\n`);
-chmodSync(`${state}/auth.json`, 0o444);
 chmodSync(`${state}/access-grant.key`, 0o600);
+chmodSync(`${state}/target-credential.key`, 0o600);
 chmodSync(`${state}/opensandbox-api-key`, 0o600);
 chmodSync(`${state}/opensandbox.toml`, 0o600);
 chmodSync(`${state}/runtime.env`, 0o444);
@@ -1066,18 +1168,21 @@ chmodSync(`${state}/kubernetes-target-credentials/kubernetes-compose-target.toke
 chmodSync(`${state}/docker-proxy.mjs`, 0o400);
 chmodSync(`${state}/opensandbox-proxy.mjs`, 0o400);
 chmodSync(`${state}/kubernetes-api.mjs`, 0o400);
-chmodSync(`${state}/token`, 0o600);
-chmodSync(`${state}/admin-token`, 0o600);
-chmodSync(`${state}/admin-denied-token`, 0o600);
-chmodSync(`${state}/user-token`, 0o600);
-chmodSync(`${state}/remote-worker-bootstrap-token`, 0o600);
-chmodSync(`${state}/admin-curl.conf`, 0o600);
-chmodSync(`${state}/admin-denied-curl.conf`, 0o600);
-chmodSync(`${state}/user-curl.conf`, 0o600);
 chmodSync(`${state}/ssh-askpass.sh`, 0o700);
 chmodSync(`${state}/compose.env`, 0o600);
 chmodSync(`${state}/compose.no-agent.env`, 0o600);
 NODE
+
+identity_target="${image_platform%/*}-${image_platform#*/}"
+docker run --rm --platform "$image_platform" \
+  --entrypoint "/release/cloud-agents-identity-$identity_target" \
+  --volume "$candidate_directory:/release:ro" --volume "$smoke_directory:/state" \
+  postgres:17.6-bookworm hash-password \
+  --password-file /state/initial-password --output-file /state/initial-password.hash
+test "$(stat -f %Lp "$smoke_directory/initial-password.hash" 2>/dev/null || stat -c %a "$smoke_directory/initial-password.hash")" = 600 || {
+  echo "Identity password hash fixture is not private" >&2
+  exit 1
+}
 
 chmod 0444 "$smoke_directory"/target-worker-credentials/server.* \
   "$smoke_directory"/target-worker-credentials/client-ca.crt \
@@ -1138,6 +1243,8 @@ if [ -n "$no_agent_authority_matches" ]; then
   exit 1
 fi
 compose_base --profile bootstrap run --rm bootstrap >/dev/null
+compose_base run --rm migrate >/dev/null
+compose_base --profile identity-initialize run --rm identity-initialize >/dev/null
 docker run -d --name "$opensandbox_container" \
   --network "${project}_default" --network-alias opensandbox \
   --add-host host.docker.internal:host-gateway \
@@ -1191,7 +1298,7 @@ chmodSync(process.env.CLOUD_AGENTS_COMPOSE_OPEN_SANDBOX_CREDENTIAL, 0o444);
 NODE
 compose_base --profile tenant-bootstrap run --rm tenant-bootstrap >/dev/null
 compose_base up -d --build >/dev/null
-for service in postgres control-plane access-gateway admin-web user-web; do
+for service in postgres identity control-plane access-gateway admin-web user-web; do
   compose_base ps --services --status running | grep -Fx "$service" >/dev/null || {
     echo "default Compose service did not start: $service" >&2
     exit 1
@@ -1215,9 +1322,16 @@ for service_port in user-web:4173 admin-web:4174; do
   service=${service_port%:*}
   port=${service_port##*:}
   web_endpoint=$(compose_base port "$service" "$port")
-  curl --silent --show-error --fail --noproxy '*' "http://$web_endpoint/" >"$smoke_directory/no-agent-$service.html"
+  case "$service" in
+    admin-web) web_host=admin.compose-smoke.localhost ;;
+    user-web) web_host=user.compose-smoke.localhost ;;
+  esac
+  web_port=${web_endpoint##*:}
+  curl --silent --show-error --fail --noproxy '*' --cacert "$smoke_directory/ca.crt" \
+    --resolve "$web_host:$web_port:127.0.0.1" "https://$web_host:$web_port/" >"$smoke_directory/no-agent-$service.html"
   asset=$(sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' "$smoke_directory/no-agent-$service.html")
-  if [ -z "$asset" ] || ! curl --silent --show-error --fail --noproxy '*' "http://$web_endpoint$asset" >/dev/null; then
+  if [ -z "$asset" ] || ! curl --silent --show-error --fail --noproxy '*' --cacert "$smoke_directory/ca.crt" \
+    --resolve "$web_host:$web_port:127.0.0.1" "https://$web_host:$web_port$asset" >/dev/null; then
     echo "default Compose $service did not serve its packaged application assets" >&2
     cat "$smoke_directory/no-agent-$service.html" >&2
     compose_base exec -T "$service" sh -c 'find /opt/cloud-agents/web/dist -maxdepth 2 -type f -print; sed -n "1,20p" /opt/cloud-agents/web/dist/index.html' >&2 || true
@@ -1276,7 +1390,10 @@ wait_admin_web() {
     exit 1
   fi
   attempt=0
-  until curl --silent --show-error --fail "http://$admin_web_endpoint/healthz" >/dev/null 2>&1; do
+  admin_web_port=${admin_web_endpoint##*:}
+  until curl --silent --show-error --fail --noproxy '*' --cacert "$smoke_directory/ca.crt" \
+    --resolve "admin.compose-smoke.localhost:$admin_web_port:127.0.0.1" \
+    "https://admin.compose-smoke.localhost:$admin_web_port/healthz" >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
       compose logs --no-color --tail=200 admin-web control-plane >&2
@@ -1296,7 +1413,10 @@ wait_user_web() {
     exit 1
   fi
   attempt=0
-  until curl --silent --show-error --fail "http://$user_web_endpoint/healthz" >/dev/null 2>&1; do
+  user_web_port=${user_web_endpoint##*:}
+  until curl --silent --show-error --fail --noproxy '*' --cacert "$smoke_directory/ca.crt" \
+    --resolve "user.compose-smoke.localhost:$user_web_port:127.0.0.1" \
+    "https://user.compose-smoke.localhost:$user_web_port/healthz" >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
       compose logs --no-color --tail=200 user-web control-plane >&2
@@ -1595,17 +1715,34 @@ test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$admin_web_conta
 case "$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$admin_web_container")" in
   *'/var/run/docker.sock'* | *'credentials'* | *'capabilities'*) echo "Admin Web received infrastructure authority" >&2; exit 1 ;;
 esac
+admin_web_origin="https://admin.compose-smoke.localhost:${admin_web_endpoint##*:}"
+user_web_origin="https://user.compose-smoke.localhost:${user_web_endpoint##*:}"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" create \
+  "$admin_web_origin" "$smoke_directory/admin-account.json" tenant-compose-smoke \
+  compose-admin-automation admin tenant.admin tenant tenant-compose-smoke \
+  "$smoke_directory/automation-admin.credential"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+  "$admin_web_origin" "$smoke_directory/automation-admin.credential" tenant-compose-smoke \
+  "$smoke_directory/automation-admin"
+cp "$smoke_directory/automation-admin.token" "$smoke_directory/token"
+cp "$smoke_directory/automation-admin.token" "$smoke_directory/admin-token"
+cp "$smoke_directory/automation-admin.curl.conf" "$smoke_directory/admin-curl.conf"
+chmod 0600 "$smoke_directory/token" "$smoke_directory/admin-token" "$smoke_directory/admin-curl.conf"
+control_plane_origin="https://control-plane.compose-smoke.localhost:$control_plane_host_port"
+admin_cli_profile="$smoke_directory/admin-tenant.profile"
+"$cli" profile configure-service-account --web-endpoint "$admin_web_origin" \
+  --control-plane-endpoint "$control_plane_origin" --application admin \
+  --credential-file "$smoke_directory/automation-admin.credential" --tenant tenant-compose-smoke \
+  --ca-file "$smoke_directory/ca.crt" --profile "$admin_cli_profile" >/dev/null
 cloud_agentsctl() {
-  "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
-    --token-file "$smoke_directory/token" --tenant tenant-compose-smoke "$@"
+  "$cli" --profile "$admin_cli_profile" "$@"
 }
 cloud_agentsctl_user() {
-  "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
-    --token-file "$smoke_directory/user-token" --tenant tenant-compose-smoke "$@"
+  "$cli" --profile "$user_cli_profile" "$@"
 }
 cloud_agentsctl_gateway() {
-  "$cli" --endpoint "https://$gateway_endpoint" --ca-file "$smoke_directory/ca.crt" \
-    --token-file "$smoke_directory/gateway-grant-token" --tenant tenant-compose-smoke "$@"
+  "$cli" --profile "$user_cli_profile" --gateway-endpoint "https://$gateway_endpoint" \
+    --access-grant-file "$smoke_directory/gateway-grant-token" "$@"
 }
 control_plane_api() {
   auth_config=$1
@@ -1629,7 +1766,7 @@ cleanup_target_with_retry() {
     cleanup_request_id="$cleanup_request_prefix-$cleanup_attempt"
     cleanup_idempotency_key="$cleanup_request_prefix"
     cleanup_status=0
-    cleanup_output=$(cloud_agentsctl --project "$project_id" --target "$cleanup_target_id" \
+    cleanup_output=$(cloud_agentsctl --target "$cleanup_target_id" \
       --request-id "$cleanup_request_id" --idempotency-key "$cleanup_idempotency_key" \
       target cleanup --expected-generation "$cleanup_target_generation" --confirm-target-id "$cleanup_target_id" 2>&1) || cleanup_status=$?
     case "$cleanup_output" in
@@ -2692,16 +2829,109 @@ if [ "$cross_node_recovery" -eq 1 ] && { [ "$cross_node_environment" = docker ] 
 fi
 
 wait_ready
-organization_output=$(cloud_agentsctl_user --request-id compose-smoke-organizations organization list)
+organization_output=$(cloud_agentsctl --request-id compose-smoke-organizations organization list)
 case "$organization_output" in
   *'"uid":"organization-compose-smoke"'*) ;;
   *) echo "Compose bootstrap organization is unavailable" >&2; exit 1 ;;
 esac
-project_output=$(cloud_agentsctl_user --request-id compose-smoke-project-create \
+project_output=$(cloud_agentsctl --request-id compose-smoke-project-create \
   --idempotency-key compose-smoke-project-create project create --name "$project" \
   --display-name "Compose Smoke Project" --organization-id organization-compose-smoke)
 project_id=$(printf '%s' "$project_output" | node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(0,"utf8"));process.stdout.write(value.metadata.uid)')
 case "$project_id" in project-*) ;; *) echo "Compose project id is invalid" >&2; exit 1 ;; esac
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+  "$admin_web_origin" "$smoke_directory/automation-admin.credential" tenant-compose-smoke \
+  "$smoke_directory/automation-admin-project" "$project_id"
+cp "$smoke_directory/automation-admin-project.token" "$smoke_directory/token"
+cp "$smoke_directory/automation-admin-project.token" "$smoke_directory/admin-token"
+cp "$smoke_directory/automation-admin-project.token" "$smoke_directory/remote-worker-bootstrap-token"
+cp "$smoke_directory/automation-admin-project.curl.conf" "$smoke_directory/admin-curl.conf"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" create \
+  "$admin_web_origin" "$smoke_directory/admin-account.json" tenant-compose-smoke \
+  compose-user-automation user project.operator project "$project_id" \
+  "$smoke_directory/automation-user.credential"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+  "$user_web_origin" "$smoke_directory/automation-user.credential" tenant-compose-smoke \
+  "$smoke_directory/automation-user" "$project_id"
+cp "$smoke_directory/automation-user.token" "$smoke_directory/user-token"
+cp "$smoke_directory/automation-user.curl.conf" "$smoke_directory/user-curl.conf"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" create \
+  "$admin_web_origin" "$smoke_directory/admin-account.json" tenant-compose-smoke \
+  compose-denied-automation admin project.viewer project "$project_id" \
+  "$smoke_directory/automation-denied.credential"
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+  "$admin_web_origin" "$smoke_directory/automation-denied.credential" tenant-compose-smoke \
+  "$smoke_directory/automation-denied" "$project_id"
+cp "$smoke_directory/automation-denied.token" "$smoke_directory/admin-denied-token"
+cp "$smoke_directory/automation-denied.curl.conf" "$smoke_directory/admin-denied-curl.conf"
+chmod 0600 "$smoke_directory/token" "$smoke_directory/admin-token" "$smoke_directory/admin-curl.conf" \
+  "$smoke_directory/user-token" "$smoke_directory/user-curl.conf" "$smoke_directory/remote-worker-bootstrap-token" \
+  "$smoke_directory/admin-denied-token" "$smoke_directory/admin-denied-curl.conf"
+admin_cli_profile="$smoke_directory/admin-project.profile"
+user_cli_profile="$smoke_directory/user-project.profile"
+"$cli" profile configure-service-account --web-endpoint "$admin_web_origin" \
+  --control-plane-endpoint "$control_plane_origin" --application admin \
+  --credential-file "$smoke_directory/automation-admin.credential" --tenant tenant-compose-smoke \
+  --project "$project_id" --ca-file "$smoke_directory/ca.crt" --profile "$admin_cli_profile" >/dev/null
+"$cli" profile configure-service-account --web-endpoint "$user_web_origin" \
+  --control-plane-endpoint "$control_plane_origin" --application user \
+  --credential-file "$smoke_directory/automation-user.credential" --tenant tenant-compose-smoke \
+  --project "$project_id" --ca-file "$smoke_directory/ca.crt" --profile "$user_cli_profile" >/dev/null
+
+# identity-automation-renewal-functions:start
+replace_private_file() {
+  source_file=$1
+  destination_file=$2
+  temporary_file="$destination_file.next"
+  cp "$source_file" "$temporary_file" || return 1
+  chmod 0600 "$temporary_file" || return 1
+  mv -f "$temporary_file" "$destination_file"
+}
+refresh_automation_tokens() {
+  if ! NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+    "$admin_web_origin" "$smoke_directory/automation-admin.credential" tenant-compose-smoke \
+    "$smoke_directory/automation-refresh-admin" "$project_id"; then
+    return 1
+  fi
+  if ! NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+    "$user_web_origin" "$smoke_directory/automation-user.credential" tenant-compose-smoke \
+    "$smoke_directory/automation-refresh-user" "$project_id"; then
+    return 1
+  fi
+  if ! NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" node "$script_directory/identity-automation-fixture.mjs" exchange \
+    "$admin_web_origin" "$smoke_directory/automation-denied.credential" tenant-compose-smoke \
+    "$smoke_directory/automation-refresh-denied" "$project_id"; then
+    return 1
+  fi
+  replace_private_file "$smoke_directory/automation-refresh-admin.token" "$smoke_directory/token" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-admin.token" "$smoke_directory/admin-token" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-admin.token" "$smoke_directory/remote-worker-bootstrap-token" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-admin.curl.conf" "$smoke_directory/admin-curl.conf" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-user.token" "$smoke_directory/user-token" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-user.curl.conf" "$smoke_directory/user-curl.conf" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-denied.token" "$smoke_directory/admin-denied-token" || return 1
+  replace_private_file "$smoke_directory/automation-refresh-denied.curl.conf" "$smoke_directory/admin-denied-curl.conf" || return 1
+}
+automation_token_refresh_loop() {
+  automation_refresh_sleep_pid=
+  trap 'if [ -n "$automation_refresh_sleep_pid" ]; then kill "$automation_refresh_sleep_pid" >/dev/null 2>&1 || true; wait "$automation_refresh_sleep_pid" 2>/dev/null || true; fi; exit 0' HUP INT TERM
+  automation_refresh_wait() {
+    sleep "$1" &
+    automation_refresh_sleep_pid=$!
+    wait "$automation_refresh_sleep_pid"
+    automation_refresh_sleep_pid=
+  }
+  while automation_refresh_wait 240; do
+    until refresh_automation_tokens; do
+      echo "automation token refresh failed; retrying" >&2
+      automation_refresh_wait 15 || return 0
+    done
+  done
+}
+# identity-automation-renewal-functions:end
+refresh_automation_tokens
+automation_token_refresh_loop &
+automation_refresh_pid=$!
 
 remote_target_id=
 if [ "$remote_runtime" -eq 1 ]; then
@@ -2778,7 +3008,7 @@ NODE
     'const {createHash}=require("node:crypto");process.stdout.write("rwt-"+createHash("sha256").update(`tenant-compose-smoke|${process.env.CLOUD_AGENTS_COMPOSE_PROJECT_ID}|${process.env.CLOUD_AGENTS_COMPOSE_REMOTE_ENROLLMENT}`).digest("hex"))')
   attempt=0
   while :; do
-    if remote_target_output=$(cloud_agentsctl --project "$project_id" --target "$remote_target_id" \
+    if remote_target_output=$(cloud_agentsctl --target "$remote_target_id" \
       --request-id compose-remote-runtime-target-get target get 2>/dev/null); then
       case "$remote_target_output" in
         *'"targetKind":"remote-worker"'*'"observedPhase":"ready"'*) break ;;
@@ -2853,7 +3083,7 @@ NODE
       /node-output/install/run.sh >/dev/null
     attempt=0
     while :; do
-      if remote_target_restore_output=$(cloud_agentsctl --project "$project_id" --target "$remote_target_restore_id" \
+      if remote_target_restore_output=$(cloud_agentsctl --target "$remote_target_restore_id" \
         --request-id compose-remote-runtime-destination-target-get target get 2>/dev/null); then
         case "$remote_target_restore_output" in
           *'"targetKind":"remote-worker"'*'"observedPhase":"ready"'*) break ;;
@@ -2870,7 +3100,7 @@ NODE
   fi
 fi
 
-kubernetes_target_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+kubernetes_target_output=$(cloud_agentsctl --target kubernetes-compose-target \
   --request-id compose-smoke-kubernetes-target-register --idempotency-key compose-smoke-kubernetes-target-register \
   target register --target-name kubernetes-compose-target --kind kubernetes \
   --target-endpoint "https://host.docker.internal:$kubernetes_api_port" \
@@ -2879,14 +3109,14 @@ case "$kubernetes_target_output" in
   *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"unprobed"'*) ;;
   *) echo "Compose Kubernetes target was not registered" >&2; exit 1 ;;
 esac
-kubernetes_probe_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+kubernetes_probe_output=$(cloud_agentsctl --target kubernetes-compose-target \
   --request-id compose-smoke-kubernetes-target-probe --idempotency-key compose-smoke-kubernetes-target-probe \
   target probe --expected-generation 1)
 case "$kubernetes_probe_output" in
   *'"generation":1'*'"observedPhase":"ready"'*'"apiVersion":"1.34"'*'"engineVersion":"v1.34.2"'*'"os":"linux"'*'"architecture":"arm64"'*) ;;
   *) echo "Compose Kubernetes target probe did not become ready" >&2; exit 1 ;;
 esac
-kubernetes_target_get_output=$(cloud_agentsctl --project "$project_id" --target kubernetes-compose-target \
+kubernetes_target_get_output=$(cloud_agentsctl --target kubernetes-compose-target \
   --request-id compose-smoke-kubernetes-target-get target get)
 case "$kubernetes_target_get_output" in
   *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"ready"'*) ;;
@@ -2899,7 +3129,7 @@ case "$kubernetes_cleanup_output" in
 esac
 
 if [ "$kubernetes_runtime" -eq 1 ]; then
-  kubernetes_runtime_target_output=$(cloud_agentsctl --project "$project_id" --target "$kubernetes_runtime_target_id" \
+  kubernetes_runtime_target_output=$(cloud_agentsctl --target "$kubernetes_runtime_target_id" \
     --request-id compose-kubernetes-runtime-target-register --idempotency-key compose-kubernetes-runtime-target-register \
     target register --target-name "$kubernetes_runtime_target_id" --kind kubernetes \
     --target-endpoint "$kubernetes_target_endpoint" --credential-ref "$kubernetes_runtime_credential_ref")
@@ -2907,7 +3137,7 @@ if [ "$kubernetes_runtime" -eq 1 ]; then
     *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"unprobed"'*) ;;
     *) echo "Compose real Kubernetes Runtime target was not registered" >&2; exit 1 ;;
   esac
-  kubernetes_runtime_probe_output=$(cloud_agentsctl --project "$project_id" --target "$kubernetes_runtime_target_id" \
+  kubernetes_runtime_probe_output=$(cloud_agentsctl --target "$kubernetes_runtime_target_id" \
     --request-id compose-kubernetes-runtime-target-probe --idempotency-key compose-kubernetes-runtime-target-probe \
     target probe --expected-generation 1)
   case "$kubernetes_runtime_probe_output" in
@@ -2915,7 +3145,7 @@ if [ "$kubernetes_runtime" -eq 1 ]; then
     *) echo "Compose real Kubernetes Runtime target did not become ready" >&2; exit 1 ;;
   esac
   if [ "$cross_node_recovery" -eq 1 ] && [ "$cross_node_environment" = kubernetes ]; then
-    kubernetes_destination_target_output=$(cloud_agentsctl --project "$project_id" --target "$kubernetes_destination_target_id" \
+    kubernetes_destination_target_output=$(cloud_agentsctl --target "$kubernetes_destination_target_id" \
       --request-id compose-kubernetes-restore-target-register --idempotency-key compose-kubernetes-restore-target-register \
       target register --target-name "$kubernetes_destination_target_id" --kind kubernetes \
       --target-endpoint "$kubernetes_target_endpoint" --credential-ref "$kubernetes_destination_credential_ref")
@@ -2923,7 +3153,7 @@ if [ "$kubernetes_runtime" -eq 1 ]; then
       *'"generation":1'*'"targetKind":"kubernetes"'*'"observedPhase":"unprobed"'*) ;;
       *) echo "Compose real Kubernetes restore target was not registered" >&2; exit 1 ;;
     esac
-    kubernetes_destination_probe_output=$(cloud_agentsctl --project "$project_id" --target "$kubernetes_destination_target_id" \
+    kubernetes_destination_probe_output=$(cloud_agentsctl --target "$kubernetes_destination_target_id" \
       --request-id compose-kubernetes-restore-target-probe --idempotency-key compose-kubernetes-restore-target-probe \
       target probe --expected-generation 1)
     case "$kubernetes_destination_probe_output" in
@@ -2933,7 +3163,7 @@ if [ "$kubernetes_runtime" -eq 1 ]; then
   fi
 fi
 
-target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+target_output=$(cloud_agentsctl --target docker-compose-target \
   --request-id compose-smoke-target-register --idempotency-key compose-smoke-target-register \
   target register --target-name docker-compose-target --kind docker \
   --target-endpoint "https://host.docker.internal:$docker_proxy_port" \
@@ -2942,21 +3172,21 @@ case "$target_output" in
   *'"generation":1'*'"targetKind":"docker"'*'"observedPhase":"unprobed"'*) ;;
   *) echo "Compose Docker target was not registered" >&2; exit 1 ;;
 esac
-probe_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+probe_output=$(cloud_agentsctl --target docker-compose-target \
   --request-id compose-smoke-target-probe --idempotency-key compose-smoke-target-probe \
   target probe --expected-generation 1)
 case "$probe_output" in
   *'"generation":1'*'"observedPhase":"ready"'*'"apiVersion":'*'"engineVersion":'*) ;;
   *) echo "Compose Docker target probe did not become ready" >&2; exit 1 ;;
 esac
-target_get_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+target_get_output=$(cloud_agentsctl --target docker-compose-target \
   --request-id compose-smoke-target-get target get)
 case "$target_get_output" in
   *'"generation":1'*'"observedPhase":"ready"'*) ;;
   *) echo "Compose Docker target ready state was not persisted" >&2; exit 1 ;;
 esac
 if [ "$cross_node_recovery" -eq 1 ] && { [ "$cross_node_environment" = docker ] || [ "$remote_runtime" -eq 1 ]; }; then
-  destination_target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target-restore \
+  destination_target_output=$(cloud_agentsctl --target docker-compose-target-restore \
     --request-id compose-smoke-restore-target-register --idempotency-key compose-smoke-restore-target-register \
     target register --target-name docker-compose-target-restore --kind docker \
     --target-endpoint "https://host.docker.internal:$destination_docker_proxy_port" \
@@ -2965,7 +3195,7 @@ if [ "$cross_node_recovery" -eq 1 ] && { [ "$cross_node_environment" = docker ] 
     *'"generation":1'*'"targetKind":"docker"'*'"observedPhase":"unprobed"'*) ;;
     *) echo "Compose restore Docker target was not registered" >&2; exit 1 ;;
   esac
-  destination_probe_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target-restore \
+  destination_probe_output=$(cloud_agentsctl --target docker-compose-target-restore \
     --request-id compose-smoke-restore-target-probe --idempotency-key compose-smoke-restore-target-probe \
     target probe --expected-generation 1)
   case "$destination_probe_output" in
@@ -3033,15 +3263,15 @@ if (value.kind !== "WorkerReleasePage" || value.workerReleases?.length !== 1 ||
   throw new Error("Admin API Worker release catalog drifted");
 }
 NODE
-user_admin_release_file="$smoke_directory/user-admin-release-denied.json"
-user_admin_release_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_release_file="$smoke_directory/viewer-admin-release-denied.json"
+viewer_admin_release_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-release-denied" \
-  --output "$user_admin_release_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-release-denied" \
+  --output "$viewer_admin_release_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/worker-releases?pageSize=200")
-if [ "$user_admin_release_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_release_file"; then
-  echo "Compose ordinary User token was not denied by the Worker Release Admin API" >&2
+if [ "$viewer_admin_release_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_release_file"; then
+  echo "Compose Admin viewer token was not denied by the Worker Release Admin API" >&2
   exit 1
 fi
 upgrade_release_id=compose-worker-release-upgrade
@@ -3103,15 +3333,15 @@ if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
   throw new Error("Admin API Storage Policy audit drifted");
 }
 NODE
-user_admin_storage_file="$smoke_directory/user-admin-storage-denied.json"
-user_admin_storage_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_storage_file="$smoke_directory/viewer-admin-storage-denied.json"
+viewer_admin_storage_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-storage-denied" \
-  --output "$user_admin_storage_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-storage-denied" \
+  --output "$viewer_admin_storage_file" --write-out '%{http_code}' \
   "https://$endpoint$storage_policy_path")
-if [ "$user_admin_storage_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_storage_file"; then
-  echo "Compose ordinary User token was not denied by the Storage Policy Admin API" >&2
+if [ "$viewer_admin_storage_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_storage_file"; then
+  echo "Compose Admin viewer token was not denied by the Storage Policy Admin API" >&2
   exit 1
 fi
 network_policy_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-compose"
@@ -3171,15 +3401,15 @@ if (value.kind !== "AdminAuditEventPage" || value.events?.length !== 1 ||
   throw new Error("Admin API Network Policy audit drifted");
 }
 NODE
-user_admin_network_file="$smoke_directory/user-admin-network-denied.json"
-user_admin_network_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_network_file="$smoke_directory/viewer-admin-network-denied.json"
+viewer_admin_network_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-network-denied" \
-  --output "$user_admin_network_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-network-denied" \
+  --output "$viewer_admin_network_file" --write-out '%{http_code}' \
   "https://$endpoint$network_policy_path")
-if [ "$user_admin_network_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_network_file"; then
-  echo "Compose ordinary User token was not denied by the Network Policy Admin API" >&2
+if [ "$viewer_admin_network_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_network_file"; then
+  echo "Compose Admin viewer token was not denied by the Network Policy Admin API" >&2
   exit 1
 fi
 capability_session_flags=
@@ -3415,15 +3645,15 @@ if [ "$retry_container_count" -ne 0 ]; then
   exit 1
 fi
 
-user_admin_profile_file="$smoke_directory/user-admin-profile-denied.json"
-user_admin_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_profile_file="$smoke_directory/viewer-admin-profile-denied.json"
+viewer_admin_profile_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-profile-denied" \
-  --output "$user_admin_profile_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-profile-denied" \
+  --output "$viewer_admin_profile_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/environment-profiles?pageSize=200")
-if [ "$user_admin_profile_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_profile_file"; then
-  echo "Compose ordinary User token was not denied by the Profile Admin API" >&2
+if [ "$viewer_admin_profile_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_profile_file"; then
+  echo "Compose Admin viewer token was not denied by the Profile Admin API" >&2
   exit 1
 fi
 
@@ -3503,15 +3733,15 @@ if ! cmp -s "$quota_create_file" "$quota_replay_file"; then
   echo "Compose project Lease quota idempotent replay drifted" >&2
   exit 1
 fi
-user_admin_quota_file="$smoke_directory/user-admin-quota-denied.json"
-user_admin_quota_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_quota_file="$smoke_directory/viewer-admin-quota-denied.json"
+viewer_admin_quota_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-quota-denied" \
-  --output "$user_admin_quota_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-quota-denied" \
+  --output "$viewer_admin_quota_file" --write-out '%{http_code}' \
   "https://$endpoint$quota_path")
-if [ "$user_admin_quota_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_quota_file"; then
-  echo "Compose ordinary User token was not denied by the project Lease quota Admin API" >&2
+if [ "$viewer_admin_quota_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_quota_file"; then
+  echo "Compose Admin viewer token was not denied by the project Lease quota Admin API" >&2
   exit 1
 fi
 user_quota_file="$smoke_directory/user-quota.json"
@@ -3561,7 +3791,7 @@ if ! cmp -s "$user_environment_file" "$replayed_user_environment_file"; then
   exit 1
 fi
 
-lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+lease_output=$(cloud_agentsctl --lease "$profile_environment_id" \
   --request-id compose-smoke-profile-lease environment-lease get)
 case "$lease_output" in
   *'"generation":1'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_release_digest"'"'*'"targetId":"docker-compose-target"'*'"providerCredentialRef":"'"$target_provider_credentials_volume"'"'*'"workerEndpoint":"https://host.docker.internal:'*'"workerSpiffeId":"spiffe://cloud-agents.compose/worker-target"'*) ;;
@@ -3668,15 +3898,15 @@ if (value.kind !== "WorkerPage" || value.workers?.length !== 1 || !worker ||
 }
 NODE
 
-user_admin_workers_file="$smoke_directory/user-admin-workers-denied.json"
-user_admin_workers_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_workers_file="$smoke_directory/viewer-admin-workers-denied.json"
+viewer_admin_workers_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-workers-denied" \
-  --output "$user_admin_workers_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-workers-denied" \
+  --output "$viewer_admin_workers_file" --write-out '%{http_code}' \
   "https://$endpoint/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/workers?pageSize=200")
-if [ "$user_admin_workers_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_workers_file"; then
-  echo "Compose ordinary User token was not denied by the Worker Admin API" >&2
+if [ "$viewer_admin_workers_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_workers_file"; then
+  echo "Compose Admin viewer token was not denied by the Worker Admin API" >&2
   exit 1
 fi
 
@@ -3704,15 +3934,15 @@ process.stdout.write(JSON.stringify({
 }));
 NODE
 )
-user_admin_scheduling_file="$smoke_directory/user-admin-scheduling-denied.json"
-user_admin_scheduling_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_scheduling_file="$smoke_directory/viewer-admin-scheduling-denied.json"
+viewer_admin_scheduling_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-scheduling-denied" \
-  --output "$user_admin_scheduling_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-scheduling-denied" \
+  --output "$viewer_admin_scheduling_file" --write-out '%{http_code}' \
   "https://$endpoint$scheduling_path:scheduling-preview")
-if [ "$user_admin_scheduling_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_scheduling_file"; then
-  echo "Compose ordinary User token was not denied by the Target scheduling Admin API" >&2
+if [ "$viewer_admin_scheduling_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_scheduling_file"; then
+  echo "Compose Admin viewer token was not denied by the Target scheduling Admin API" >&2
   exit 1
 fi
 drain_operation_file="$smoke_directory/target-drain-operation.json"
@@ -3736,7 +3966,7 @@ if ! cmp -s "$drain_operation_file" "$replayed_drain_operation_file"; then
   echo "Compose Target drain was not idempotent" >&2
   exit 1
 fi
-drained_target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+drained_target_output=$(cloud_agentsctl --target docker-compose-target \
   --request-id compose-smoke-drained-target-get target get)
 case "$drained_target_output" in
   *'"schedulingState":"drained"'*'"observedPhase":"ready"'*) ;;
@@ -3808,15 +4038,15 @@ process.stdout.write(JSON.stringify({
 }));
 NODE
 )
-user_admin_upgrade_file="$smoke_directory/user-admin-upgrade-denied.json"
-user_admin_upgrade_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
+viewer_admin_upgrade_file="$smoke_directory/viewer-admin-upgrade-denied.json"
+viewer_admin_upgrade_status=$(curl --silent --show-error --cacert "$smoke_directory/ca.crt" \
   --config "$smoke_directory/admin-denied-curl.conf" --request GET \
-  --header "X-Request-ID: compose-smoke-user-admin-upgrade-denied" \
-  --output "$user_admin_upgrade_file" --write-out '%{http_code}' \
+  --header "X-Request-ID: compose-smoke-viewer-admin-upgrade-denied" \
+  --output "$viewer_admin_upgrade_file" --write-out '%{http_code}' \
   "https://$endpoint$lease_release_path:upgrade-preview?releaseDigest=sha256%3A${worker_upgrade_release_digest#sha256:}")
-if [ "$user_admin_upgrade_status" -ne 403 ] || \
-  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$user_admin_upgrade_file"; then
-  echo "Compose ordinary User token was not denied by the Lease upgrade Admin API" >&2
+if [ "$viewer_admin_upgrade_status" -ne 403 ] || \
+  ! grep -q '"code":"AUTHORIZATION_DENIED"' "$viewer_admin_upgrade_file"; then
+  echo "Compose Admin viewer token was not denied by the Lease upgrade Admin API" >&2
   exit 1
 fi
 upgrade_operation_file="$smoke_directory/lease-upgrade-operation.json"
@@ -3843,7 +4073,7 @@ if ! cmp -s "$upgrade_operation_file" "$upgrade_replay_file"; then
   echo "Compose Worker upgrade was not idempotent" >&2
   exit 1
 fi
-upgraded_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+upgraded_lease_output=$(cloud_agentsctl --lease "$profile_environment_id" \
   --request-id compose-smoke-upgraded-lease environment-lease get)
 case "$upgraded_lease_output" in
   *'"generation":2'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_upgrade_release_digest"'"'*) ;;
@@ -3911,7 +4141,7 @@ if ! cmp -s "$rollback_operation_file" "$rollback_replay_file"; then
   echo "Compose Worker rollback was not idempotent" >&2
   exit 1
 fi
-rolled_back_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+rolled_back_lease_output=$(cloud_agentsctl --lease "$profile_environment_id" \
   --request-id compose-smoke-rolled-back-lease environment-lease get)
 case "$rolled_back_lease_output" in
   *'"generation":3'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"releaseDigest":"'"$worker_release_digest"'"'*) ;;
@@ -3964,7 +4194,7 @@ if (value.action !== "target.resume" || value.resourceId !== "docker-compose-tar
   throw new Error("Admin API did not persist a succeeded Target resume operation");
 }
 NODE
-resumed_target_output=$(cloud_agentsctl --project "$project_id" --target docker-compose-target \
+resumed_target_output=$(cloud_agentsctl --target docker-compose-target \
   --request-id compose-smoke-resumed-target-get target get)
 case "$resumed_target_output" in
   *'"schedulingState":"active"'*'"observedPhase":"ready"'*) ;;
@@ -4005,10 +4235,15 @@ for (const action of ["target.drain", "target.upgrade", "target.rollback", "targ
 }
 NODE
 
-node "$smoke_directory/deployment/test/e2e/test-platform-compose-admin-web.mjs" \
-	"http://$admin_web_endpoint" "$smoke_directory/admin-token" "$smoke_directory/admin-denied-token" \
-	"$smoke_directory/user-token" \
-	tenant-compose-smoke "$project_id" "http://$user_web_endpoint"
+CLOUD_AGENTS_BROWSER_PROVISION_MEMBER=1 \
+CLOUD_AGENTS_BROWSER_TLS_SPKI="$browser_tls_spki" \
+  CLOUD_AGENTS_ADMIN_CAPTURE_AUTOMATION_CREDENTIAL_FILE="$smoke_directory/automation-admin.credential" \
+  CLOUD_AGENTS_ADMIN_CAPTURE_CONTROL_PLANE_URL="$control_plane_origin" \
+NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" \
+  node "$smoke_directory/deployment/test/e2e/test-platform-compose-admin-web.mjs" \
+	"https://admin.compose-smoke.localhost:${admin_web_endpoint##*:}" "$smoke_directory/admin-account.json" "$smoke_directory/admin-denied-account.json" \
+	"$smoke_directory/user-account.json" \
+	tenant-compose-smoke "$project_id" "https://user.compose-smoke.localhost:${user_web_endpoint##*:}"
 
 foundation_network_path="/v1/admin/tenants/tenant-compose-smoke/projects/$project_id/network-policies/network-foundation"
 foundation_network_body='{"expectedResourceVersion":"0","policyName":"network-foundation","userSummary":"Private Preview without outbound network","defaultEgress":"deny","allowedEgress":[],"ingressEnabled":false,"previewEnabled":true}'
@@ -4178,7 +4413,7 @@ while :; do
 done
 
 foundation_grant_file="$smoke_directory/foundation-grant.json"
-cloud_agentsctl_user --project "$project_id" --sandbox "$foundation_sandbox_id" \
+cloud_agentsctl_user --sandbox "$foundation_sandbox_id" \
   --request-id compose-smoke-foundation-grant --idempotency-key compose-smoke-foundation-grant \
   sandbox grant --expected-generation "$foundation_sandbox_generation" --ttl-seconds 300 >"$foundation_grant_file"
 foundation_grant_values=$(CLOUD_AGENTS_COMPOSE_GRANT_FILE="$foundation_grant_file" \
@@ -4198,10 +4433,10 @@ NODE
 foundation_grant_id=${foundation_grant_values%%|*}
 foundation_ssh_username=${foundation_grant_values#*|}
 
-cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-file-write files write --path gateway-proof.txt \
   --content-base64url Z2F0ZXdheS1maWxlCg >"$smoke_directory/gateway-file-write.json"
-gateway_file_read=$(cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+gateway_file_read=$(cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-file-read files read --path gateway-proof.txt)
 case "$gateway_file_read" in
   *'"contentBase64Url":"Z2F0ZXdheS1maWxlCg"'*) ;;
@@ -4209,34 +4444,34 @@ case "$gateway_file_read" in
 esac
 
 pty_create_file="$smoke_directory/gateway-pty-create.json"
-cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-pty-create pty create >"$pty_create_file"
 foundation_pty_id=$(CLOUD_AGENTS_COMPOSE_PTY_FILE="$pty_create_file" node -e \
   'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PTY_FILE,"utf8"));if(value.kind!=="SandboxPTYSession"||!value.sessionId)process.exit(1);process.stdout.write(value.sessionId)')
 gateway_pty_output=$(printf 'pwd; printf "gateway-pty-ok\\n"; exit\n' | \
-  cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+  cloud_agentsctl_gateway --grant "$foundation_grant_id" \
     --pty-session "$foundation_pty_id" --request-id compose-smoke-gateway-pty-attach \
     pty attach --takeover)
 case "$gateway_pty_output" in
   *'/workspace'*'gateway-pty-ok'*) ;;
   *) echo "Compose Access Gateway PTY route changed: $gateway_pty_output" >&2; exit 1 ;;
 esac
-cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --pty-session "$foundation_pty_id" --request-id compose-smoke-gateway-pty-delete \
   pty delete >/dev/null
 
 preview_source='require("http").createServer((_,response)=>response.end("gateway-preview-ok\n")).listen(3000,"0.0.0.0")'
 preview_content=$(CLOUD_AGENTS_COMPOSE_PREVIEW_SOURCE="$preview_source" node -e \
   'process.stdout.write(Buffer.from(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_SOURCE).toString("base64url"))')
-cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-preview-file files write --path gateway-preview.js \
   --content-base64url "$preview_content" >/dev/null
-cloud_agentsctl_user --timeout 60s --project "$project_id" --sandbox "$foundation_sandbox_id" \
+cloud_agentsctl_user --timeout 60s --sandbox "$foundation_sandbox_id" \
   --request-id compose-smoke-gateway-preview-start sandbox exec \
   --expected-generation "$foundation_sandbox_generation" \
   --command 'node /workspace/gateway-preview.js >/tmp/gateway-preview.log 2>&1 &' >/dev/null
 preview_file="$smoke_directory/gateway-preview.json"
-cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-preview-register preview register --port 3000 >"$preview_file"
 foundation_preview_path=$(CLOUD_AGENTS_COMPOSE_PREVIEW_FILE="$preview_file" node -e \
   'const {readFileSync}=require("node:fs");const value=JSON.parse(readFileSync(process.env.CLOUD_AGENTS_COMPOSE_PREVIEW_FILE,"utf8"));if(value.kind!=="SandboxPreviewPort"||!value.proxyPath)process.exit(1);process.stdout.write(value.proxyPath)')
@@ -4275,7 +4510,7 @@ gateway_cross_tenant_status=$(curl --silent --show-error --cacert "$smoke_direct
 test "$gateway_cross_tenant_status" -eq 403
 
 expired_grant_file="$smoke_directory/foundation-grant-expiring.json"
-cloud_agentsctl_user --project "$project_id" --sandbox "$foundation_sandbox_id" \
+cloud_agentsctl_user --sandbox "$foundation_sandbox_id" \
   --request-id compose-smoke-foundation-grant-expiring --idempotency-key compose-smoke-foundation-grant-expiring \
   sandbox grant --expected-generation "$foundation_sandbox_generation" --ttl-seconds 60 >"$expired_grant_file"
 expired_grant_values=$(CLOUD_AGENTS_COMPOSE_GRANT_FILE="$expired_grant_file" \
@@ -4333,7 +4568,7 @@ esac
 compose restart access-gateway >/dev/null
 wait_gateway
 printf '[127.0.0.1]:%s %s\n' "$gateway_ssh_port" "$foundation_ssh_public_key" >"$smoke_directory/gateway-known-hosts"
-gateway_file_replay=$(cloud_agentsctl_gateway --project "$project_id" --grant "$foundation_grant_id" \
+gateway_file_replay=$(cloud_agentsctl_gateway --grant "$foundation_grant_id" \
   --request-id compose-smoke-gateway-file-restart files read --path gateway-proof.txt)
 case "$gateway_file_replay" in
   *'"contentBase64Url":"Z2F0ZXdheS1maWxlCg"'*) ;;
@@ -4519,7 +4754,7 @@ run_capability_contract_negative() {
         mismatch_refs="--skill-bundle-refs-json [{\"bundleId\":\"$capability_skill_id\",\"version\":\"9.9.9\",\"digest\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}]"
         ;;
     esac
-    if ! cloud_agentsctl_user --project "$project_id" --session "$mismatch_session_id" \
+    if ! cloud_agentsctl_user --session "$mismatch_session_id" \
       --request-id "$negative_prefix-mismatch-$capability_mismatch_kind" \
       --idempotency-key "$negative_prefix-mismatch-$capability_mismatch_kind" \
       session create --provider "$negative_provider" --workspace "$negative_workspace_id" \
@@ -4532,11 +4767,11 @@ run_capability_contract_negative() {
     fi
     mismatch_turn_id="turn-$negative_prefix-mismatch-$capability_mismatch_kind"
     mismatch_execution_id="execution-$negative_prefix-mismatch-$capability_mismatch_kind"
-    cloud_agentsctl_user --project "$project_id" --session "$mismatch_session_id" --turn "$mismatch_turn_id" \
+    cloud_agentsctl_user --session "$mismatch_session_id" --turn "$mismatch_turn_id" \
       --request-id "$negative_prefix-mismatch-$capability_mismatch_kind-turn" \
       --idempotency-key "$negative_prefix-mismatch-$capability_mismatch_kind-turn" \
       turn create --input "This execution must fail before Runtime opens." >/dev/null
-    if cloud_agentsctl_user --project "$project_id" --session "$mismatch_session_id" --turn "$mismatch_turn_id" \
+    if cloud_agentsctl_user --session "$mismatch_session_id" --turn "$mismatch_turn_id" \
       --execution "$mismatch_execution_id" \
       --request-id "$negative_prefix-mismatch-$capability_mismatch_kind-execution" \
       --idempotency-key "$negative_prefix-mismatch-$capability_mismatch_kind-execution" \
@@ -4551,7 +4786,7 @@ run_capability_contract_negative() {
       exit 1
     fi
     mismatch_events_file="$smoke_directory/$mismatch_execution_id-events.json"
-    cloud_agentsctl_user --project "$project_id" --session "$mismatch_session_id" \
+    cloud_agentsctl_user --session "$mismatch_session_id" \
       --request-id "$negative_prefix-mismatch-$capability_mismatch_kind-events" \
       events list --limit 64 >"$mismatch_events_file"
     CLOUD_AGENTS_COMPOSE_EVENTS_FILE="$mismatch_events_file" \
@@ -4813,7 +5048,7 @@ EOF
   fi
 fi
 
-codex_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
+codex_session_output=$(cloud_agentsctl_user --lease "$profile_environment_id" \
   --session session-compose-smoke \
   --request-id compose-smoke-session-create --idempotency-key compose-smoke-session-create \
   session create --provider codex)
@@ -4821,7 +5056,7 @@ case "$codex_session_output" in
   *'"providerKind":"codex"'*'"environmentLeaseId":"'"$profile_environment_id"'"'*'"environmentProfileId":"'"$profile_id"'"'*'"environmentProfileVersion":1'*) ;;
   *) echo "Compose User token did not create the Profile-bound Codex Session" >&2; exit 1 ;;
 esac
-codex_turn_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+codex_turn_output=$(cloud_agentsctl_user --session session-compose-smoke \
   --turn turn-compose-smoke \
   --request-id compose-smoke-turn-create --idempotency-key compose-smoke-turn-create \
   turn create --input "verify packaged Compose Runtime")
@@ -4829,14 +5064,14 @@ case "$codex_turn_output" in
   *'"state":"queued"'*) ;;
   *) echo "Compose User token did not persist the Codex Turn" >&2; exit 1 ;;
 esac
-claude_session_output=$(cloud_agentsctl_user --project "$project_id" --lease "$profile_environment_id" \
+claude_session_output=$(cloud_agentsctl_user --lease "$profile_environment_id" \
   --session session-compose-smoke-claude --request-id compose-smoke-claude-session-create \
   --idempotency-key compose-smoke-claude-session-create session create --provider claudeAgent)
 case "$claude_session_output" in
   *'"providerKind":"claudeAgent"'*'"environmentLeaseId":"'"$profile_environment_id"'"'*'"environmentProfileId":"'"$profile_id"'"'*'"environmentProfileVersion":1'*) ;;
   *) echo "Compose User token did not create the Profile-bound Claude Code Session" >&2; exit 1 ;;
 esac
-claude_turn_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke-claude \
+claude_turn_output=$(cloud_agentsctl_user --session session-compose-smoke-claude \
   --turn turn-compose-smoke-claude --request-id compose-smoke-claude-turn-create \
   --idempotency-key compose-smoke-claude-turn-create turn create --input "verify packaged Compose Runtime")
 case "$claude_turn_output" in
@@ -4845,7 +5080,7 @@ case "$claude_turn_output" in
 esac
 if [ -z "$real_provider_credentials_directory" ]; then
   set +e
-  execute_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  execute_output=$(cloud_agentsctl_user --session session-compose-smoke \
     --turn turn-compose-smoke --execution execution-compose-smoke \
     --request-id compose-smoke-execution --idempotency-key compose-smoke-execution \
     execution execute --runtime-mode approval-required --interaction-mode default \
@@ -4856,14 +5091,14 @@ if [ -z "$real_provider_credentials_directory" ]; then
     echo "Compose Runtime failure boundary changed: exit=$execute_status output=$execute_output" >&2
     exit 1
   fi
-  execution_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  execution_output=$(cloud_agentsctl_user --session session-compose-smoke \
     --turn turn-compose-smoke --execution execution-compose-smoke \
     --request-id compose-smoke-execution-get execution get)
   case "$execution_output" in
     *'"state":"failed"'*'"errorCode":"runtime_open_failed"'*) ;;
     *) echo "Compose Runtime terminal failure was not persisted: $execution_output" >&2; exit 1 ;;
   esac
-  events_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  events_output=$(cloud_agentsctl_user --session session-compose-smoke \
     --execution execution-compose-smoke --request-id compose-smoke-events \
     events watch --limit 1 --until-terminal)
   case "$events_output" in
@@ -4874,7 +5109,7 @@ fi
 
 compose restart control-plane >/dev/null
 wait_ready
-restarted_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+restarted_lease_output=$(cloud_agentsctl --lease "$profile_environment_id" \
   --request-id compose-smoke-restarted-lease environment-lease get)
 case "$restarted_lease_output" in
   *'"generation":3'*'"observedPhase":"ready"'*'"cleanupPhase":"none"'*'"targetId":"docker-compose-target"'*) ;;
@@ -4897,7 +5132,7 @@ if (value.environmentId !== process.env.CLOUD_AGENTS_COMPOSE_ENVIRONMENT_ID ||
 }
 NODE
 if [ -z "$real_provider_credentials_directory" ]; then
-  restarted_execution_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  restarted_execution_output=$(cloud_agentsctl_user --session session-compose-smoke \
     --turn turn-compose-smoke --execution execution-compose-smoke \
     --request-id compose-smoke-restarted-execution execution get)
   case "$restarted_execution_output" in
@@ -4921,7 +5156,7 @@ execute_real_provider_with_mcp_approvals() {
   approval_current_file="$approval_execution_file.current"
   (
     set +e
-    cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
+    cloud_agentsctl_user --timeout 10m --session "$approval_session_id" --turn "$approval_turn_id" \
       --execution "$approval_execution_id" --request-id "$approval_request_prefix" \
       --idempotency-key "$approval_execution_idempotency_key" execution execute \
       --runtime-mode "$approval_runtime_mode" --interaction-mode default $capability_execution_flags --input "$approval_prompt" \
@@ -4933,7 +5168,7 @@ execute_real_provider_with_mcp_approvals() {
   attempt=0
   while [ ! -f "$approval_status_file" ]; do
     if [ -s "$approval_current_file" ]; then unlink "$approval_current_file" 2>/dev/null || true; fi
-    if cloud_agentsctl_user --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
+    if cloud_agentsctl_user --session "$approval_session_id" --turn "$approval_turn_id" \
       --execution "$approval_execution_id" --request-id "$approval_request_prefix-poll-$attempt" execution get \
       >"$approval_current_file" 2>/dev/null; then
       approval_request=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$approval_current_file" \
@@ -4976,7 +5211,7 @@ NODE
       if [ -n "$approval_request" ]; then
         approval_generation=${approval_request%%|*}
         approval_request_id=${approval_request#*|}
-        cloud_agentsctl_user --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
+        cloud_agentsctl_user --session "$approval_session_id" --turn "$approval_turn_id" \
           --execution "$approval_execution_id" --request-id "$approval_request_prefix-approve-$attempt" \
           --idempotency-key "$approval_request_prefix-approve-$attempt" execution resolve-approval \
           --generation "$approval_generation" --interaction-request "$approval_request_id" --decision accept >/dev/null
@@ -4996,7 +5231,7 @@ NODE
   approval_status=$(cat "$approval_status_file")
   approval_execute_pid=
   if [ "$approval_status" -ne 0 ]; then
-    cloud_agentsctl_user --project "$project_id" --session "$approval_session_id" --turn "$approval_turn_id" \
+    cloud_agentsctl_user --session "$approval_session_id" --turn "$approval_turn_id" \
       --execution "$approval_execution_id" --request-id "$approval_request_prefix-failure" execution get \
       >"$approval_current_file" 2>/dev/null || true
     failure_fixture_directory=
@@ -5054,7 +5289,7 @@ execute_real_provider_with_safe_retry() {
       attempt_turn_id="$retry_turn_id-retry-$attempt"
       attempt_execution_id="$base_execution_id-retry-$attempt"
       attempt_request_suffix="-retry-$attempt"
-      cloud_agentsctl_user --project "$project_id" --session "$retry_session_id" --turn "$attempt_turn_id" \
+      cloud_agentsctl_user --session "$retry_session_id" --turn "$attempt_turn_id" \
         --request-id "$request_prefix$attempt_request_suffix-turn" \
         --idempotency-key "$request_prefix$attempt_request_suffix-turn" \
         turn create --input "$retry_prompt" >/dev/null || return 1
@@ -5066,7 +5301,7 @@ execute_real_provider_with_safe_retry() {
         completed_real_provider_execution_id=$attempt_execution_id
         return 0
       fi
-    elif cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$retry_session_id" --turn "$attempt_turn_id" \
+    elif cloud_agentsctl_user --timeout 10m --session "$retry_session_id" --turn "$attempt_turn_id" \
         --execution "$attempt_execution_id" --request-id "$request_prefix$attempt_request_suffix" \
         --idempotency-key "$request_prefix$attempt_request_suffix" execution execute \
         --runtime-mode full-access --interaction-mode default $capability_execution_flags --input "$retry_prompt" >"$execution_file"; then
@@ -5076,7 +5311,7 @@ execute_real_provider_with_safe_retry() {
     fi
 
     failure_file="$execution_file.failure-$attempt"
-    cloud_agentsctl_user --project "$project_id" --session "$retry_session_id" --turn "$attempt_turn_id" \
+    cloud_agentsctl_user --session "$retry_session_id" --turn "$attempt_turn_id" \
       --execution "$attempt_execution_id" --request-id "$request_prefix$attempt_request_suffix-failed" \
       execution get >"$failure_file" || return 1
     if [ "$attempt" -ge 3 ] || ! CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$failure_file" node <<'NODE'
@@ -5193,6 +5428,8 @@ NODE
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
+      CLOUD_AGENTS_CLI_PROFILE="$user_cli_profile" \
+      CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE="$admin_cli_profile" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
       CLOUD_AGENTS_E2E_LEASE_ID="$recovery_lease_id" \
@@ -5208,8 +5445,6 @@ NODE
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$recovery_target_id" \
       CLOUD_AGENTS_E2E_MCP_FIXTURE_CONTAINER="$mcp_fixture_container" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
-      CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
-      CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
       CLOUD_AGENTS_E2E_ADMIN_TOKEN_FILE="$smoke_directory/admin-token" \
       CLOUD_AGENTS_E2E_ADMIN_CURL_CONFIG="$smoke_directory/admin-curl.conf" \
       CLOUD_AGENTS_E2E_RECOVERY_ONLY=1 \
@@ -5240,6 +5475,8 @@ NODE
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
+      CLOUD_AGENTS_CLI_PROFILE="$user_cli_profile" \
+      CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE="$admin_cli_profile" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
       CLOUD_AGENTS_E2E_WORKSPACE_ID="$real_provider_workspace_id" \
@@ -5252,8 +5489,6 @@ NODE
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
       CLOUD_AGENTS_E2E_WORKER_CONTAINER="$recovery_worker_container" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
-      CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
-      CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
       CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$recovery_runtime_id" \
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$recovery_target_id" \
       CLOUD_AGENTS_E2E_RECOVERY_ONLY=1 \
@@ -5312,12 +5547,12 @@ run_capability_transport_recovery() {
   transport_fault_prompt="Call the managed MCP tool named $transport_side_effect_tool exactly once. Do not call any other tool and do not retry it. Wait for its result; if the transport disconnects, fail closed without claiming success."
   transport_reconnect_prompt="Call the managed MCP tool named $transport_marker_tool exactly once. Do not call any other tool. Reply done only after it succeeds."
 
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+  cloud_agentsctl_user --session "$transport_session_id" \
     --request-id "$transport_prefix-session" --idempotency-key "$transport_prefix-session" \
     session create --provider "$transport_provider_kind" $capability_session_flags --workspace "$real_provider_workspace_id" \
     --sandbox "$real_provider_sandbox_id" --sandbox-generation "$real_provider_sandbox_generation" \
     --environment-profile "$real_provider_environment_profile_id" --environment-profile-version 1 >/dev/null
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --request-id "$transport_prefix-disconnect-turn" --idempotency-key "$transport_prefix-disconnect-turn" \
     turn create --input "$transport_fault_prompt" >/dev/null
 
@@ -5333,11 +5568,11 @@ run_capability_transport_recovery() {
   fi
   wait_capability_mcp_disconnect_commit
   transport_fault_terminal="$smoke_directory/$transport_fault_execution_id-terminal.json"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-terminal" \
     execution get >"$transport_fault_terminal"
   transport_fault_events="$smoke_directory/$transport_fault_execution_id-events.json"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+  cloud_agentsctl_user --session "$transport_session_id" \
     --request-id "$transport_prefix-disconnect-events" events list --limit 64 >"$transport_fault_events"
   transport_side_effects_after_fault=$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')
   transport_requests_after_fault=$(capability_mcp_tool_call_count)
@@ -5351,7 +5586,7 @@ run_capability_transport_recovery() {
   assert_capability_mcp_listener_from_runtime_netns
   attempt=0
   while :; do
-    cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+    cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
       --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-expiry" \
       execution get >"$transport_fault_terminal"
     if CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$transport_fault_terminal" node -e \
@@ -5367,7 +5602,7 @@ run_capability_transport_recovery() {
   done
   transport_blocked_file="$smoke_directory/$transport_fault_execution_id-blocked.log"
   set +e
-  cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --timeout 60s --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-execution" \
     --idempotency-key "$transport_prefix-disconnect-execution" execution execute \
     --runtime-mode approval-required --interaction-mode default $capability_execution_flags --input "$transport_fault_prompt" \
@@ -5383,7 +5618,7 @@ run_capability_transport_recovery() {
     return 1
   fi
   transport_fault_reconcile="$smoke_directory/$transport_fault_execution_id-awaiting-reconciliation.json"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-reconcile-state" \
     execution get >"$transport_fault_reconcile"
   transport_reconcile_values=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$transport_fault_reconcile" node -e \
@@ -5393,21 +5628,21 @@ run_capability_transport_recovery() {
   sync_capability_mcp_fixture
   test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')" -eq "$transport_side_effects_after_fault"
   test "$(capability_mcp_tool_call_count)" -eq "$transport_requests_after_fault"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-reconcile" \
     --idempotency-key "$transport_prefix-disconnect-reconcile" execution reconcile \
     --generation "$transport_reconcile_generation" --checkpoint-digest "$transport_reconcile_checkpoint_digest" \
     --outcome confirmed >/dev/null
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-cancel" \
     --idempotency-key "$transport_prefix-disconnect-cancel" execution cancel \
     --generation "$transport_reconcile_generation" >/dev/null
   transport_fault_cancelled="$smoke_directory/$transport_fault_execution_id-cancelled.json"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_fault_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_fault_turn_id" \
     --execution "$transport_fault_execution_id" --request-id "$transport_prefix-disconnect-cancelled" \
     execution get >"$transport_fault_cancelled"
 
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" --turn "$transport_reconnect_turn_id" \
+  cloud_agentsctl_user --session "$transport_session_id" --turn "$transport_reconnect_turn_id" \
     --request-id "$transport_prefix-reconnect-turn" --idempotency-key "$transport_prefix-reconnect-turn" \
     turn create --input "$transport_reconnect_prompt" >/dev/null
   transport_reconnect_file="$smoke_directory/$transport_reconnect_execution_id.json"
@@ -5419,7 +5654,7 @@ run_capability_transport_recovery() {
   test "$(wc -l <"$mcp_fixture_side_effect_file" 2>/dev/null || printf '0')" -eq "$transport_side_effects_after_fault"
   test "$(capability_mcp_tool_call_count)" -eq $((transport_requests_after_fault + 1))
   transport_events="$smoke_directory/$transport_reconnect_execution_id-events.json"
-  cloud_agentsctl_user --project "$project_id" --session "$transport_session_id" \
+  cloud_agentsctl_user --session "$transport_session_id" \
     --request-id "$transport_prefix-reconnect-events" events list --limit 64 >"$transport_events"
 
   CLOUD_AGENTS_COMPOSE_FAULT_EXECUTION_FILE="$transport_fault_reconcile" \
@@ -5579,12 +5814,12 @@ run_real_provider_turn() {
     prompt="$mcp_instruction Then $skill_instruction. Follow it to $artifact_instruction. Do not modify any other file or call any other tool. Only then reply done."
   fi
 
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  cloud_agentsctl_user --session "$session_id" \
     --request-id "$real_provider_run_prefix-$provider_slug-session" --idempotency-key "$real_provider_run_prefix-$provider_slug-session" \
     session create --provider "$provider_kind" $capability_session_flags --workspace "$real_provider_workspace_id" \
     --sandbox "$real_provider_sandbox_id" --sandbox-generation "$real_provider_sandbox_generation" \
     --environment-profile "$real_provider_environment_profile_id" --environment-profile-version 1 >/dev/null
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
     --request-id "$real_provider_run_prefix-$provider_slug-turn" --idempotency-key "$real_provider_run_prefix-$provider_slug-turn" \
     turn create --input "$prompt" >/dev/null
   execution_file="$smoke_directory/$execution_id.json"
@@ -5703,7 +5938,7 @@ process.stdout.write(String(indexes[0]));
 NODE
   )
   artifact_file="$smoke_directory/$provider_slug-artifact.txt"
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$real_provider_run_prefix-$provider_slug-artifact" \
     execution download-artifact --message-index "$artifact_index" >"$artifact_file"
   CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE="$artifact_file" \
@@ -5713,7 +5948,7 @@ const actual = readFileSync(process.env.CLOUD_AGENTS_COMPOSE_ARTIFACT_FILE);
 const expected = Buffer.from(`${process.env.CLOUD_AGENTS_COMPOSE_EXPECTED_CONTENT}\n`);
 if (!actual.equals(expected)) throw new Error("real Provider generated-file Artifact content changed");
 NODE
-  real_events_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" \
+  real_events_output=$(cloud_agentsctl_user --timeout 60s --session "$session_id" \
     --execution "$execution_id" --request-id "$real_provider_run_prefix-$provider_slug-events" \
     events watch --limit 64 --until-terminal)
   case "$real_events_output" in
@@ -5736,7 +5971,7 @@ NODE
   else
     followup_prompt="Read $artifact_prompt_path and reply with its exact single line. Do not modify any file."
   fi
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$followup_turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$followup_turn_id" \
     --request-id "$real_provider_run_prefix-$provider_slug-followup-turn" --idempotency-key "$real_provider_run_prefix-$provider_slug-followup-turn" \
     turn create --input "$followup_prompt" >/dev/null
   followup_file="$smoke_directory/$followup_execution_id.json"
@@ -5823,19 +6058,19 @@ NODE
       revoked_session_id="session-$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind"
       revoked_turn_id="turn-$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind"
       revoked_execution_id="execution-$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind"
-      cloud_agentsctl_user --project "$project_id" --session "$revoked_session_id" \
+      cloud_agentsctl_user --session "$revoked_session_id" \
         --request-id "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-session" \
         --idempotency-key "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-session" \
         session create --provider "$provider_kind" --workspace "$real_provider_workspace_id" \
         --sandbox "$real_provider_sandbox_id" --sandbox-generation "$real_provider_sandbox_generation" \
         --environment-profile "$real_provider_environment_profile_id" --environment-profile-version 1 >/dev/null
-      cloud_agentsctl_user --project "$project_id" --session "$revoked_session_id" --turn "$revoked_turn_id" \
+      cloud_agentsctl_user --session "$revoked_session_id" --turn "$revoked_turn_id" \
         --request-id "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-turn" \
         --idempotency-key "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-turn" \
         turn create --input "This execution must fail before Runtime opens." >/dev/null
       revoked_execution_file="$smoke_directory/$revoked_execution_id.json"
       revoked_execution_error="$smoke_directory/$revoked_execution_id.err"
-      if cloud_agentsctl_user --project "$project_id" --session "$revoked_session_id" --turn "$revoked_turn_id" \
+      if cloud_agentsctl_user --session "$revoked_session_id" --turn "$revoked_turn_id" \
         --execution "$revoked_execution_id" --request-id "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-execution" \
         --idempotency-key "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-execution" \
         execution execute --runtime-mode full-access --interaction-mode default $revoked_capability_flags \
@@ -5849,7 +6084,7 @@ NODE
         exit 1
       fi
       revoked_events_file="$smoke_directory/$revoked_execution_id-events.json"
-      cloud_agentsctl_user --project "$project_id" --session "$revoked_session_id" \
+      cloud_agentsctl_user --session "$revoked_session_id" \
         --request-id "$real_provider_run_prefix-$provider_slug-revoked-$revoked_capability_kind-events" \
         events list --limit 64 >"$revoked_events_file"
       CLOUD_AGENTS_COMPOSE_EVENTS_FILE="$revoked_events_file" \
@@ -5888,9 +6123,9 @@ assert_real_event_stream_resume() {
   events_prefix="$real_provider_run_prefix-$provider_slug"
   first_page_file="$smoke_directory/$provider_slug-events-first-page.json"
   baseline_file="$smoke_directory/$provider_slug-events-baseline.json"
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  cloud_agentsctl_user --session "$session_id" \
     --request-id "$events_prefix-events-first-page" events list --limit 1 >"$first_page_file"
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  cloud_agentsctl_user --session "$session_id" \
     --request-id "$events_prefix-events-baseline" events list --limit 64 >"$baseline_file"
   resume_cursor=$(CLOUD_AGENTS_COMPOSE_EVENTS_FILE="$first_page_file" node <<'NODE'
 const { readFileSync } = require("node:fs");
@@ -5905,9 +6140,7 @@ NODE
   interrupted_file="$smoke_directory/$provider_slug-events-interrupted.ndjson"
   interrupted_error_file="$smoke_directory/$provider_slug-events-interrupted.err"
   set +e
-  "$cli" --endpoint "https://$endpoint" --ca-file "$smoke_directory/ca.crt" \
-    --token-file "$smoke_directory/user-token" --tenant tenant-compose-smoke --timeout 30s \
-    --project "$project_id" --session "$session_id" \
+  "$cli" --profile "$user_cli_profile" --timeout 30s --session "$session_id" \
     --request-id "$events_prefix-events-interrupted" events watch --cursor "$resume_cursor" \
     --limit 1 --poll-interval 1s >"$interrupted_file" 2>"$interrupted_error_file" &
   watch_pid=$!
@@ -5943,7 +6176,7 @@ NODE
   fi
 
   resumed_file="$smoke_directory/$provider_slug-events-resumed.ndjson"
-  cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" \
+  cloud_agentsctl_user --timeout 60s --session "$session_id" \
     --execution "$execution_id" --request-id "$events_prefix-events-resumed" \
     events watch --cursor "$resume_cursor" --limit 64 --until-terminal >"$resumed_file"
   CLOUD_AGENTS_COMPOSE_EVENTS_BASELINE_FILE="$baseline_file" \
@@ -6158,7 +6391,7 @@ move_codex_recovery_to_destination() {
     "/v1/tenants/tenant-compose-smoke/projects/$project_id/sessions/$session_id" \
     compose-recovery-session-rebound >"$smoke_directory/recovery-session-rebound.json"
   recovery_session=$(cat "$smoke_directory/recovery-session-rebound.json")
-  recovery_session_cli=$(cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  recovery_session_cli=$(cloud_agentsctl_user --session "$session_id" \
     --request-id compose-recovery-session-rebound-cli session get)
   CLOUD_AGENTS_COMPOSE_SESSION="$recovery_session" CLOUD_AGENTS_COMPOSE_SESSION_CLI="$recovery_session_cli" \
   CLOUD_AGENTS_COMPOSE_WORKSPACE="$foundation_agent_workspace_id" \
@@ -6331,7 +6564,7 @@ NODE
     "/v1/tenants/tenant-compose-smoke/projects/$project_id/sessions/$session_id" \
     compose-kubernetes-recovery-session-rebound >"$smoke_directory/kubernetes-recovery-session-rebound.json"
   recovery_session=$(cat "$smoke_directory/kubernetes-recovery-session-rebound.json")
-  recovery_session_cli=$(cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  recovery_session_cli=$(cloud_agentsctl_user --session "$session_id" \
     --request-id compose-kubernetes-recovery-session-rebound-cli session get)
   CLOUD_AGENTS_COMPOSE_SESSION="$recovery_session" CLOUD_AGENTS_COMPOSE_SESSION_CLI="$recovery_session_cli" \
   CLOUD_AGENTS_COMPOSE_WORKSPACE="$kubernetes_agent_workspace_id" \
@@ -6369,7 +6602,7 @@ run_recovery_sandbox_probe() {
   probe_error_file="$smoke_directory/$recovery_prefix-$probe_request_suffix.err"
   probe_attempt=0
   while :; do
-    if probe_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --sandbox "$recovery_sandbox_id" \
+    if probe_output=$(cloud_agentsctl_user --timeout 60s --sandbox "$recovery_sandbox_id" \
       --request-id "$recovery_prefix-$probe_request_suffix" sandbox exec --expected-generation "$recovery_sandbox_generation" \
       --command "$probe_command" 2>"$probe_error_file"); then
       printf '%s' "$probe_output"
@@ -6562,7 +6795,7 @@ NODE
     "/v1/tenants/tenant-compose-smoke/projects/$project_id/sessions/$session_id" \
     compose-remote-recovery-session-rebound >"$smoke_directory/remote-recovery-session-rebound.json"
   recovery_session=$(cat "$smoke_directory/remote-recovery-session-rebound.json")
-  recovery_session_cli=$(cloud_agentsctl_user --project "$project_id" --session "$session_id" --request-id compose-remote-recovery-session-rebound-cli session get)
+  recovery_session_cli=$(cloud_agentsctl_user --session "$session_id" --request-id compose-remote-recovery-session-rebound-cli session get)
   CLOUD_AGENTS_COMPOSE_SESSION="$recovery_session" CLOUD_AGENTS_COMPOSE_SESSION_CLI="$recovery_session_cli" \
   CLOUD_AGENTS_COMPOSE_WORKSPACE="$remote_agent_workspace_id" CLOUD_AGENTS_COMPOSE_SANDBOX="$remote_agent_sandbox_id" \
   CLOUD_AGENTS_COMPOSE_GENERATION="$remote_agent_generation" node -e \
@@ -6661,12 +6894,12 @@ run_real_provider_recovery() {
   recovery_snapshot_archive_path=
   recovery_snapshot_raw_sha256=
 
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" \
+  cloud_agentsctl_user --session "$session_id" \
     --request-id "$recovery_prefix-session" --idempotency-key "$recovery_prefix-session" \
     session create --provider "$recovery_provider_kind" $recovery_session_flags --workspace "$recovery_workspace_id" \
     --sandbox "$recovery_sandbox_id" --sandbox-generation "$recovery_sandbox_generation" \
     --environment-profile "$recovery_environment_profile_id" --environment-profile-version 1 >/dev/null
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
     --request-id "$recovery_prefix-turn" --idempotency-key "$recovery_prefix-turn" \
     turn create --input "$prompt" >/dev/null
 
@@ -6675,7 +6908,7 @@ run_real_provider_recovery() {
   recovery_execute_status="$smoke_directory/$recovery_prefix-execute.status"
   (
     set +e
-    cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    cloud_agentsctl_user --timeout 10m --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-execution" \
       --idempotency-key "$recovery_prefix-execution" execution execute \
       --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" \
@@ -6695,7 +6928,7 @@ run_real_provider_recovery() {
   attempt=0
   while :; do
     if [ -f "$recovery_execute_status" ]; then
-      cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+      cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
         --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get \
         >"$recovery_checkpoint_file" 2>/dev/null || true
       CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" \
@@ -6720,7 +6953,7 @@ NODE
       echo "$recovery_provider_kind $recovery_environment_label recovery Turn ended before a pending-side-effect checkpoint" >&2
       exit 1
     fi
-    if cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    if cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-checkpoint" \
       execution get >"$recovery_checkpoint_file" 2>/dev/null; then
       recovery_pending_info=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" \
@@ -6755,7 +6988,7 @@ NODE
           recovery_approval_rest=${recovery_pending_info#approval|}
           recovery_approval_generation=${recovery_approval_rest%%|*}
           recovery_approval_request=${recovery_approval_rest#*|}
-          cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+          cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
             --execution "$execution_id" --request-id "$recovery_prefix-approve-$attempt" \
             --idempotency-key "$recovery_prefix-approve-$attempt" execution resolve-approval \
             --generation "$recovery_approval_generation" --interaction-request "$recovery_approval_request" --decision accept >/dev/null
@@ -6841,7 +7074,7 @@ NODE
 
   attempt=0
   while :; do
-    cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-expiry" \
       execution get >"$recovery_checkpoint_file"
     if CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" node -e \
@@ -6858,7 +7091,7 @@ NODE
   done
 
   set +e
-  recovery_blocked_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  recovery_blocked_output=$(cloud_agentsctl_user --timeout 60s --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-blocked-execution" \
     --idempotency-key "$recovery_prefix-blocked-execution" execution execute \
     --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
@@ -6868,12 +7101,12 @@ NODE
     echo "$recovery_provider_kind $recovery_environment_label recovery replay bypassed side-effect reconciliation" >&2
     exit 1
   fi
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-blocked" \
     execution get >"$recovery_checkpoint_file"
   cp "$recovery_checkpoint_file" "$recovery_checkpoint_file.blocked"
   set +e
-  recovery_claim_output=$(cloud_agentsctl_user --timeout 60s --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  recovery_claim_output=$(cloud_agentsctl_user --timeout 60s --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-claim" \
     --idempotency-key "$recovery_prefix-execution" execution execute \
     --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" 2>&1)
@@ -6886,7 +7119,7 @@ NODE
     echo "$recovery_provider_kind $recovery_environment_label recovery claim did not fail closed for reconciliation" >&2
     exit 1
   fi
-  cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_prefix-reconcile-state" \
     execution get >"$recovery_checkpoint_file"
   recovery_values=$(CLOUD_AGENTS_COMPOSE_EXECUTION_FILE="$recovery_checkpoint_file" node -e \
@@ -6916,15 +7149,15 @@ NODE
     if ! execute_real_provider_with_mcp_approvals "$session_id" "$turn_id" "$execution_id" \
       "$recovery_execute_prefix" "$prompt" "$recovery_result_file" "$recovery_shell_command" "$recovery_runtime_mode" \
       "$recovery_prefix-execution"; then
-      cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+      cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
         --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get >&2 || true
       exit 1
     fi
-  elif ! cloud_agentsctl_user --timeout 10m --project "$project_id" --session "$session_id" --turn "$turn_id" \
+  elif ! cloud_agentsctl_user --timeout 10m --session "$session_id" --turn "$turn_id" \
     --execution "$execution_id" --request-id "$recovery_execute_prefix" \
       --idempotency-key "$recovery_prefix-execution" execution execute \
       --runtime-mode "$recovery_runtime_mode" --interaction-mode default $recovery_execution_flags --input "$prompt" >"$recovery_result_file"; then
-    cloud_agentsctl_user --project "$project_id" --session "$session_id" --turn "$turn_id" \
+    cloud_agentsctl_user --session "$session_id" --turn "$turn_id" \
       --execution "$execution_id" --request-id "$recovery_prefix-failure" execution get >&2 || true
     exit 1
   fi
@@ -7302,6 +7535,8 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
+      CLOUD_AGENTS_CLI_PROFILE="$user_cli_profile" \
+      CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE="$admin_cli_profile" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
       CLOUD_AGENTS_E2E_LEASE_ID="$profile_environment_id" \
@@ -7310,8 +7545,6 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_E2E_CONTROL_PLANE_CONTAINER="$(compose ps -q control-plane)" \
       CLOUD_AGENTS_E2E_WORKER_CONTAINER="$interaction_worker_container" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
-      CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
-      CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
       CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$foundation_agent_runtime_id" \
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID=docker-compose-target \
       CLOUD_AGENTS_E2E_RECOVERY_FAULT=worker \
@@ -7331,6 +7564,8 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
+      CLOUD_AGENTS_CLI_PROFILE="$user_cli_profile" \
+      CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE="$admin_cli_profile" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
       CLOUD_AGENTS_E2E_WORKSPACE_ID="$remote_agent_workspace_id" \
@@ -7347,14 +7582,14 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$remote_agent_runtime_id" \
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$interaction_remote_target_id" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
-      CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
-      CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
       CLOUD_AGENTSCTL="$cli" \
         sh "$script_directory/test-platform-agent-interactions.sh"
     else
       CLOUD_AGENTS_ENDPOINT="https://$endpoint" \
       CLOUD_AGENTS_CA_FILE="$smoke_directory/ca.crt" \
       CLOUD_AGENTS_TOKEN_FILE="$smoke_directory/user-token" \
+      CLOUD_AGENTS_CLI_PROFILE="$user_cli_profile" \
+      CLOUD_AGENTS_E2E_ADMIN_CLI_PROFILE="$admin_cli_profile" \
       CLOUD_AGENTS_TENANT=tenant-compose-smoke \
       CLOUD_AGENTS_PROJECT="$project_id" \
       CLOUD_AGENTS_E2E_WORKSPACE_ID="$kubernetes_agent_workspace_id" \
@@ -7369,8 +7604,6 @@ if [ -n "$real_provider_credentials_directory" ]; then
       CLOUD_AGENTS_E2E_AGENT_RUNTIME_ID="$kubernetes_agent_runtime_id" \
       CLOUD_AGENTS_E2E_AGENT_TARGET_ID="$kubernetes_runtime_target_id" \
       CLOUD_AGENTS_E2E_POSTGRES_CONTAINER="$(compose ps -q postgres)" \
-      CLOUD_AGENTS_E2E_AUTH_CONFIG="$smoke_directory/auth.json" \
-      CLOUD_AGENTS_E2E_AUTH_TEST_PRIVATE_KEY="$smoke_directory/auth-test-private-key.pem" \
       CLOUD_AGENTSCTL="$cli" \
         sh "$script_directory/test-platform-agent-interactions.sh"
     fi
@@ -7380,9 +7613,14 @@ if [ -n "$real_provider_credentials_directory" ]; then
     if real_provider_selected codex && real_provider_selected claudeAgent; then
       run_agent_interactions docker
       wait_ready
-      CLOUD_AGENTS_ADMIN_RUNTIME_SMOKE=1 node "$smoke_directory/deployment/test/e2e/test-platform-compose-admin-web.mjs" \
-        "http://$admin_web_endpoint" "$smoke_directory/admin-token" "$smoke_directory/admin-denied-token" \
-        "$smoke_directory/user-token" tenant-compose-smoke "$project_id" "http://$user_web_endpoint"
+      CLOUD_AGENTS_ADMIN_RUNTIME_SMOKE=1 \
+      CLOUD_AGENTS_BROWSER_TLS_SPKI="$browser_tls_spki" \
+      CLOUD_AGENTS_ADMIN_CAPTURE_AUTOMATION_CREDENTIAL_FILE="$smoke_directory/automation-admin.credential" \
+      CLOUD_AGENTS_ADMIN_CAPTURE_CONTROL_PLANE_URL="$control_plane_origin" \
+      NODE_EXTRA_CA_CERTS="$smoke_directory/ca.crt" \
+        node "$smoke_directory/deployment/test/e2e/test-platform-compose-admin-web.mjs" \
+        "https://admin.compose-smoke.localhost:${admin_web_endpoint##*:}" "$smoke_directory/admin-account.json" "$smoke_directory/admin-denied-account.json" \
+        "$smoke_directory/user-account.json" tenant-compose-smoke "$project_id" "https://user.compose-smoke.localhost:${user_web_endpoint##*:}"
     fi
     if [ "$sdk_live" -eq 1 ]; then
       sdk_package_version=$(CLOUD_AGENTS_SDK_MANIFEST="$candidate_directory/platform-release-manifest.json" node -e \
@@ -7572,7 +7810,7 @@ if ! cmp -s "$replayed_terminate_file" "$terminate_file"; then
   echo "Compose Docker target termination was not idempotent" >&2
   exit 1
 fi
-terminated_lease_output=$(cloud_agentsctl --project "$project_id" --lease "$profile_environment_id" \
+terminated_lease_output=$(cloud_agentsctl --lease "$profile_environment_id" \
   --request-id compose-smoke-terminated-lease environment-lease get)
 case "$terminated_lease_output" in
   *'"generation":4'*'"desiredPhase":"terminated"'*'"observedPhase":"terminated"'*'"cleanupPhase":"complete"'*) ;;
@@ -7639,7 +7877,7 @@ wait_gateway
 wait_user_web
 wait_admin_web
 if [ -z "$real_provider_credentials_directory" ]; then
-  restored_output=$(cloud_agentsctl_user --project "$project_id" --session session-compose-smoke \
+  restored_output=$(cloud_agentsctl_user --session session-compose-smoke \
     --turn turn-compose-smoke --execution execution-compose-smoke \
     --request-id compose-smoke-restored-execution execution get)
   case "$restored_output" in

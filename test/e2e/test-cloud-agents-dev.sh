@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 for command in docker node; do
@@ -62,9 +63,9 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-read -r control_plane_port worker_port < <(node <<'NODE'
+read -r control_plane_port worker_port identity_port admin_port user_port < <(node <<'NODE'
 const net = require("node:net");
-const servers = [net.createServer(), net.createServer()];
+const servers = Array.from({length:5}, () => net.createServer());
 Promise.all(
   servers.map(
     (server) =>
@@ -123,6 +124,7 @@ foundation_release_digest=${fixture_parts[5]}
 
 CLOUD_AGENTS_DEV_CONTROL_PLANE_LISTEN="127.0.0.1:$control_plane_port" \
 CLOUD_AGENTS_DEV_WORKER_LISTEN="127.0.0.1:$worker_port" \
+CLOUD_AGENTS_DEV_IDENTITY_PORT="$identity_port" CLOUD_AGENTS_DEV_ADMIN_PORT="$admin_port" CLOUD_AGENTS_DEV_USER_PORT="$user_port" \
 CLOUD_AGENTS_DEV_PROVIDER_CREDENTIALS_DIR="$provider_credentials_directory" \
 CLOUD_AGENTS_DEV_DOCKER_CREDENTIALS_DIR="$docker_credentials_directory" \
   bash "$repository_root/scripts/cloud-agents-dev.sh" >"$log_file" 2>&1 &
@@ -130,7 +132,7 @@ dev_pid=$!
 container_name="cloud-agents-dev-${UID:-0}-$dev_pid"
 
 for attempt in {1..180}; do
-  if grep -Fq "Token file: " "$log_file"; then
+  if grep -Fq "State directory: " "$log_file"; then
     break
   fi
   if ! kill -0 "$dev_pid" 2>/dev/null; then
@@ -147,30 +149,56 @@ for attempt in {1..180}; do
   sleep 1
 done
 
-token_file=$(sed -n 's/^Token file: //p' "$log_file" | tail -n 1)
-case "$token_file" in
-  "$repository_root"/.tmp/cloud-agents-dev.*/control-plane.token) ;;
-  *) echo "cloud-agents dev did not report an owned token file" >&2; exit 1 ;;
+state_directory=$(sed -n 's/^State directory: //p' "$log_file" | tail -n 1)
+case "$state_directory" in
+  "$repository_root"/.tmp/cloud-agents-dev.*) ;;
+  *) echo "cloud-agents dev did not report an owned state directory" >&2; exit 1 ;;
 esac
-state_directory=${token_file%/control-plane.token}
 cli="$state_directory/bin/cloud-agentsctl"
-common=(--endpoint "http://127.0.0.1:$control_plane_port" --token-file "$token_file" --tenant tenant-local)
-admin_token_file="$state_directory/control-plane-admin.token"
-admin_token=$(tr -d '\n' <"$admin_token_file")
-admin_common=(--endpoint "http://127.0.0.1:$control_plane_port" --token-file "$admin_token_file" --tenant tenant-local)
+admin_origin="https://localhost:$admin_port"
+user_origin="https://127.0.0.1:$user_port"
+export NODE_EXTRA_CA_CERTS="$state_directory/ca.crt"
+automation_fixture="$repository_root/test/e2e/identity-automation-fixture.mjs"
+node "$automation_fixture" create "$admin_origin" "$state_directory/admin-account.json" tenant-local \
+  localdev-admin admin tenant.admin tenant tenant-local "$state_directory/admin.credential"
+"$cli" profile configure-service-account --web-endpoint "$admin_origin" --control-plane-endpoint "https://127.0.0.1:$control_plane_port" \
+  --application admin --ca-file "$state_directory/ca.crt" --profile "$state_directory/admin.profile" \
+  --credential-file "$state_directory/admin.credential" --tenant tenant-local >/dev/null
+admin_common=(--profile "$state_directory/admin.profile")
+common=()
+control_plane_curl() {
+  local application=$1
+  shift
+  local origin=$admin_origin
+  if [[ $application == user ]]; then origin=$user_origin; fi
+  local prefix
+  prefix=$(mktemp -d "$state_directory/request.XXXXXXXX")/token
+  node "$automation_fixture" exchange "$origin" "$state_directory/$application.credential" tenant-local "$prefix" "$project_id"
+  local status=0
+  curl --cacert "$state_directory/ca.crt" --config "$prefix.curl.conf" "$@" || status=$?
+  rm -f "$prefix.token" "$prefix.curl.conf"
+  rmdir "${prefix%/token}"
+  return "$status"
+}
 control_plane_api() {
   local method=$1 path=$2 request_id=$3 idempotency_key=$4 body=$5 output=$6
-  curl --silent --show-error --fail-with-body --request "$method" \
-    --header "Authorization: Bearer $admin_token" --header "X-Request-ID: $request_id" \
-    --header "Idempotency-Key: $idempotency_key" --header "Content-Type: application/json" \
-    --data "$body" "http://127.0.0.1:$control_plane_port$path" >"$output" ||
+  control_plane_curl admin --silent --show-error --fail-with-body --request "$method" \
+    --header "X-Request-ID: $request_id" --header "Idempotency-Key: $idempotency_key" --header "Content-Type: application/json" \
+    --data "$body" "https://127.0.0.1:$control_plane_port$path" >"$output" ||
     { status=$?; cat "$output" >&2; return "$status"; }
 }
 
-project_json=$("$cli" "${common[@]}" --request-id localdev-smoke-project \
+project_json=$("$cli" "${admin_common[@]}" --request-id localdev-smoke-project \
   --idempotency-key localdev-smoke-project-key project create --name localdev-smoke-project \
   --display-name "Localdev Smoke Project" --organization-id organization-local)
 project_id=$(printf '%s' "$project_json" | node -e 'const fs=require("node:fs");process.stdout.write(JSON.parse(fs.readFileSync(0,"utf8")).metadata.uid)')
+"$cli" profile use --profile "$state_directory/admin.profile" --tenant tenant-local --project "$project_id" >/dev/null
+node "$automation_fixture" create "$admin_origin" "$state_directory/admin-account.json" tenant-local \
+  localdev-user user project.operator project "$project_id" "$state_directory/user.credential"
+"$cli" profile configure-service-account --web-endpoint "$user_origin" --control-plane-endpoint "https://127.0.0.1:$control_plane_port" \
+  --application user --ca-file "$state_directory/ca.crt" --profile "$state_directory/user.profile" \
+  --credential-file "$state_directory/user.credential" --tenant tenant-local --project "$project_id" >/dev/null
+common=(--profile "$state_directory/user.profile")
 foundation_project_id="$project_id"
 case "$project_id" in project-*) ;; *) echo "localdev project id is invalid" >&2; exit 1 ;; esac
 foundation_workspace_id="localdev-foundation-workspace-${project_id#project-}"
@@ -183,11 +211,11 @@ network_policy_body='{"expectedResourceVersion":"0","policyName":"network-locald
 control_plane_api PUT "/v1/admin/tenants/tenant-local/projects/$project_id/network-policies/network-localdev" \
   localdev-network-policy localdev-network-policy "$network_policy_body" "$state_directory/network-policy.json"
 
-target_output=$("$cli" "${admin_common[@]}" --project "$project_id" --target local-docker-target \
+target_output=$("$cli" "${admin_common[@]}" --target local-docker-target \
   --request-id localdev-target-register --idempotency-key localdev-target-register target register \
   --target-name local-docker-target --kind docker --target-endpoint "$docker_endpoint" --credential-ref "$docker_credential_ref")
 case "$target_output" in *'"generation":1'*'"targetKind":"docker"'*) ;; *) echo "localdev Docker target was not registered: $target_output" >&2; exit 1 ;; esac
-probe_output=$("$cli" "${admin_common[@]}" --project "$project_id" --target local-docker-target \
+probe_output=$("$cli" "${admin_common[@]}" --target local-docker-target \
   --request-id localdev-target-probe --idempotency-key localdev-target-probe target probe --expected-generation 1)
 case "$probe_output" in *'"generation":1'*'"observedPhase":"ready"'*) ;; *) echo "localdev Docker target did not become ready: $probe_output" >&2; exit 1 ;; esac
 
@@ -203,9 +231,9 @@ environment_profile_body=$(printf '{"profileId":"localdev-agent-environment","pr
 control_plane_api POST "/v1/admin/tenants/tenant-local/projects/$project_id/environment-profiles" \
   localdev-environment-profile localdev-environment-profile "$environment_profile_body" "$state_directory/environment-profile.json"
 environment_profile_path="/v1/admin/tenants/tenant-local/projects/$project_id/environment-profiles/localdev-agent-environment"
-curl --silent --show-error --fail --request GET \
-  --header "Authorization: Bearer $admin_token" --header "X-Request-ID: localdev-environment-profile-get" \
-  "http://127.0.0.1:$control_plane_port/v1/admin/tenants/tenant-local/projects/$project_id/environment-profiles?pageSize=100" >"$state_directory/environment-profile-current.json"
+control_plane_curl admin --silent --show-error --fail --request GET \
+  --header "X-Request-ID: localdev-environment-profile-get" \
+  "https://127.0.0.1:$control_plane_port/v1/admin/tenants/tenant-local/projects/$project_id/environment-profiles?pageSize=100" >"$state_directory/environment-profile-current.json"
 environment_profile_resource_version=$(ENVIRONMENT_PROFILE_FILE="$state_directory/environment-profile-current.json" node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.env.ENVIRONMENT_PROFILE_FILE,"utf8"));const p=(v.environmentProfiles??[]).find((item)=>item.metadata?.uid==="localdev-agent-environment"||item.metadata?.name==="localdev-agent-environment");process.stdout.write(String(p?.metadata?.resourceVersion??""));')
 if [[ -z $environment_profile_resource_version ]]; then
   echo "localdev environment profile did not return a resource version" >&2
@@ -215,18 +243,18 @@ control_plane_api POST "$environment_profile_path/versions/1:publish" \
   localdev-environment-profile-publish localdev-environment-profile-publish "{\"expectedResourceVersion\":\"$environment_profile_resource_version\"}" "$state_directory/environment-profile-published.json"
 
 foundation_sandbox_body=$(printf '{"workspaceId":"%s","workspaceName":"%s","sandboxId":"%s","runtimeProfileId":"localdev-agent-runtime","runtimeProfileVersion":1,"ttlSeconds":600}' "$foundation_workspace_id" "$foundation_workspace_id" "$foundation_sandbox_id")
-curl --silent --show-error --fail --request POST \
-  --header "Authorization: Bearer $admin_token" --header "X-Request-ID: $foundation_sandbox_id" \
+control_plane_curl user --silent --show-error --fail --request POST \
+  --header "X-Request-ID: $foundation_sandbox_id" \
   --header "Idempotency-Key: $foundation_sandbox_id" --header "Content-Type: application/json" \
-  --data "$foundation_sandbox_body" "http://127.0.0.1:$control_plane_port/v1/tenants/tenant-local/projects/$project_id/sandbox-sessions" >"$state_directory/sandbox-create.json"
+  --data "$foundation_sandbox_body" "https://127.0.0.1:$control_plane_port/v1/tenants/tenant-local/projects/$project_id/sandbox-sessions" >"$state_directory/sandbox-create.json"
 sandbox_generation=
 sandbox_runtime_id=
 sandbox_resource_version=
 for attempt in {1..180}; do
   sandbox_file="$state_directory/sandbox.json"
-  curl --silent --show-error --fail --request GET --header "Authorization: Bearer $admin_token" \
+  control_plane_curl admin --silent --show-error --fail --request GET \
     --header "X-Request-ID: localdev-foundation-sandbox-get" \
-    "http://127.0.0.1:$control_plane_port/v1/admin/tenants/tenant-local/projects/$project_id/sandbox-sessions/$foundation_sandbox_id" >"$sandbox_file"
+    "https://127.0.0.1:$control_plane_port/v1/admin/tenants/tenant-local/projects/$project_id/sandbox-sessions/$foundation_sandbox_id" >"$sandbox_file"
   sandbox_values=$(SANDBOX_FILE="$sandbox_file" node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.env.SANDBOX_FILE,"utf8"));process.stdout.write([v.spec?.observedState??"",v.spec?.generation??"",v.spec?.runtimeId??"",v.spec?.stableErrorCode??"",v.metadata?.resourceVersion??""].join("|"));')
   IFS='|' read -r sandbox_state sandbox_generation sandbox_runtime_id sandbox_error sandbox_resource_version <<<"$sandbox_values"
   if [[ $sandbox_state == running ]]; then
@@ -248,12 +276,12 @@ if [[ ! $sandbox_generation =~ ^[1-9][0-9]*$ || -z $sandbox_runtime_id ]]; then
   exit 1
 fi
 
-"$cli" "${common[@]}" --project "$project_id" --session localdev-smoke-session \
+"$cli" "${common[@]}" --session localdev-smoke-session \
   --request-id localdev-smoke-session --idempotency-key localdev-smoke-session-key \
   session create --provider codex --workspace "$foundation_workspace_id" --sandbox "$foundation_sandbox_id" \
   --sandbox-generation "$sandbox_generation" --environment-profile localdev-agent-environment --environment-profile-version 1 >/dev/null
 set +e
-execute_output=$("$cli" "${common[@]}" --project "$project_id" --session localdev-smoke-session \
+execute_output=$("$cli" "${common[@]}" --session localdev-smoke-session \
   --turn localdev-smoke-turn --execution localdev-smoke-execution \
   --request-id localdev-smoke-execution --idempotency-key localdev-smoke-execution-key \
   execution execute --runtime-mode approval-required --interaction-mode default \
@@ -265,7 +293,7 @@ if [[ $execute_status != 2 || $execute_output != "cloud-agentsctl: managedAgentE
   exit 1
 fi
 execution_file="$state_directory/execution.json"
-"$cli" "${common[@]}" --project "$project_id" --session localdev-smoke-session \
+"$cli" "${common[@]}" --session localdev-smoke-session \
   --turn localdev-smoke-turn --execution localdev-smoke-execution \
   --request-id localdev-smoke-execution-get execution get >"$execution_file"
 if ! EXECUTION_FILE="$execution_file" node -e '

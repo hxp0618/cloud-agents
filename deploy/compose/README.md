@@ -1,7 +1,7 @@
 # Independent Cloud Agents Compose deployment
 
-The default Compose deployment is the no-Agent foundation: Control Plane,
-PostgreSQL, Access Gateway, User Web and Admin Web. It does not start the legacy
+The default Compose deployment is the no-Agent foundation: Identity, Control
+Plane, PostgreSQL, Access Gateway, User Web and Admin Web. It does not start the legacy
 Coding Agent Worker and does not read Runtime Provider environment or credential
 files. Existing Agent/Lease behavior remains available through the explicit
 compatibility override below. A successful stack startup alone is not
@@ -11,33 +11,79 @@ Extract the single `cloud-agents-deployment-<schema-head>.tar` from the release 
 `deploy/compose/.env.example` to a deployment-owned env file. Set
 `CLOUD_AGENTS_DEPLOY_DIR` to the extracted directory's `deploy` path.
 
-The bootstrap profile provisions the fixed Compose database roles in one
-transaction and fails closed on existing role drift. Start the complete stack
-from any directory with:
+The bootstrap profile provisions distinct migration, runtime, tenant-bootstrap,
+and Identity-service database roles in one transaction and fails closed on
+existing role drift. Before the first start, generate deployment-owned Identity
+TLS and RSA signing keys, independent 32-byte CSRF and provider-flow keys, and four distinct canonical
+base64url service proofs. Create separate TLS identities for the Admin and User
+Web hostnames and the Control Plane. The internal certificates must validate the
+Compose DNS names `identity` and `control-plane`; the Web certificates validate
+the hostnames in their configured origins. None of these secret bytes belongs in
+`.env` or the release archive.
+
+Create the initial password hash without placing the password in an argument:
+
+```sh
+umask 077
+cloud-agents-identity hash-password \
+  --password-file /secure/initial-password \
+  --output-file /secure/initial-admin-password.hash
+```
+
+Copy the three packaged `*.json.example` files to deployment-owned paths, keep
+the public issuer/Admin/User HTTPS origins consistent, and point every file
+reference in `.env` at a regular private file. Set
+`CLOUD_AGENTS_IDENTITY_INITIALIZE=1` only for the controlled first initialization;
+after it succeeds, change it to `0`. The initializer never supplies a default
+password. An existing deployment must choose and verify the new Identity user
+against its current role bindings before switching traffic; this package never
+rewrites historical subjects or memberships automatically.
+
+Create the private directory selected by `CLOUD_AGENTS_IDENTITY_PROVIDER_MATERIALS_DIR`,
+even when no login provider is enabled. Put only regular, non-symlink files with
+non-hidden names in it. The secret installer copies these files with mode `0400`
+for Identity alone. In the deployment-owned `identity-run.json`, map logical
+`providerSecretFiles` and `providerRootCaFiles` references to
+`/run/cloud-agents/identity/secrets/providers/<filename>`. Empty maps support
+password-only operation; an omitted root CA reference uses the system trust store.
+The maps above only resolve secret material. Platform administrators configure
+provider client IDs, issuer, reference names and exact Admin/User
+`/auth/provider/callback` URLs in Admin Web's Login Providers system settings.
+Identity persists these application settings in its database and reads them for
+each login; they are not product environment variables and changes do not require
+a restart. Register the displayed callback URLs with the provider. Adding a
+material reference or changing a referenced file requires an Identity restart;
+secret values never go in provider settings or the release archive.
+
+Start the complete stack from any directory with:
 
 ```sh
 sh /path/to/extracted/deploy/compose/cloud-agents-up.sh /path/to/.env
 ```
 
-The script performs these existing steps in order:
+The script performs these steps in order:
 
 1. Run `docker compose --env-file .env --profile bootstrap run --rm bootstrap`
    once with an isolated unswitched superuser URL.
-2. Run `docker compose --env-file .env --profile tenant-bootstrap run --rm tenant-bootstrap`
-   once to migrate the database and create the initial tenant, organization, and `tenant.admin`
-   membership for the configured authenticated subject. Exact retries are safe; conflicting
-   retries fail without partial changes.
-3. Run `docker compose --env-file .env up --build` and remain attached, without
+2. Apply the packaged migrations with the migration-only login.
+3. When `CLOUD_AGENTS_IDENTITY_INITIALIZE=1`, run the offline Identity initializer
+   with the bootstrap-only database login to create the first super administrator.
+4. Run the tenant bootstrap with the resulting stable `user-<id>` subject to
+   create the initial tenant, organization, and `tenant.admin` membership. Exact
+   retries are safe; conflicting retries fail without partial changes.
+5. Run `docker compose --env-file .env up --build` and remain attached, without
    a Coding Agent Worker or Provider credential dependency.
 
-Open `http://127.0.0.1:4173` for User Web and `http://127.0.0.1:4174` for Admin
-Web. Each browser talks only to its own origin: User Web forwards non-Admin `/v1`
+Open the configured `https://user...` origin for User Web and the distinct
+`https://admin...` origin for Admin Web. Resolve both hostnames to the endpoints
+used by their certificates. Each browser talks only to its own origin: User Web forwards non-Admin `/v1`
 routes, while Admin Web forwards only `/v1/admin`. Set
-`CLOUD_AGENTS_CONTROL_PLANE_CA` to the CA that issued the internal Control Plane
-certificate. Both containers run as uid `1000` with read-only root filesystems
+the Identity and Control Plane CA paths to the bundles that issued their internal
+certificates. Both containers terminate HTTPS as uid `1000`, use HttpOnly session
+cookies, and run with read-only root filesystems
 and receive no Docker socket, target credentials, or Provider credentials. Keep
-the default loopback binds for local operation; public deployments must put
-deployment-owned TLS/OIDC ingress in front of each service.
+the default loopback binds for local operation; public DNS and ingress remain
+deployment-owned.
 
 Create a consistent custom-format logical backup without writing it inside a
 container:
@@ -63,9 +109,11 @@ docker compose --env-file .env up --build
 
 The migration URL must be able to `SET ROLE cloud_agents_migration_owner`; the
 runtime URL uses the least-privileged `cloud_agents_runtime_login`. Use the
-tenant-bootstrap URL only for the packaged one-shot bootstrap. TLS and JWK trust
-configuration are deployment-owned inputs and are never generated by this
-package.
+tenant-bootstrap URL only for the packaged one-shot bootstrap. TLS, signing-key
+rotation, service-proof rotation and CA distribution are deployment-owned
+operations and are never generated by this package. Configure OIDC providers
+after the first password login; provider client secrets remain external secret
+references.
 
 To retain the legacy Managed Agent Runtime, also configure the optional Worker,
 SPIFFE, admission, Runtime environment and Provider credential values at the
@@ -147,17 +195,19 @@ docker compose --env-file .env \
   up --build
 ```
 
-Then create one RemoteWorker enrollment in Admin Web
-and deliver a separately scoped bootstrap token file to the node operator. From
-the same extracted release directory, run the packaged bootstrap script into a
-new deployment-owned directory:
+Then create one RemoteWorker enrollment in Admin Web and configure a private
+Admin service-account CLI profile for its tenant and project, with the current
+`projects.act` permission. Deliver that profile and its referenced CA to the node
+operator; human CLI grants cannot claim enrollment secrets. From the same
+extracted release directory, run the packaged bootstrap script into a new
+deployment-owned directory:
 
 ```sh
 CLOUD_AGENTS_PLATFORM_RELEASE_DIR=/media/cloud-agents-release \
 CLOUD_AGENTS_REMOTE_WORKER_INSTALL_DIR=/srv/cloud-agents-remote-worker \
 CLOUD_AGENTS_REMOTE_WORKER_CONTROL_PLANE_URL=https://control-plane.example \
 CLOUD_AGENTS_REMOTE_WORKER_SERVER_CA_FILE=/secure/control-plane-ca.pem \
-CLOUD_AGENTS_REMOTE_WORKER_BOOTSTRAP_TOKEN_FILE=/secure/bootstrap-token \
+CLOUD_AGENTS_REMOTE_WORKER_ADMIN_CLI_PROFILE=/secure/bootstrap-profile.json \
 CLOUD_AGENTS_REMOTE_WORKER_TENANT=tenant-a \
 CLOUD_AGENTS_REMOTE_WORKER_PROJECT=project-a \
 CLOUD_AGENTS_REMOTE_WORKER_ENROLLMENT=enrollment-a \
@@ -263,6 +313,20 @@ the target Secret containing the existing tenant Provider credential envelope.
 Helm installations can mount the same flat file layout from the Secret named by
 `deploymentTargets.kubernetesCredentialSecretName`.
 
+Admin Web can also register a Kubernetes target from a kubeconfig. The browser
+parses it, the admin selects a context, and only that context's HTTPS server,
+embedded CA, and token or embedded client certificate/key are submitted. The
+Control Plane seals them in Postgres and then uses them instead of
+`<credentialRef>.ca.crt` and `<credentialRef>.token`. The `credentialRef`
+descriptors above are still required for Worker and Foundation deployment. This
+requires a 32-byte, owner-only key file at
+`CLOUD_AGENTS_TARGET_CREDENTIAL_KEY_FILE` (Helm:
+`deploymentTargets.credentialKeySecretName`, key `target-credential.key`),
+for example `head -c 32 /dev/urandom > target-credential.key && chmod 0600
+target-credential.key`. Keep the key stable and backed up: rotating or losing
+it makes stored kubeconfig credentials unusable until those targets are
+registered again.
+
 On a fresh target, run the packaged preparation script with an explicit
 kubeconfig context, token lifetime, namespace, and deployment-owned credential
 directory. It creates the namespace, a namespaced ServiceAccount/RoleBinding,
@@ -329,7 +393,8 @@ deletes target Secrets or named credential volumes.
 
 Run the real Kubernetes target acceptance with
 `sh test/e2e/test-platform-kubernetes-target.sh`.
-It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_ADMIN_TOKEN_FILE`,
+It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_ADMIN_CLI_PROFILE`,
+`CLOUD_AGENTS_USER_CLI_PROFILE`, `CLOUD_AGENTS_ADMIN_TOKEN_FILE`,
 `CLOUD_AGENTS_USER_TOKEN_FILE`, `CLOUD_AGENTS_TENANT`, `CLOUD_AGENTS_PROJECT`,
 `CLOUD_AGENTS_TARGET_ID`,
 `CLOUD_AGENTS_TARGET_ENDPOINT`, `CLOUD_AGENTS_TARGET_CREDENTIAL_REF`,
@@ -339,8 +404,10 @@ It requires `CLOUD_AGENTS_ENDPOINT`, `CLOUD_AGENTS_ADMIN_TOKEN_FILE`,
 `CLOUD_AGENTS_CLAUDE_CODE_VERSION`, `CLOUD_AGENTS_PROVIDER_SECRET_REF`,
 `CLOUD_AGENTS_KUBECONFIG`, `CLOUD_AGENTS_KUBERNETES_NAMESPACE`, and a new
 `CLOUD_AGENTS_E2E_OUTPUT_DIR`. The Control Plane credential directory and target
-Secrets must already contain the files described above. The Admin token must
-use the Admin audience and the User token the User audience. The script
+Secrets must already contain the files described above. CLI profiles and
+automation tokens must be generated from service accounts with the matching
+Admin or User application; raw API token files are private, short-lived test
+material. The script
 registers the release and policies, publishes a fixed Profile, creates and
 terminates the Environment through the User API, runs a real Codex Turn,
 restarts the Worker Deployment, resumes the Codex Session, runs a
@@ -353,8 +420,7 @@ Run the real SSH target acceptance with
 `sh test/e2e/test-platform-ssh-target.sh`. It uses the same Control Plane inputs
 plus `CLOUD_AGENTS_PROVIDER_VOLUME_REF`, `CLOUD_AGENTS_SSH_HOST`,
 `CLOUD_AGENTS_SSH_USER`, `CLOUD_AGENTS_SSH_IDENTITY_FILE`, and
-`CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE`; set `CLOUD_AGENTS_SSH_PORT` when it is not
-22. The operator key is read only by OpenSSH with `IdentitiesOnly` and strict
+`CLOUD_AGENTS_SSH_KNOWN_HOSTS_FILE`; set `CLOUD_AGENTS_SSH_PORT` when it is not 22. The operator key is read only by OpenSSH with `IdentitiesOnly` and strict
 host-key checking. The script replays deployment, runs a real Codex Turn,
 crashes the remote Worker process and verifies its policy-driven restart,
 resumes the Codex Session, runs a real Claude Turn, resolves real approval and
@@ -384,28 +450,33 @@ without real Provider credentials, it restarts the Control Plane while a target
 Lease and durable Execution exist and verifies both through the public status
 commands. A run without the second argument is not real Provider E2E evidence.
 
-The auth JSON may contain either an explicit `keys` array or an HTTPS `jwksUrl`.
-The Control Plane fetches JWKS at startup and on `SIGHUP`; a reload must publish
-the next `generation` and keeps the previous key material bound to its lineage.
+The Control Plane loads the fixed Identity HTTPS origin and CA from its packaged
+Identity client config. It refreshes the signed authority metadata and JWKS
+automatically while retaining the persisted key lineage; operators do not mint
+or paste browser tokens.
 When the Control Plane certificate uses a private CA, pass its PEM bundle to the
 packaged CLI with `cloud-agentsctl --ca-file PATH ...`.
 
 For Kubernetes, use `deploy/helm/cloud-agents` from the extracted directory. The chart expects an external
 PostgreSQL database and pre-created Secrets named by `values.yaml`: database
-URLs (`runtime-url`, `migration-url`), `auth.json`, Control Plane/Worker mTLS,
+URLs (`runtime-url`, `migration-url`, `tenant-bootstrap-url`,
+`identity-service-url`, `identity-bootstrap-url`), Identity signing/TLS/CSRF and
+service proofs, separate Admin/User Web TLS, Control Plane/Worker mTLS,
 Runtime provider environment, tenant-bound Provider credentials
 (`<tenantId>.codex.json` and/or `<tenantId>.claudeAgent.json`), and Runtime
 admission (`lease-id`, `generation`, `token`).
-Override all three image repositories and set their digests from
+Override the enabled image repositories and set their digests from
 `cloud-agents-oci-images.json` before installing. A non-empty digest takes
 precedence over the chart's fallback tag:
 
 ```sh
 helm upgrade --install cloud-agents deploy/helm/cloud-agents \
   --set images.controlPlane.repository=REGISTRY/control-plane \
+  --set images.identity.repository=REGISTRY/identity \
   --set images.worker.repository=REGISTRY/worker \
   --set images.migrate.repository=REGISTRY/migrate \
   --set-string images.controlPlane.digest=sha256:CONTROL_PLANE_DIGEST \
+  --set-string images.identity.digest=sha256:IDENTITY_DIGEST \
   --set-string images.worker.digest=sha256:WORKER_DIGEST \
   --set-string images.migrate.digest=sha256:MIGRATE_DIGEST
 ```
@@ -422,9 +493,6 @@ CLOUD_AGENTS_TENANT_DISPLAY_NAME
 CLOUD_AGENTS_ORGANIZATION_UID
 CLOUD_AGENTS_ORGANIZATION_NAME
 CLOUD_AGENTS_ORGANIZATION_DISPLAY_NAME
-CLOUD_AGENTS_ADMIN_SUBJECT_KIND
-CLOUD_AGENTS_ADMIN_SUBJECT_ISSUER
-CLOUD_AGENTS_ADMIN_SUBJECT_VALUE
 CLOUD_AGENTS_ADMIN_MEMBERSHIP_UID
 CLOUD_AGENTS_ADMIN_MEMBERSHIP_NAME
 CLOUD_AGENTS_ADMIN_ROLE_BINDING_UID
@@ -435,8 +503,13 @@ CLOUD_AGENTS_ROLE_BINDING_AUDIT_FACT_UID
 CLOUD_AGENTS_BOOTSTRAP_REASON_CODE
 ```
 
-Override the Secret names or database key through `values.yaml`. Disable
-`tenantBootstrap.enabled` only when the same bootstrap was completed externally.
+The subject is derived from `identity.issuer` and
+`identityBootstrap.userId`; it is not supplied through the tenant-bootstrap
+Secret.
+
+Override the Secret names or database key through `values.yaml`. Enable
+`identityBootstrap.enabled` and `tenantBootstrap.enabled` together for a fresh
+install, or leave both disabled after the same bootstrap was completed externally.
 Exact retries are safe; conflicting existing state fails the installation. Use
 standard `helm rollback cloud-agents REVISION` to restore a prior image/chart
 revision; database rollback remains an explicit forward-migration operation.
